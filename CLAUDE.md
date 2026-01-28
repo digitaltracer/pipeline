@@ -15,49 +15,54 @@ Pipeline is a cross-platform (macOS + iOS) job application tracking app built wi
 ## Project Structure
 
 ```
-Pipeline/                          # Repo root
-├── Pipeline.xcodeproj/            # Xcode project
-├── PipelineApp.swift              # App entry point, ModelContainer setup
-├── ContentView.swift              # Root view, platform-specific layout
-├── Pipeline.entitlements          # iCloud, CloudKit, Keychain, Network
-├── CLAUDE.md                      # This file
-├── runlocal.md                    # Local development instructions
+pipeline/                              # Git repo root
+├── .gitignore
+├── CLAUDE.md                          # This file
+├── runlocal.md                        # Local development instructions
+├── README.md
+├── LICENSE
 │
-├── Models/                        # SwiftData @Model classes
-│   ├── JobApplication.swift       # Main data model
-│   ├── InterviewLog.swift         # Interview history entries
-│   ├── SidebarFilter.swift        # Sidebar filter enum
-│   └── Enums/                     # All enum types
-│
-├── ViewModels/                    # @Observable business logic
-│   ├── ApplicationListViewModel.swift
-│   ├── ApplicationDetailViewModel.swift
-│   ├── AddEditApplicationViewModel.swift
-│   ├── SettingsViewModel.swift
-│   └── AIParsingViewModel.swift
-│
-├── Views/
-│   ├── Main/                      # Main navigation views
-│   ├── JobCard/                   # Card components
-│   ├── Detail/                    # Detail panel views
-│   ├── Forms/                     # Add/Edit forms
-│   ├── Settings/                  # Settings views
-│   └── Components/                # Reusable UI components
-│
-├── Services/                      # Business logic services
-│   ├── AIService/                 # AI provider implementations
-│   ├── KeychainService.swift
-│   ├── LogoFetchService.swift
-│   ├── PlatformDetectionService.swift
-│   └── NotificationService.swift
-│
-├── Utilities/                     # Helpers and constants
-│   ├── DateFormatters.swift
-│   ├── URLHelpers.swift
-│   └── Constants.swift
-│
-└── Resources/
-    └── Assets.xcassets/
+└── Pipeline/                          # Xcode project folder
+    ├── Pipeline.xcodeproj/            # Xcode project
+    ├── PipelineApp.swift              # App entry point, ModelContainer setup
+    ├── ContentView.swift              # Root view, platform-specific layout
+    ├── Pipeline.entitlements          # iCloud, CloudKit, Keychain, Network
+    │
+    ├── Models/                        # SwiftData @Model classes
+    │   ├── JobApplication.swift       # Main data model
+    │   ├── InterviewLog.swift         # Interview history entries
+    │   ├── SidebarFilter.swift        # Sidebar filter enum
+    │   └── Enums/                     # All enum types
+    │
+    ├── ViewModels/                    # @Observable business logic
+    │   ├── ApplicationListViewModel.swift
+    │   ├── ApplicationDetailViewModel.swift
+    │   ├── AddEditApplicationViewModel.swift
+    │   ├── SettingsViewModel.swift
+    │   └── AIParsingViewModel.swift
+    │
+    ├── Views/
+    │   ├── Main/                      # Main navigation views
+    │   ├── JobCard/                   # Card components
+    │   ├── Detail/                    # Detail panel views
+    │   ├── Forms/                     # Add/Edit forms
+    │   ├── Settings/                  # Settings views
+    │   └── Components/                # Reusable UI components
+    │
+    ├── Services/                      # Business logic services
+    │   ├── AIService/                 # AI provider implementations
+    │   ├── KeychainService.swift
+    │   ├── LogoFetchService.swift
+    │   ├── PlatformDetectionService.swift
+    │   └── NotificationService.swift
+    │
+    ├── Utilities/                     # Helpers and constants
+    │   ├── DateFormatters.swift
+    │   ├── URLHelpers.swift
+    │   └── Constants.swift
+    │
+    └── Resources/
+        └── Assets.xcassets/
 ```
 
 ## Key Patterns
@@ -125,20 +130,20 @@ enum SomeEnum: String, Codable, CaseIterable, Identifiable {
 
 | File | Purpose |
 |------|---------|
-| `PipelineApp.swift` | App entry, ModelContainer with CloudKit config |
-| `JobApplication.swift` | Core data model with all job fields |
-| `MainView.swift` | Three-column NavigationSplitView layout |
-| `JobCardView.swift` | Card displayed in the grid |
-| `JobDetailView.swift` | Right panel with full details |
-| `AddApplicationView.swift` | Modal with Manual/AI Parse tabs |
-| `KeychainService.swift` | Secure API key storage |
-| `AIServiceProtocol.swift` | AI service interface and helpers |
+| `Pipeline/PipelineApp.swift` | App entry, ModelContainer with CloudKit config |
+| `Pipeline/Models/JobApplication.swift` | Core data model with all job fields |
+| `Pipeline/Views/Main/MainView.swift` | Three-column NavigationSplitView layout |
+| `Pipeline/Views/JobCard/JobCardView.swift` | Card displayed in the grid |
+| `Pipeline/Views/Detail/JobDetailView.swift` | Right panel with full details |
+| `Pipeline/Views/Forms/AddApplicationView.swift` | Modal with Manual/AI Parse tabs |
+| `Pipeline/Services/KeychainService.swift` | Secure API key storage |
+| `Pipeline/Services/AIService/AIServiceProtocol.swift` | AI service interface and helpers |
 
 ## Common Tasks
 
 ### Adding a New Field to JobApplication
 
-1. Add property to `Models/JobApplication.swift`
+1. Add property to `Pipeline/Models/JobApplication.swift`
 2. Update initializer
 3. Add to `AddEditApplicationViewModel` form fields
 4. Add to `ManualEntryFormView` form UI
@@ -146,27 +151,27 @@ enum SomeEnum: String, Codable, CaseIterable, Identifiable {
 
 ### Adding a New Enum
 
-1. Create file in `Models/Enums/`
+1. Create file in `Pipeline/Models/Enums/`
 2. Conform to `String, Codable, CaseIterable, Identifiable`
 3. Add `displayName`, `icon`, `color` computed properties
 4. If used in JobApplication, add private raw value storage + computed property
 
 ### Adding a New AI Provider
 
-1. Create new service in `Services/AIService/` implementing `AIServiceProtocol`
+1. Create new service in `Pipeline/Services/AIService/` implementing `AIServiceProtocol`
 2. Add case to `AIProvider` enum in `SettingsViewModel.swift`
 3. Add to switch in `AIParsingViewModel.createAIService()`
 
 ### Adding a New View
 
-1. Create in appropriate `Views/` subfolder
+1. Create in appropriate `Pipeline/Views/` subfolder
 2. Use `@Environment(\.modelContext)` for data access
 3. Use `@Query` for fetching SwiftData models
 4. Pass bindings from parent for shared state
 
 ## Build & Run
 
-1. Open `Pipeline.xcodeproj` in Xcode
+1. Open `Pipeline/Pipeline.xcodeproj` in Xcode
 2. Select signing team in project settings
 3. Enable iCloud capability, select CloudKit container
 4. Select target (My Mac or iOS Simulator)

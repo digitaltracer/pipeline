@@ -12,11 +12,10 @@
 ### 1. Open the Project
 
 ```bash
-cd Pipeline
-open Pipeline.xcodeproj
+open Pipeline/Pipeline.xcodeproj
 ```
 
-Or open Xcode and select File > Open, then navigate to `Pipeline.xcodeproj`.
+Or open Xcode and select File > Open, then navigate to `Pipeline/Pipeline.xcodeproj`.
 
 ### 2. Configure Signing
 
@@ -54,7 +53,7 @@ To enable data sync between devices:
 
 ### 2. Update Container Identifier
 
-If using a different container ID, update `PipelineApp.swift`:
+If using a different container ID, update `Pipeline/PipelineApp.swift`:
 
 ```swift
 let modelConfiguration = ModelConfiguration(
@@ -151,26 +150,26 @@ If you change the model schema during development:
 ### "Unable to load contents of file list"
 
 1. Close Xcode
-2. Delete `Pipeline.xcodeproj/project.xcworkspace/xcuserdata`
+2. Delete `Pipeline/Pipeline.xcodeproj/project.xcworkspace/xcuserdata`
 3. Reopen project
 
 ## Useful Commands
 
 ```bash
 # Open project
-open Pipeline.xcodeproj
+open Pipeline/Pipeline.xcodeproj
 
 # Build from command line (requires full Xcode, not just CLI tools)
-xcodebuild -scheme Pipeline -destination 'platform=macOS' build
+cd Pipeline && xcodebuild -scheme Pipeline -destination 'platform=macOS' build
 
 # Clean build
-xcodebuild -scheme Pipeline clean
+cd Pipeline && xcodebuild -scheme Pipeline clean
 
 # List available simulators
 xcrun simctl list devices
 
 # Run on specific simulator
-xcodebuild -scheme Pipeline -destination 'platform=iOS Simulator,name=iPhone 15 Pro' build
+cd Pipeline && xcodebuild -scheme Pipeline -destination 'platform=iOS Simulator,name=iPhone 15 Pro' build
 ```
 
 ## Development Tips
