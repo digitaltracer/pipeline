@@ -16,7 +16,7 @@ enum SidebarFilter: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
-        case .all: return "tray.full.fill"
+        case .all: return "square.grid.2x2"
         case .saved: return "bookmark.fill"
         case .applied: return "paperplane.fill"
         case .interviewing: return "person.2.fill"

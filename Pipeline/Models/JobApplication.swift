@@ -11,8 +11,8 @@ final class JobApplication {
     var jobURL: String?
     var jobDescription: String?
 
-    private var statusRawValue: String
-    private var priorityRawValue: String
+    private(set) var statusRawValue: String
+    private(set) var priorityRawValue: String
     private var sourceRawValue: String
     private var platformRawValue: String
     private var interviewStageRawValue: String?
@@ -32,7 +32,7 @@ final class JobApplication {
     // MARK: - Computed Properties for Enums
 
     var status: ApplicationStatus {
-        get { ApplicationStatus(rawValue: statusRawValue) ?? .saved }
+        get { ApplicationStatus(rawValue: statusRawValue) }
         set { statusRawValue = newValue.rawValue }
     }
 
@@ -42,7 +42,7 @@ final class JobApplication {
     }
 
     var source: Source {
-        get { Source(rawValue: sourceRawValue) ?? .jobPortal }
+        get { Source(rawValue: sourceRawValue) }
         set { sourceRawValue = newValue.rawValue }
     }
 
@@ -53,7 +53,9 @@ final class JobApplication {
 
     var interviewStage: InterviewStage? {
         get {
-            guard let rawValue = interviewStageRawValue else { return nil }
+            guard let rawValue = interviewStageRawValue,
+                  !rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return nil }
             return InterviewStage(rawValue: rawValue)
         }
         set { interviewStageRawValue = newValue?.rawValue }

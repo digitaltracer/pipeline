@@ -26,7 +26,6 @@ final class AddEditApplicationViewModel {
     // State
     var isEditing: Bool = false
     var editingApplication: JobApplication?
-    var validationErrors: [String] = []
 
     // MARK: - Initialization
 
@@ -61,32 +60,37 @@ final class AddEditApplicationViewModel {
     // MARK: - Validation
 
     var isValid: Bool {
-        validate()
-        return validationErrors.isEmpty
+        validationErrors.isEmpty
     }
 
-    private func validate() {
-        validationErrors.removeAll()
+    var validationErrors: [String] {
+        makeValidationErrors()
+    }
+
+    private func makeValidationErrors() -> [String] {
+        var errors: [String] = []
 
         if companyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            validationErrors.append("Company name is required")
+            errors.append("Company name is required")
         }
 
         if role.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            validationErrors.append("Role is required")
+            errors.append("Role is required")
         }
 
         if location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            validationErrors.append("Location is required")
+            errors.append("Location is required")
         }
 
         if !jobURL.isEmpty, URL(string: jobURL) == nil {
-            validationErrors.append("Invalid job URL")
+            errors.append("Invalid job URL")
         }
 
         if let min = salaryMin, let max = salaryMax, min > max {
-            validationErrors.append("Minimum salary cannot exceed maximum salary")
+            errors.append("Minimum salary cannot exceed maximum salary")
         }
+
+        return errors
     }
 
     // MARK: - Computed Properties
@@ -131,7 +135,7 @@ final class AddEditApplicationViewModel {
             priority: priority,
             source: source,
             platform: platform,
-            interviewStage: status == .interviewing ? interviewStage : nil,
+            interviewStage: interviewStage,
             currency: currency,
             salaryMin: salaryMin,
             salaryMax: salaryMax,
@@ -157,7 +161,7 @@ final class AddEditApplicationViewModel {
         app.priority = priority
         app.source = source
         app.platform = platform
-        app.interviewStage = status == .interviewing ? interviewStage : nil
+        app.interviewStage = interviewStage
         app.currency = currency
         app.salaryMin = salaryMin
         app.salaryMax = salaryMax
@@ -205,6 +209,5 @@ final class AddEditApplicationViewModel {
         hasFollowUpDate = false
         isEditing = false
         editingApplication = nil
-        validationErrors = []
     }
 }

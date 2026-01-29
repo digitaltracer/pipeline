@@ -9,22 +9,22 @@ struct JobDetailFieldsView: View {
     ]
 
     var body: some View {
-        LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
-            DetailFieldItem(
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+            DetailInfoCard(
                 label: "Location",
                 value: application.location,
                 icon: "mappin.circle.fill",
                 iconColor: .red
             )
 
-            DetailFieldItem(
+            DetailInfoCard(
                 label: "Source",
                 value: application.source.displayName,
                 icon: application.source.icon,
                 iconColor: application.source.color
             )
 
-            DetailFieldItem(
+            DetailInfoCard(
                 label: "Platform",
                 value: application.platform.displayName,
                 icon: application.platform.icon,
@@ -32,71 +32,70 @@ struct JobDetailFieldsView: View {
             )
 
             if let salaryRange = application.salaryRange {
-                DetailFieldItem(
-                    label: "Salary",
+                DetailInfoCard(
+                    label: "Salary Package",
                     value: salaryRange,
-                    icon: "banknote",
+                    icon: "dollarsign.circle",
+                    iconColor: .green
+                )
+            } else {
+                DetailInfoCard(
+                    label: "Salary Package",
+                    value: "—",
+                    icon: "dollarsign.circle",
                     iconColor: .green
                 )
             }
 
             if let appliedDate = application.appliedDate {
-                DetailFieldItem(
-                    label: "Applied",
-                    value: appliedDate.formatted(date: .abbreviated, time: .omitted),
+                DetailInfoCard(
+                    label: "Applied On",
+                    value: appliedDate.formatted(date: .long, time: .omitted),
                     icon: "calendar",
                     iconColor: .blue
                 )
             }
 
             if let followUpDate = application.nextFollowUpDate {
-                DetailFieldItem(
-                    label: "Follow-up",
-                    value: followUpDate.formatted(date: .abbreviated, time: .omitted),
+                DetailInfoCard(
+                    label: "Next Follow Up",
+                    value: followUpDate.formatted(date: .long, time: .omitted),
                     icon: "calendar.badge.clock",
                     iconColor: followUpDate < Date() ? .red : .orange
                 )
             }
-
-            DetailFieldItem(
-                label: "Created",
-                value: application.createdAt.formatted(date: .abbreviated, time: .omitted),
-                icon: "clock",
-                iconColor: .secondary
-            )
-
-            DetailFieldItem(
-                label: "Updated",
-                value: application.updatedAt.formatted(date: .abbreviated, time: .omitted),
-                icon: "clock.arrow.circlepath",
-                iconColor: .secondary
-            )
         }
     }
 }
 
-struct DetailFieldItem: View {
+struct DetailInfoCard: View {
     let label: String
     let value: String
     let icon: String
     let iconColor: Color
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundColor(iconColor)
-                .frame(width: 24)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(iconColor)
+                    .frame(width: 18)
 
-            VStack(alignment: .leading, spacing: 2) {
                 Text(label)
                     .font(.caption)
                     .foregroundColor(.secondary)
 
-                Text(value)
-                    .font(.subheadline)
+                Spacer()
             }
+
+            Text(value)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(value == "—" ? .secondary : .primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(14)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
     }
 }
 

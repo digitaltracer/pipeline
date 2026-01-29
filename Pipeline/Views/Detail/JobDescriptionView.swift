@@ -9,7 +9,7 @@ struct JobDescriptionView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Job Description")
+                Label("Job Description", systemImage: "doc.text")
                     .font(.headline)
 
                 Spacer()
@@ -21,7 +21,7 @@ struct JobDescriptionView: View {
                 } label: {
                     Text(isExpanded ? "Show Less" : "Show More")
                         .font(.caption)
-                        .foregroundColor(.blue)
+                        .foregroundColor(DesignSystem.Colors.accent)
                 }
             }
 
@@ -31,6 +31,8 @@ struct JobDescriptionView: View {
                 .lineLimit(isExpanded ? nil : previewLineLimit)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(16)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
     }
 }
 

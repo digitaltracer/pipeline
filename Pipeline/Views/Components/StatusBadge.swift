@@ -51,6 +51,28 @@ struct StatusBadge: View {
     }
 }
 
+struct TagBadge: View {
+    let text: String
+    let color: Color
+    var icon: String? = nil
+    var size: StatusBadge.BadgeSize = .small
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: size.iconSize))
+            }
+            Text(text)
+                .font(.system(size: size.fontSize, weight: .medium))
+        }
+        .padding(size.padding)
+        .foregroundColor(color)
+        .background(color.opacity(0.16))
+        .clipShape(Capsule())
+    }
+}
+
 #Preview {
     VStack(spacing: 12) {
         ForEach(ApplicationStatus.allCases) { status in
@@ -61,6 +83,8 @@ struct StatusBadge: View {
                 StatusBadge(status: status, showIcon: true, size: .large)
             }
         }
+
+        TagBadge(text: "Technical Round 2", color: .orange, icon: "laptopcomputer", size: .regular)
     }
     .padding()
 }

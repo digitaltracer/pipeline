@@ -1,6 +1,13 @@
 import SwiftUI
 import SwiftData
 
+// MARK: - Development Flag
+// Set to false to disable CloudKit/iCloud sync (works with Personal Team provisioning).
+// To re-enable later:
+// 1) Switch CODE_SIGN_ENTITLEMENTS to `Pipeline.CloudKit.entitlements` in Xcode, and
+// 2) Set this flag to true.
+private let enableCloudKitSync = false
+
 @main
 struct PipelineApp: App {
     let modelContainer: ModelContainer
@@ -12,10 +19,14 @@ struct PipelineApp: App {
                 InterviewLog.self
             ])
 
+            let cloudKitConfig: ModelConfiguration.CloudKitDatabase = enableCloudKitSync
+                ? .private("iCloud.com.pipeline.app")
+                : .none
+
             let modelConfiguration = ModelConfiguration(
                 schema: schema,
                 isStoredInMemoryOnly: false,
-                cloudKitDatabase: .private("iCloud.com.pipeline.app")
+                cloudKitDatabase: cloudKitConfig
             )
 
             modelContainer = try ModelContainer(
@@ -34,7 +45,7 @@ struct PipelineApp: App {
         .modelContainer(modelContainer)
         #if os(macOS)
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 1200, height: 800)
+        .defaultSize(width: 1500, height: 860)
         #endif
 
         #if os(macOS)

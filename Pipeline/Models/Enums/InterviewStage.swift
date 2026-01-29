@@ -1,19 +1,54 @@
 import Foundation
 import SwiftUI
 
-enum InterviewStage: String, Codable, CaseIterable, Identifiable {
-    case phoneScreen = "Phone Screen"
-    case technicalRound1 = "Technical Round 1"
-    case technicalRound2 = "Technical Round 2"
-    case designChallenge = "Design Challenge"
-    case systemDesign = "System Design"
-    case hrRound = "HR Round"
-    case finalRound = "Final Round"
-    case offerExtended = "Offer Extended"
+enum InterviewStage: Codable, CaseIterable, Identifiable, Hashable {
+    case phoneScreen
+    case technicalRound1
+    case technicalRound2
+    case designChallenge
+    case systemDesign
+    case hrRound
+    case finalRound
+    case offerExtended
+    case custom(String)
 
     var id: String { rawValue }
 
     var displayName: String { rawValue }
+
+    init(rawValue: String) {
+        let normalized = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else {
+            self = .phoneScreen
+            return
+        }
+
+        switch normalized.lowercased() {
+        case "phone screen", "phonescreen": self = .phoneScreen
+        case "technical round 1", "technical 1", "tech 1": self = .technicalRound1
+        case "technical round 2", "technical 2", "tech 2": self = .technicalRound2
+        case "design challenge", "design": self = .designChallenge
+        case "system design", "system": self = .systemDesign
+        case "hr round", "hr": self = .hrRound
+        case "final round", "final": self = .finalRound
+        case "offer extended", "offer": self = .offerExtended
+        default: self = .custom(normalized)
+        }
+    }
+
+    var rawValue: String {
+        switch self {
+        case .phoneScreen: return "Phone Screen"
+        case .technicalRound1: return "Technical Round 1"
+        case .technicalRound2: return "Technical Round 2"
+        case .designChallenge: return "Design Challenge"
+        case .systemDesign: return "System Design"
+        case .hrRound: return "HR Round"
+        case .finalRound: return "Final Round"
+        case .offerExtended: return "Offer Extended"
+        case .custom(let value): return value
+        }
+    }
 
     var shortName: String {
         switch self {
@@ -25,6 +60,13 @@ enum InterviewStage: String, Codable, CaseIterable, Identifiable {
         case .hrRound: return "HR"
         case .finalRound: return "Final"
         case .offerExtended: return "Offer"
+        case .custom(let value):
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            let words = trimmed.split(separator: " ").prefix(2)
+            let candidate = words.joined(separator: " ")
+            if candidate.isEmpty { return "Custom" }
+            if candidate.count <= 9 { return candidate }
+            return String(candidate.prefix(9))
         }
     }
 
@@ -37,6 +79,7 @@ enum InterviewStage: String, Codable, CaseIterable, Identifiable {
         case .hrRound: return "person.fill"
         case .finalRound: return "star.fill"
         case .offerExtended: return "checkmark.seal.fill"
+        case .custom: return "tag.fill"
         }
     }
 
@@ -50,6 +93,7 @@ enum InterviewStage: String, Codable, CaseIterable, Identifiable {
         case .hrRound: return .pink
         case .finalRound: return .yellow
         case .offerExtended: return .green
+        case .custom: return .secondary
         }
     }
 
@@ -63,10 +107,36 @@ enum InterviewStage: String, Codable, CaseIterable, Identifiable {
         case .hrRound: return 5
         case .finalRound: return 6
         case .offerExtended: return 7
+        case .custom: return 999
         }
+    }
+
+    static var allCases: [InterviewStage] {
+        [
+            .phoneScreen,
+            .technicalRound1,
+            .technicalRound2,
+            .designChallenge,
+            .systemDesign,
+            .hrRound,
+            .finalRound,
+            .offerExtended
+        ]
     }
 
     static var orderedCases: [InterviewStage] {
         allCases.sorted { $0.sortOrder < $1.sortOrder }
+    }
+
+    // MARK: - Codable
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        self = InterviewStage(rawValue: try container.decode(String.self))
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 }

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct StatsBarView: View {
     let stats: ApplicationStats
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 0) {
@@ -12,49 +13,46 @@ struct StatsBarView: View {
                 color: .blue
             )
 
-            Divider()
-                .frame(height: 40)
+            StatDivider()
 
             StatItem(
                 title: "Applied",
                 value: "\(stats.applied)",
-                icon: "paperplane.fill",
+                icon: "paperplane",
                 color: .blue
             )
 
-            Divider()
-                .frame(height: 40)
+            StatDivider()
 
             StatItem(
                 title: "Interviewing",
                 value: "\(stats.interviewing)",
-                icon: "person.2.fill",
+                icon: "message",
                 color: .orange
             )
 
-            Divider()
-                .frame(height: 40)
+            StatDivider()
 
             StatItem(
                 title: "Offers",
                 value: "\(stats.offers)",
-                icon: "gift.fill",
+                icon: "gift",
                 color: .green
             )
 
-            Divider()
-                .frame(height: 40)
+            StatDivider()
 
             StatItem(
                 title: "Rejected",
                 value: "\(stats.rejected)",
-                icon: "xmark.circle.fill",
+                icon: "xmark.circle",
                 color: .red
             )
         }
-        .padding(.vertical, 8)
-        .background(Color(.textBackgroundColor).opacity(0.3))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 14)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
     }
 }
 
@@ -63,25 +61,40 @@ struct StatItem: View {
     let value: String
     let icon: String
     let color: Color
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundColor(color)
+        HStack(spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(color.opacity(colorScheme == .dark ? 0.18 : 0.12))
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(color)
+            }
+            .frame(width: 34, height: 34)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(value)
-                    .font(.headline)
-                    .fontWeight(.semibold)
-
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
                 Text(title)
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct StatDivider: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Rectangle()
+            .fill(DesignSystem.Colors.divider(colorScheme))
+            .frame(width: 1)
+            .padding(.vertical, 6)
+            .opacity(0.6)
     }
 }
 
@@ -95,5 +108,5 @@ struct StatItem: View {
         responseRate: 73.3
     ))
     .padding()
-    .frame(width: 600)
+    .frame(width: 700)
 }

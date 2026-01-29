@@ -3,11 +3,22 @@ import SwiftData
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \JobApplication.updatedAt, order: .reverse) private var applications: [JobApplication]
     @State private var selectedFilter: SidebarFilter = .all
     @State private var selectedApplication: JobApplication?
     @State private var showingAddApplication = false
     @State private var searchText = ""
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var settingsViewModel = SettingsViewModel()
+
+    private var filteredApplications: [JobApplication] {
+        guard !searchText.isEmpty else { return applications }
+        let lowercasedSearch = searchText.lowercased()
+        return applications.filter { app in
+            app.companyName.lowercased().contains(lowercasedSearch) ||
+            app.role.lowercased().contains(lowercasedSearch) ||
+            app.location.lowercased().contains(lowercasedSearch)
+        }
+    }
 
     var body: some View {
         #if os(macOS)
@@ -16,12 +27,14 @@ struct ContentView: View {
             selectedApplication: $selectedApplication,
             showingAddApplication: $showingAddApplication,
             searchText: $searchText,
-            columnVisibility: $columnVisibility
+            settingsViewModel: settingsViewModel
         )
+        .preferredColorScheme(settingsViewModel.getColorScheme())
+        .appWindowBackground()
         #else
         NavigationStack {
             ApplicationListView(
-                selectedFilter: $selectedFilter,
+                applications: filteredApplications,
                 selectedApplication: $selectedApplication,
                 searchText: $searchText
             )

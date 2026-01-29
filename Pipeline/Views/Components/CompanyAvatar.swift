@@ -4,55 +4,50 @@ struct CompanyAvatar: View {
     let companyName: String
     let logoURL: String?
     var size: CGFloat = 48
+    var cornerRadius: CGFloat = 14
 
     private var initial: String {
         String(companyName.prefix(1)).uppercased()
     }
 
-    private var backgroundColor: Color {
-        // Generate consistent color based on company name
-        let colors: [Color] = [
-            .blue, .purple, .orange, .green, .pink, .cyan, .indigo, .mint, .teal
-        ]
-        let hash = abs(companyName.hashValue)
-        return colors[hash % colors.count]
-    }
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        Group {
+        ZStack {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(DesignSystem.Colors.inputBackground(colorScheme))
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+                )
+
             if let logoURL = logoURL, let url = URL(string: logoURL) {
                 AsyncImage(url: url) { phase in
                     switch phase {
                     case .empty:
-                        initialAvatar
+                        initialContent
                     case .success(let image):
                         image
                             .resizable()
                             .aspectRatio(contentMode: .fit)
+                            .padding(size * 0.18)
                     case .failure:
-                        initialAvatar
+                        initialContent
                     @unknown default:
-                        initialAvatar
+                        initialContent
                     }
                 }
-                .frame(width: size, height: size)
-                .clipShape(RoundedRectangle(cornerRadius: size / 4))
             } else {
-                initialAvatar
+                initialContent
             }
         }
+        .frame(width: size, height: size)
     }
 
-    private var initialAvatar: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: size / 4)
-                .fill(backgroundColor.gradient)
-
-            Text(initial)
-                .font(.system(size: size * 0.45, weight: .semibold, design: .rounded))
-                .foregroundColor(.white)
-        }
-        .frame(width: size, height: size)
+    private var initialContent: some View {
+        Text(initial)
+            .font(.system(size: size * 0.42, weight: .semibold, design: .rounded))
+            .foregroundColor(.secondary)
     }
 }
 

@@ -8,7 +8,7 @@ struct InterviewHistoryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Interview History")
+                Label("Interview History", systemImage: "bubble.left.and.bubble.right")
                     .font(.headline)
 
                 Spacer()
@@ -16,11 +16,14 @@ struct InterviewHistoryView: View {
                 Button {
                     onAddLog()
                 } label: {
-                    Label("Add Log", systemImage: "plus.circle")
-                        .font(.caption)
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                        Text("Add Log")
+                    }
+                    .font(.subheadline)
+                    .foregroundColor(DesignSystem.Colors.accent)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .buttonStyle(.plain)
             }
 
             if logs.isEmpty {
@@ -48,11 +51,13 @@ struct InterviewHistoryView: View {
             Button("Add First Log") {
                 onAddLog()
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+            .buttonStyle(.borderedProminent)
+            .tint(DesignSystem.Colors.accent)
+            .controlSize(.regular)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 20)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
     }
 }
 
@@ -63,50 +68,21 @@ struct InterviewLogRow: View {
     @State private var showingDeleteConfirmation = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                // Type Badge
-                HStack(spacing: 4) {
-                    Image(systemName: log.interviewType.icon)
-                        .font(.caption)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(log.interviewType.displayName)
-                        .font(.caption)
-                        .fontWeight(.medium)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .foregroundColor(log.interviewType.color)
-                .background(log.interviewType.color.opacity(0.1))
-                .clipShape(Capsule())
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
 
-                Spacer()
-
-                // Date
-                Text(log.date.formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                // Delete Button
-                Button {
-                    showingDeleteConfirmation = true
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
-                .buttonStyle(.plain)
-                .opacity(0.6)
-            }
-
-            // Interviewer & Rating
-            HStack {
-                if let interviewer = log.interviewerName, !interviewer.isEmpty {
-                    HStack(spacing: 4) {
-                        Image(systemName: "person")
-                            .font(.caption)
-                        Text(interviewer)
-                            .font(.caption)
+                    HStack(spacing: 6) {
+                        Text(log.date.formatted(date: .long, time: .omitted))
+                        if let interviewer = log.interviewerName, !interviewer.isEmpty {
+                            Text("•")
+                            Text(interviewer)
+                        }
                     }
+                    .font(.caption)
                     .foregroundColor(.secondary)
                 }
 
@@ -115,17 +91,27 @@ struct InterviewLogRow: View {
                 StarRatingDisplay(rating: log.rating, size: 12)
             }
 
-            // Notes
             if let notes = log.notes, !notes.isEmpty {
                 Text(notes)
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(3)
             }
+
+            HStack {
+                Spacer()
+                Button(role: .destructive) {
+                    showingDeleteConfirmation = true
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.red.opacity(0.9))
+            }
         }
-        .padding()
-        .background(Color(.textBackgroundColor).opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(14)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
         .confirmationDialog(
             "Delete Interview Log",
             isPresented: $showingDeleteConfirmation,

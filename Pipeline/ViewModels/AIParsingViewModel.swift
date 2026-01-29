@@ -10,12 +10,29 @@ final class AIParsingViewModel {
     var isLoading: Bool = false
     var error: String?
     var parsedData: ParsedJobData?
+    var isConfigured: Bool = false
 
     // Services
     private let settingsViewModel: SettingsViewModel
 
     init(settingsViewModel: SettingsViewModel = SettingsViewModel()) {
         self.settingsViewModel = settingsViewModel
+    }
+
+    var selectedProvider: AIProvider {
+        settingsViewModel.selectedAIProvider
+    }
+
+    // MARK: - Configuration
+
+    @MainActor
+    func refreshConfiguration() {
+        do {
+            let apiKey = try KeychainService.shared.getAPIKey(for: settingsViewModel.selectedAIProvider)
+            isConfigured = !apiKey.isEmpty
+        } catch {
+            isConfigured = false
+        }
     }
 
     // MARK: - Parsed Data
@@ -52,6 +69,8 @@ final class AIParsingViewModel {
 
     @MainActor
     func parseJobURL() async {
+        refreshConfiguration()
+
         guard !jobURL.isEmpty else {
             error = "Please enter a job URL"
             return

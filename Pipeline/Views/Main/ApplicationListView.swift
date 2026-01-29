@@ -3,32 +3,39 @@ import SwiftData
 
 struct ApplicationListView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \JobApplication.updatedAt, order: .reverse) private var applications: [JobApplication]
+    @Environment(\.colorScheme) private var colorScheme
 
-    @Binding var selectedFilter: SidebarFilter
+    let applications: [JobApplication]
     @Binding var selectedApplication: JobApplication?
     @Binding var searchText: String
 
-    @State private var viewModel = ApplicationListViewModel()
-
-    private var filteredApplications: [JobApplication] {
-        viewModel.searchText = searchText
-        viewModel.selectedFilter = selectedFilter
-        return viewModel.filterApplications(applications)
-    }
-
     private let columns = [
-        GridItem(.adaptive(minimum: 280, maximum: 350), spacing: 16)
+        GridItem(.adaptive(minimum: 260, maximum: 340), spacing: 16)
     ]
+
+    private var statusMenuOptions: [ApplicationStatus] {
+        let defaults = ApplicationStatus.allCases.sorted { $0.sortOrder < $1.sortOrder }
+        let customs = CustomValuesStore.customStatuses()
+            .map { ApplicationStatus(rawValue: $0) }
+            .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+
+        var seen = Set<String>()
+        return (defaults + customs).filter { status in
+            let key = status.rawValue.lowercased()
+            guard !seen.contains(key) else { return false }
+            seen.insert(key)
+            return true
+        }
+    }
 
     var body: some View {
         Group {
-            if filteredApplications.isEmpty {
+            if applications.isEmpty {
                 emptyState
             } else {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(filteredApplications) { application in
+                        ForEach(applications) { application in
                             JobCardView(
                                 application: application,
                                 isSelected: selectedApplication?.id == application.id
@@ -41,11 +48,12 @@ struct ApplicationListView: View {
                             }
                         }
                     }
-                    .padding()
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
                 }
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: filteredApplications.count)
+        .animation(.easeInOut(duration: 0.2), value: applications.count)
     }
 
     @ViewBuilder
@@ -72,7 +80,7 @@ struct ApplicationListView: View {
         Divider()
 
         Menu("Change Status") {
-            ForEach(ApplicationStatus.allCases) { status in
+            ForEach(statusMenuOptions) { status in
                 Button {
                     application.status = status
                     application.updateTimestamp()
@@ -121,7 +129,7 @@ struct ApplicationListView: View {
 
 #Preview {
     ApplicationListView(
-        selectedFilter: .constant(.all),
+        applications: [],
         selectedApplication: .constant(nil),
         searchText: .constant("")
     )

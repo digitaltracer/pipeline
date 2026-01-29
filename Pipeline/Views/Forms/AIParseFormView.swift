@@ -4,14 +4,65 @@ struct AIParseFormView: View {
     @Bindable var aiViewModel: AIParsingViewModel
     @Bindable var formViewModel: AddEditApplicationViewModel
     let onApplyParsedData: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(spacing: 20) {
-            // Instructions
+        Group {
+            if !aiViewModel.isConfigured {
+                notConfiguredState
+            } else {
+                configuredState
+            }
+        }
+        .onAppear { aiViewModel.refreshConfiguration() }
+    }
+
+    private var notConfiguredState: some View {
+        VStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.orange.opacity(colorScheme == .dark ? 0.18 : 0.12))
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundColor(.orange)
+            }
+            .frame(width: 54, height: 54)
+
+            Text("AI Not Configured")
+                .font(.headline)
+
+            Text("Add your API key in settings to use AI-powered job parsing.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 360)
+
+            #if os(macOS)
+            SettingsLink {
+                Text("Go to Settings")
+                    .frame(width: 160)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(DesignSystem.Colors.accent)
+            #else
+            Text("Open Settings to add an API key.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            #endif
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(24)
+        .appCard(cornerRadius: 16, elevated: true, shadow: false)
+        .padding(.horizontal, 24)
+        .padding(.top, 24)
+    }
+
+    private var configuredState: some View {
+        VStack(spacing: 16) {
             VStack(spacing: 8) {
                 Image(systemName: "wand.and.stars")
-                    .font(.largeTitle)
-                    .foregroundStyle(.blue.gradient)
+                    .font(.system(size: 34))
+                    .foregroundStyle(DesignSystem.Colors.accent.gradient)
 
                 Text("AI-Powered Job Parsing")
                     .font(.headline)
@@ -21,58 +72,53 @@ struct AIParseFormView: View {
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
             }
-            .padding(.top)
+            .padding(.top, 8)
 
-            // URL Input
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text("Job URL")
-                    .font(.headline)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
 
-                HStack {
-                    TextField("https://example.com/job/12345", text: $aiViewModel.jobURL)
-                        .textFieldStyle(.roundedBorder)
+                HStack(spacing: 10) {
+                    TextField("https://linkedin.com/jobs/...", text: $aiViewModel.jobURL)
+                        .textFieldStyle(.plain)
+                        .appInput()
 
                     Button {
-                        Task {
-                            await aiViewModel.parseJobURL()
-                        }
+                        Task { await aiViewModel.parseJobURL() }
                     } label: {
                         if aiViewModel.isLoading {
-                            ProgressView()
-                                .controlSize(.small)
+                            ProgressView().controlSize(.small)
                         } else {
                             Text("Parse")
                         }
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(DesignSystem.Colors.accent)
                     .disabled(aiViewModel.jobURL.isEmpty || aiViewModel.isLoading)
                 }
             }
-            .padding(.horizontal)
 
-            // Error Display
             if let error = aiViewModel.error {
-                HStack {
+                HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundColor(.red)
                     Text(error)
                         .font(.caption)
                         .foregroundColor(.red)
+                    Spacer()
                 }
-                .padding()
-                .background(Color.red.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .padding(.horizontal)
+                .padding(12)
+                .background(Color.red.opacity(colorScheme == .dark ? 0.14 : 0.10))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
 
-            // Parsed Data Preview
             if let data = aiViewModel.parsedData {
                 parsedDataPreview(data)
             }
 
             Spacer()
 
-            // Apply Button
             if aiViewModel.parsedData != nil {
                 Button {
                     aiViewModel.applyToViewModel(formViewModel)
@@ -82,10 +128,11 @@ struct AIParseFormView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(DesignSystem.Colors.accent)
                 .controlSize(.large)
-                .padding()
             }
         }
+        .padding(24)
     }
 
     @ViewBuilder
@@ -119,11 +166,11 @@ struct AIParseFormView: View {
                     }
                 }
             }
-            .padding()
-            .background(Color(.textBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .padding(14)
+            .appCard(cornerRadius: 14, elevated: true, shadow: false)
         }
-        .padding(.horizontal)
+        .padding(16)
+        .appCard(cornerRadius: 16, elevated: true, shadow: false)
     }
 }
 

@@ -4,6 +4,21 @@ struct InterviewStageIndicator: View {
     let currentStage: InterviewStage?
     let onStageChange: (InterviewStage?) -> Void
 
+    private var stageMenuOptions: [InterviewStage] {
+        let defaults = InterviewStage.orderedCases
+        let customs = CustomValuesStore.customInterviewStages()
+            .map { InterviewStage(rawValue: $0) }
+            .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+
+        var seen = Set<String>()
+        return (defaults + customs).filter { stage in
+            let key = stage.rawValue.lowercased()
+            guard !seen.contains(key) else { return false }
+            seen.insert(key)
+            return true
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -19,7 +34,7 @@ struct InterviewStageIndicator: View {
 
                     Divider()
 
-                    ForEach(InterviewStage.orderedCases) { stage in
+                    ForEach(stageMenuOptions) { stage in
                         Button {
                             onStageChange(stage)
                         } label: {
@@ -64,6 +79,7 @@ struct StageItem: View {
     let stage: InterviewStage
     let isCompleted: Bool
     let isCurrent: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     private var backgroundColor: Color {
         if isCurrent {
@@ -71,7 +87,7 @@ struct StageItem: View {
         } else if isCompleted {
             return .green
         } else {
-            return Color(.textBackgroundColor)
+            return DesignSystem.Colors.surfaceElevated(colorScheme)
         }
     }
 
@@ -120,6 +136,66 @@ struct StageConnector: View {
     }
 }
 
+struct InterviewStageBannerView: View {
+    let stage: InterviewStage
+    let onStageChange: (InterviewStage?) -> Void
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var stageMenuOptions: [InterviewStage] {
+        let defaults = InterviewStage.orderedCases
+        let customs = CustomValuesStore.customInterviewStages()
+            .map { InterviewStage(rawValue: $0) }
+            .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+
+        var seen = Set<String>()
+        return (defaults + customs).filter { stage in
+            let key = stage.rawValue.lowercased()
+            guard !seen.contains(key) else { return false }
+            seen.insert(key)
+            return true
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            TagBadge(text: stage.displayName, color: stage.color, icon: stage.icon, size: .regular)
+
+            Spacer()
+
+            Menu {
+                Button("Clear Stage") { onStageChange(nil) }
+                Divider()
+                ForEach(stageMenuOptions) { stage in
+                    Button {
+                        onStageChange(stage)
+                    } label: {
+                        Label(stage.displayName, systemImage: stage.icon)
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 28, height: 28)
+                    .background(DesignSystem.Colors.surfaceElevated(colorScheme))
+                    .clipShape(Circle())
+            }
+            #if os(macOS)
+            .menuStyle(.borderlessButton)
+            #endif
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(stage.color.opacity(colorScheme == .dark ? 0.18 : 0.12))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+        )
+    }
+}
+
 #Preview {
     VStack(spacing: 40) {
         InterviewStageIndicator(
@@ -136,6 +212,8 @@ struct StageConnector: View {
             currentStage: nil,
             onStageChange: { _ in }
         )
+
+        InterviewStageBannerView(stage: .technicalRound2, onStageChange: { _ in })
     }
     .padding()
 }

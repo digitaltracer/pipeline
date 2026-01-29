@@ -3,13 +3,18 @@ import SwiftUI
 struct SearchBar: View {
     @Binding var text: String
     var placeholder: String = "Search..."
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(.secondary)
 
-            TextField(placeholder, text: $text)
+            TextField(
+                "",
+                text: $text,
+                prompt: Text(placeholder).foregroundColor(DesignSystem.Colors.placeholder(colorScheme))
+            )
                 .textFieldStyle(.plain)
 
             if !text.isEmpty {
@@ -22,13 +27,7 @@ struct SearchBar: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(8)
-        #if os(macOS)
-        .background(Color(.textBackgroundColor).opacity(0.5))
-        #else
-        .background(Color(.systemGray6))
-        #endif
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .appInput()
     }
 }
 

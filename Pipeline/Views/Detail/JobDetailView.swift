@@ -4,85 +4,77 @@ import SwiftData
 struct JobDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Bindable var application: JobApplication
+    var onClose: (() -> Void)? = nil
 
     @State private var viewModel = ApplicationDetailViewModel()
     @State private var showingEditSheet = false
     @State private var showingAddInterviewLog = false
     @State private var showingDeleteAlert = false
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                // Header
-                JobDetailHeaderView(
-                    application: application,
-                    onStatusChange: { status in
-                        viewModel.application = application
-                        viewModel.updateStatus(status, context: modelContext)
-                    },
-                    onPriorityChange: { priority in
-                        viewModel.application = application
-                        viewModel.updatePriority(priority, context: modelContext)
-                    }
-                )
-
-                Divider()
-
-                // Fields Grid
-                JobDetailFieldsView(application: application)
-
-                // Job URL
-                if let urlString = application.jobURL, !urlString.isEmpty {
-                    Divider()
-                    JobURLSection(urlString: urlString)
-                }
-
-                // Interview Stage Indicator
-                if application.status == .interviewing {
-                    Divider()
-                    InterviewStageIndicator(
-                        currentStage: application.interviewStage,
-                        onStageChange: { stage in
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    // Header
+                    JobDetailHeaderView(
+                        application: application,
+                        onClose: onClose,
+                        onDelete: { showingDeleteAlert = true },
+                        onStatusChange: { status in
                             viewModel.application = application
-                            viewModel.updateInterviewStage(stage, context: modelContext)
+                            viewModel.updateStatus(status, context: modelContext)
+                        },
+                        onPriorityChange: { priority in
+                            viewModel.application = application
+                            viewModel.updatePriority(priority, context: modelContext)
+                        }
+                    )
+
+                    // Fields Grid
+                    JobDetailFieldsView(application: application)
+
+                    // Job Posting Section
+                    if let urlString = application.jobURL, !urlString.isEmpty {
+                        JobPostingSection(urlString: urlString)
+                    }
+
+                    if application.status == .interviewing {
+                        InterviewStageIndicator(
+                            currentStage: application.interviewStage,
+                            onStageChange: { newStage in
+                                viewModel.application = application
+                                viewModel.updateInterviewStage(newStage, context: modelContext)
+                            }
+                        )
+                        .padding(.horizontal, 6)
+                    }
+
+                    // Job Description
+                    if let description = application.jobDescription, !description.isEmpty {
+                        JobDescriptionView(description: description)
+                    }
+
+                    // Interview History
+                    InterviewHistoryView(
+                        logs: application.sortedInterviewLogs,
+                        onAddLog: {
+                            showingAddInterviewLog = true
+                        },
+                        onDeleteLog: { log in
+                            viewModel.application = application
+                            viewModel.deleteInterviewLog(log, context: modelContext)
                         }
                     )
                 }
-
-                // Job Description
-                if let description = application.jobDescription, !description.isEmpty {
-                    Divider()
-                    JobDescriptionView(description: description)
-                }
-
-                // Interview History
-                Divider()
-                InterviewHistoryView(
-                    logs: application.sortedInterviewLogs,
-                    onAddLog: {
-                        showingAddInterviewLog = true
-                    },
-                    onDeleteLog: { log in
-                        viewModel.application = application
-                        viewModel.deleteInterviewLog(log, context: modelContext)
-                    }
-                )
-
-                Divider()
-
-                // Action Buttons
-                actionButtons
+                .padding(16)
             }
-            .padding()
+
+            // Bottom Action Bar
+            Divider().overlay(DesignSystem.Colors.divider(colorScheme))
+            bottomActionBar
         }
         .navigationTitle("")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Edit") {
-                    showingEditSheet = true
-                }
-            }
-        }
         .sheet(isPresented: $showingEditSheet) {
             EditApplicationView(application: application)
         }
@@ -100,12 +92,22 @@ struct JobDetailView: View {
         }
     }
 
-    private var actionButtons: some View {
+    private var bottomActionBar: some View {
         HStack(spacing: 12) {
+            Button {
+                showingEditSheet = true
+            } label: {
+                Label("Edit", systemImage: "pencil")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(DesignSystem.Colors.accent)
+
             Button {
                 showingAddInterviewLog = true
             } label: {
-                Label("Add Log", systemImage: "plus.bubble")
+                Label("Log", systemImage: "plus")
+                    .frame(width: 110)
             }
             .buttonStyle(.bordered)
 
@@ -115,49 +117,49 @@ struct JobDetailView: View {
                     viewModel.archive(context: modelContext)
                 } label: {
                     Label("Archive", systemImage: "archivebox")
+                        .frame(width: 120)
                 }
                 .buttonStyle(.bordered)
             }
-
-            Spacer()
-
-            Button(role: .destructive) {
-                showingDeleteAlert = true
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
-            .buttonStyle(.bordered)
-            .tint(.red)
         }
+        .padding(16)
+        .background(DesignSystem.Colors.surfaceElevated(colorScheme))
     }
 }
 
-struct JobURLSection: View {
+struct JobPostingSection: View {
     let urlString: String
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Job Posting")
-                .font(.headline)
-
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(urlString)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                Label("Job Posting", systemImage: "link")
+                    .font(.headline)
 
                 Spacer()
 
                 if let url = URL(string: urlString) {
                     Link(destination: url) {
-                        Label("Open", systemImage: "arrow.up.forward.square")
-                            .font(.caption)
+                        HStack(spacing: 6) {
+                            Text("Open Link")
+                            Image(systemName: "arrow.up.right.square")
+                                .font(.system(size: 12))
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(DesignSystem.Colors.accent)
                     }
-                    .buttonStyle(.bordered)
                 }
             }
+
+            Text(urlString)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .lineLimit(2)
+                .truncationMode(.middle)
         }
+        .padding(16)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
     }
 }
 

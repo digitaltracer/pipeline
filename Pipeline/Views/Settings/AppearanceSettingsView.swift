@@ -6,31 +6,7 @@ struct AppearanceSettingsView: View {
     var body: some View {
         Form {
             Section("Theme") {
-                Picker("Appearance", selection: $viewModel.appearanceMode) {
-                    ForEach(AppearanceMode.allCases) { mode in
-                        Label(mode.rawValue, systemImage: mode.icon)
-                            .tag(mode)
-                    }
-                }
-                .pickerStyle(.inline)
-            }
-
-            Section {
-                HStack {
-                    ForEach(AppearanceMode.allCases) { mode in
-                        ThemePreviewCard(
-                            mode: mode,
-                            isSelected: viewModel.appearanceMode == mode
-                        )
-                        .onTapGesture {
-                            withAnimation {
-                                viewModel.appearanceMode = mode
-                            }
-                        }
-                    }
-                }
-            } header: {
-                Text("Preview")
+                AppearanceSettingsContent(viewModel: viewModel)
             }
         }
         .formStyle(.grouped)
@@ -38,6 +14,92 @@ struct AppearanceSettingsView: View {
     }
 }
 
+struct AppearanceSettingsContent: View {
+    @Bindable var viewModel: SettingsViewModel
+
+    var body: some View {
+        HStack(spacing: 16) {
+            ForEach(AppearanceMode.allCases) { mode in
+                ThemeCard(
+                    mode: mode,
+                    isSelected: viewModel.appearanceMode == mode
+                )
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        viewModel.appearanceMode = mode
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct ThemeCard: View {
+    let mode: AppearanceMode
+    let isSelected: Bool
+
+    private var backgroundColor: Color {
+        switch mode {
+        case .light: return .white
+        case .dark: return Color(white: 0.15)
+        case .system:
+            #if os(macOS)
+            return Color(.textBackgroundColor)
+            #else
+            return Color(.systemBackground)
+            #endif
+        }
+    }
+
+    private var foregroundColor: Color {
+        switch mode {
+        case .light: return .black
+        case .dark: return .white
+        case .system: return .primary
+        }
+    }
+
+    private var iconName: String {
+        switch mode {
+        case .light: return "sun.max.fill"
+        case .dark: return "moon.fill"
+        case .system: return "desktopcomputer"
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            // Preview area
+            RoundedRectangle(cornerRadius: 8)
+                .fill(backgroundColor)
+                .frame(height: 70)
+                .overlay {
+                    Image(systemName: iconName)
+                        .font(.system(size: 28))
+                        .foregroundColor(mode == .light ? .orange : (mode == .dark ? .yellow : DesignSystem.Colors.accent))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                }
+
+            // Label
+            Text(mode.rawValue)
+                .font(.subheadline)
+                .fontWeight(isSelected ? .semibold : .regular)
+                .foregroundColor(isSelected ? .blue : .primary)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(isSelected ? DesignSystem.Colors.accent : Color.clear, lineWidth: 2)
+        }
+    }
+}
+
+// Legacy preview card for iOS (if needed)
 struct ThemePreviewCard: View {
     let mode: AppearanceMode
     let isSelected: Bool
@@ -46,7 +108,12 @@ struct ThemePreviewCard: View {
         switch mode {
         case .light: return .white
         case .dark: return Color(white: 0.15)
-        case .system: return Color(.textBackgroundColor)
+        case .system:
+            #if os(macOS)
+            return Color(.textBackgroundColor)
+            #else
+            return Color(.systemBackground)
+            #endif
         }
     }
 
@@ -87,5 +154,12 @@ struct ThemePreviewCard: View {
 }
 
 #Preview {
-    AppearanceSettingsView(viewModel: SettingsViewModel())
+    VStack {
+        AppearanceSettingsContent(viewModel: SettingsViewModel())
+            .padding()
+
+        Divider()
+
+        AppearanceSettingsView(viewModel: SettingsViewModel())
+    }
 }

@@ -38,6 +38,22 @@ struct PlatformBadge: View {
     }
 }
 
+struct PlatformDotLabel: View {
+    let platform: Platform
+    var fontSize: CGFloat = 12
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(platform.color)
+                .frame(width: 8, height: 8)
+            Text(platform.displayName)
+                .font(.system(size: fontSize))
+                .foregroundColor(.secondary)
+        }
+    }
+}
+
 #Preview {
     VStack(spacing: 16) {
         ForEach(Platform.allCases) { platform in

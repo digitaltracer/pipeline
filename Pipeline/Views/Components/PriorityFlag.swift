@@ -37,6 +37,26 @@ struct PriorityPicker: View {
     }
 }
 
+struct PriorityBadge: View {
+    let priority: Priority
+
+    var body: some View {
+        if priority == .high {
+            HStack(spacing: 4) {
+                Image(systemName: "star.fill")
+                    .font(.system(size: 12))
+                Text("High Priority")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .foregroundColor(.yellow)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.yellow.opacity(0.15))
+            .clipShape(Capsule())
+        }
+    }
+}
+
 #Preview {
     VStack(spacing: 16) {
         ForEach(Priority.allCases) { priority in

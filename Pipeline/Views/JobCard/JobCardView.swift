@@ -4,98 +4,100 @@ struct JobCardView: View {
     let application: JobApplication
     var isSelected: Bool = false
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Header: Avatar + Priority
-            HStack(alignment: .top) {
+            // Header: Avatar + Role/Company + Priority Flag
+            HStack(alignment: .top, spacing: 12) {
                 CompanyAvatar(
                     companyName: application.companyName,
                     logoURL: application.companyLogoURL ?? logoURL,
-                    size: 44
+                    size: 44,
+                    cornerRadius: 14
                 )
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(application.role)
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+
+                    Text(application.companyName)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
 
                 Spacer()
 
-                PriorityFlag(priority: application.priority, size: 16)
-            }
-
-            // Role & Company
-            VStack(alignment: .leading, spacing: 4) {
-                Text(application.role)
-                    .font(.headline)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-
-                Text(application.companyName)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                PriorityFlag(priority: application.priority, showLabel: false, size: 14)
             }
 
             // Location & Platform
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 HStack(spacing: 4) {
-                    Image(systemName: "mappin")
-                        .font(.caption)
+                    Image(systemName: "mappin.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
                     Text(application.location)
                         .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-                .foregroundColor(.secondary)
                 .lineLimit(1)
 
                 Spacer()
 
-                PlatformIcon(platform: application.platform, size: 14)
+                PlatformDotLabel(platform: application.platform, fontSize: 12)
             }
 
-            Divider()
-
             // Status & Salary
-            HStack {
+            HStack(spacing: 10) {
                 StatusBadge(status: application.status, size: .small)
 
                 Spacer()
 
                 if let salaryRange = application.salaryRange {
-                    Text(salaryRange)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 4) {
+                        Image(systemName: "dollarsign.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                        Text(salaryRange)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
 
-            // Interview Stage (if interviewing)
-            if application.status == .interviewing, let stage = application.interviewStage {
-                HStack(spacing: 4) {
-                    Image(systemName: stage.icon)
-                        .font(.caption)
-                        .foregroundColor(stage.color)
+            // Stage/Offer Tag & Follow-up Date
+            if application.interviewStage != nil || application.status == .offered || application.nextFollowUpDate != nil {
+                HStack {
+                    if application.status == .interviewing, let stage = application.interviewStage {
+                        TagBadge(text: stage.displayName, color: stage.color, size: .small)
+                    } else if application.status == .offered {
+                        TagBadge(text: "Offer Extended", color: .orange, icon: "gift.fill", size: .small)
+                    }
 
-                    Text(stage.displayName)
-                        .font(.caption)
-                        .foregroundColor(stage.color)
+                    Spacer()
+
+                    if let followUpDate = application.nextFollowUpDate {
+                        HStack(spacing: 4) {
+                            Image(systemName: "calendar")
+                                .font(.system(size: 11))
+                            Text(followUpDate.formatted(date: .abbreviated, time: .omitted))
+                                .font(.caption)
+                        }
+                        .foregroundColor(followUpDate < Date() ? .red : .secondary)
+                    }
                 }
-            }
-
-            // Follow-up Date
-            if let followUpDate = application.nextFollowUpDate {
-                HStack(spacing: 4) {
-                    Image(systemName: "calendar.badge.clock")
-                        .font(.caption)
-
-                    Text("Follow-up: \(followUpDate.formatted(date: .abbreviated, time: .omitted))")
-                        .font(.caption)
-                }
-                .foregroundColor(followUpDate < Date() ? .red : .orange)
             }
         }
         .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.textBackgroundColor))
-                .shadow(color: isSelected ? .blue.opacity(0.3) : .black.opacity(0.1), radius: isSelected ? 8 : 4)
-        )
+        .appCard(cornerRadius: 14, elevated: true, shadow: true)
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(isSelected ? DesignSystem.Colors.accent : DesignSystem.Colors.stroke(colorScheme), lineWidth: isSelected ? 2 : 1)
+                .opacity(isSelected ? 1 : 0.6)
         )
     }
 
@@ -115,7 +117,7 @@ struct JobCardView: View {
                 status: .interviewing,
                 priority: .high,
                 platform: .linkedin,
-                interviewStage: .technicalRound1,
+                interviewStage: .technicalRound2,
                 currency: .usd,
                 salaryMin: 180000,
                 salaryMax: 250000,
@@ -131,7 +133,7 @@ struct JobCardView: View {
                 location: "Mountain View, CA",
                 status: .applied,
                 priority: .medium,
-                platform: .linkedin,
+                platform: .indeed,
                 currency: .usd,
                 salaryMin: 200000,
                 salaryMax: 300000

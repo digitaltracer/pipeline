@@ -16,12 +16,33 @@ final class SettingsViewModel {
     var selectedAIProvider: AIProvider {
         didSet {
             UserDefaults.standard.set(selectedAIProvider.rawValue, forKey: "selectedAIProvider")
+            ensureSelectedAIModelIsValid()
         }
     }
 
     var selectedAIModel: String {
         didSet {
             UserDefaults.standard.set(selectedAIModel, forKey: "selectedAIModel")
+        }
+    }
+
+    // MARK: - Custom Models
+
+    var customOpenAIModels: [String] {
+        didSet {
+            UserDefaults.standard.set(customOpenAIModels, forKey: "customOpenAIModels")
+        }
+    }
+
+    var customAnthropicModels: [String] {
+        didSet {
+            UserDefaults.standard.set(customAnthropicModels, forKey: "customAnthropicModels")
+        }
+    }
+
+    var customGeminiModels: [String] {
+        didSet {
+            UserDefaults.standard.set(customGeminiModels, forKey: "customGeminiModels")
         }
     }
 
@@ -58,7 +79,11 @@ final class SettingsViewModel {
             self.selectedAIProvider = .openAI
         }
 
-        self.selectedAIModel = UserDefaults.standard.string(forKey: "selectedAIModel") ?? AIProvider.openAI.models.first ?? ""
+        self.selectedAIModel = UserDefaults.standard.string(forKey: "selectedAIModel") ?? ""
+
+        self.customOpenAIModels = UserDefaults.standard.stringArray(forKey: "customOpenAIModels") ?? []
+        self.customAnthropicModels = UserDefaults.standard.stringArray(forKey: "customAnthropicModels") ?? []
+        self.customGeminiModels = UserDefaults.standard.stringArray(forKey: "customGeminiModels") ?? []
 
         // Load notifications
         self.notificationsEnabled = UserDefaults.standard.bool(forKey: "notificationsEnabled")
@@ -69,6 +94,9 @@ final class SettingsViewModel {
         } else {
             self.reminderTiming = .dayBefore
         }
+
+        migrateSelectedAIModelIfNeeded()
+        ensureSelectedAIModelIsValid()
     }
 
     // MARK: - Methods
@@ -78,6 +106,68 @@ final class SettingsViewModel {
         case .light: return .light
         case .dark: return .dark
         case .system: return nil
+        }
+    }
+
+    func availableModels(for provider: AIProvider) -> [String] {
+        let customModels: [String]
+        switch provider {
+        case .openAI:
+            customModels = customOpenAIModels
+        case .anthropic:
+            customModels = customAnthropicModels
+        case .gemini:
+            customModels = customGeminiModels
+        }
+
+        let base = provider.models
+        return (base + customModels).uniquedPreservingOrder()
+    }
+
+    func addCustomModel(_ model: String, for provider: AIProvider) {
+        let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        func add(to array: inout [String]) {
+            let existing = Set(array.map { $0.lowercased() })
+            guard !existing.contains(trimmed.lowercased()) else { return }
+            array.insert(trimmed, at: 0)
+        }
+
+        switch provider {
+        case .openAI:
+            add(to: &customOpenAIModels)
+        case .anthropic:
+            add(to: &customAnthropicModels)
+        case .gemini:
+            add(to: &customGeminiModels)
+        }
+    }
+
+    private func migrateSelectedAIModelIfNeeded() {
+        let trimmed = selectedAIModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        if AIProvider.openAI.models.contains(trimmed) ||
+            AIProvider.anthropic.models.contains(trimmed) ||
+            AIProvider.gemini.models.contains(trimmed) {
+            return
+        }
+
+        addCustomModel(trimmed, for: selectedAIProvider)
+    }
+
+    private func ensureSelectedAIModelIsValid() {
+        let models = availableModels(for: selectedAIProvider)
+        let trimmed = selectedAIModel.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if trimmed.isEmpty {
+            selectedAIModel = models.first ?? ""
+            return
+        }
+
+        if !models.contains(trimmed) {
+            selectedAIModel = models.first ?? ""
         }
     }
 }
@@ -95,7 +185,7 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
         switch self {
         case .light: return "sun.max.fill"
         case .dark: return "moon.fill"
-        case .system: return "circle.lefthalf.filled"
+        case .system: return "desktopcomputer"
         }
     }
 }
@@ -118,11 +208,37 @@ enum AIProvider: String, CaseIterable, Identifiable {
     var models: [String] {
         switch self {
         case .openAI:
-            return ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"]
+            return [
+                "gpt-5.1",
+                "gpt-5-mini",
+                "gpt-5-nano",
+                "gpt-4.1",
+                "gpt-4.1-mini",
+                "gpt-4.1-nano",
+                "gpt-4o",
+                "gpt-4o-mini",
+                "o4-mini",
+                "o3-mini"
+            ]
         case .anthropic:
-            return ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"]
+            return [
+                "claude-sonnet-4-20250514",
+                "claude-opus-4-1-20250805",
+                "claude-opus-4-20250514",
+                "claude-3-7-sonnet-latest",
+                "claude-3-5-sonnet-latest",
+                "claude-3-5-haiku-latest"
+            ]
         case .gemini:
-            return ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-pro"]
+            return [
+                "gemini-3-pro-preview",
+                "gemini-3-pro",
+                "gemini-2.5-pro",
+                "gemini-2.5-flash",
+                "gemini-2.5-flash-lite",
+                "gemini-2.0-flash",
+                "gemini-2.0-flash-lite"
+            ]
         }
     }
 
@@ -141,4 +257,17 @@ enum ReminderTiming: String, CaseIterable, Identifiable {
     case both = "Both"
 
     var id: String { rawValue }
+}
+
+private extension Array where Element: Hashable {
+    func uniquedPreservingOrder() -> [Element] {
+        var seen = Set<Element>()
+        var result: [Element] = []
+        result.reserveCapacity(count)
+        for value in self where !seen.contains(value) {
+            seen.insert(value)
+            result.append(value)
+        }
+        return result
+    }
 }

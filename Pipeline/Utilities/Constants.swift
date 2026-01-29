@@ -118,3 +118,220 @@ extension Color {
     static let pipelineOrange = Color(red: 1.0, green: 0.6, blue: 0.2)
     static let pipelineRed = Color(red: 0.9, green: 0.3, blue: 0.3)
 }
+
+// MARK: - Design System
+
+enum DesignSystem {
+    enum Radius {
+        static let card: CGFloat = 16
+        static let cardSmall: CGFloat = 12
+        static let input: CGFloat = 12
+        static let pill: CGFloat = 999
+    }
+
+    enum Spacing {
+        static let xs: CGFloat = 6
+        static let sm: CGFloat = 10
+        static let md: CGFloat = 16
+        static let lg: CGFloat = 24
+    }
+
+    enum Colors {
+        static let accent = Color.pipelineBlue
+
+        static func windowGradient(_ scheme: ColorScheme) -> LinearGradient {
+            if scheme == .dark {
+                return LinearGradient(
+                    colors: [
+                        Color(red: 0.06, green: 0.07, blue: 0.09),
+                        Color(red: 0.05, green: 0.06, blue: 0.07)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+
+            return LinearGradient(
+                colors: [
+                    Color(red: 0.96, green: 0.97, blue: 0.99),
+                    Color(red: 0.94, green: 0.95, blue: 0.97)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+
+        static func sidebarBackground(_ scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color(red: 0.06, green: 0.07, blue: 0.09)
+                : Color(red: 0.98, green: 0.98, blue: 0.99)
+        }
+
+        static func contentBackground(_ scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color(red: 0.05, green: 0.06, blue: 0.07)
+                : Color(red: 0.95, green: 0.96, blue: 0.98)
+        }
+
+        static func surface(_ scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color(red: 0.10, green: 0.12, blue: 0.15)
+                : .white
+        }
+
+        static func surfaceElevated(_ scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color(red: 0.12, green: 0.14, blue: 0.18)
+                : Color(red: 0.99, green: 0.99, blue: 1.0)
+        }
+
+        static func inputBackground(_ scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color(red: 0.10, green: 0.12, blue: 0.15).opacity(0.8)
+                : Color(red: 0.95, green: 0.96, blue: 0.98)
+        }
+
+        static func stroke(_ scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color.white.opacity(0.06)
+                : Color.black.opacity(0.08)
+        }
+
+        static func divider(_ scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color.white.opacity(0.08)
+                : Color.black.opacity(0.08)
+        }
+
+        static func shadow(_ scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color.black.opacity(0.45)
+                : Color.black.opacity(0.12)
+        }
+
+        static func placeholder(_ scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color.white.opacity(0.35)
+                : Color.black.opacity(0.35)
+        }
+    }
+}
+
+// MARK: - View Styles
+
+private struct WindowBackgroundModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .background(DesignSystem.Colors.windowGradient(colorScheme).ignoresSafeArea())
+    }
+}
+
+private struct AppCardModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    let cornerRadius: CGFloat
+    let elevated: Bool
+    let showShadow: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(elevated ? DesignSystem.Colors.surfaceElevated(colorScheme) : DesignSystem.Colors.surface(colorScheme))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+            )
+            .shadow(
+                color: showShadow ? DesignSystem.Colors.shadow(colorScheme) : .clear,
+                radius: showShadow ? 16 : 0,
+                y: showShadow ? 8 : 0
+            )
+    }
+}
+
+private struct AppInputModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: DesignSystem.Radius.input, style: .continuous)
+                    .fill(DesignSystem.Colors.inputBackground(colorScheme))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: DesignSystem.Radius.input, style: .continuous)
+                    .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+            )
+    }
+}
+
+extension View {
+    func appWindowBackground() -> some View {
+        modifier(WindowBackgroundModifier())
+    }
+
+    func appCard(cornerRadius: CGFloat = DesignSystem.Radius.cardSmall, elevated: Bool = false, shadow: Bool = false) -> some View {
+        modifier(AppCardModifier(cornerRadius: cornerRadius, elevated: elevated, showShadow: shadow))
+    }
+
+    func appInput() -> some View {
+        modifier(AppInputModifier())
+    }
+}
+
+// MARK: - Custom Values
+
+enum CustomValuesStore {
+    private static let customStatusKey = "customApplicationStatuses"
+    private static let customSourceKey = "customSources"
+    private static let customInterviewStageKey = "customInterviewStages"
+
+    static func customStatuses() -> [String] {
+        UserDefaults.standard.stringArray(forKey: customStatusKey) ?? []
+    }
+
+    static func addCustomStatus(_ value: String) {
+        add(value, to: customStatusKey, disallowing: ApplicationStatus.allCases.map(\.rawValue))
+    }
+
+    static func customSources() -> [String] {
+        UserDefaults.standard.stringArray(forKey: customSourceKey) ?? []
+    }
+
+    static func addCustomSource(_ value: String) {
+        add(value, to: customSourceKey, disallowing: Source.allCases.map(\.rawValue))
+    }
+
+    static func customInterviewStages() -> [String] {
+        UserDefaults.standard.stringArray(forKey: customInterviewStageKey) ?? []
+    }
+
+    static func addCustomInterviewStage(_ value: String) {
+        add(value, to: customInterviewStageKey, disallowing: InterviewStage.allCases.map(\.rawValue))
+    }
+
+    private static func add(_ value: String, to key: String, disallowing reserved: [String]) {
+        let normalized = normalize(value)
+        guard !normalized.isEmpty else { return }
+
+        let reservedSet = Set(reserved.map { normalize($0).lowercased() })
+        guard !reservedSet.contains(normalized.lowercased()) else { return }
+
+        var existing = UserDefaults.standard.stringArray(forKey: key) ?? []
+        let existingSet = Set(existing.map { normalize($0).lowercased() })
+        guard !existingSet.contains(normalized.lowercased()) else { return }
+
+        existing.insert(normalized, at: 0)
+        UserDefaults.standard.set(existing, forKey: key)
+    }
+
+    private static func normalize(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+    }
+}

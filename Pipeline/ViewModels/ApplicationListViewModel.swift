@@ -14,16 +14,6 @@ final class ApplicationListViewModel {
         case companyName = "Company Name"
         case appliedDate = "Applied Date"
         case priority = "Priority"
-
-        var keyPath: PartialKeyPath<JobApplication> {
-            switch self {
-            case .updatedAt: return \.updatedAt
-            case .createdAt: return \.createdAt
-            case .companyName: return \.companyName
-            case .appliedDate: return \.appliedDate
-            case .priority: return \.priorityRawValue
-            }
-        }
     }
 
     // MARK: - Statistics
