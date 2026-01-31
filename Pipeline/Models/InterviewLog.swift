@@ -3,11 +3,11 @@ import SwiftData
 
 @Model
 final class InterviewLog {
-    var id: UUID
-    private var interviewTypeRawValue: String
-    var date: Date
+    var id: UUID = UUID()
+    private var interviewTypeRawValue: String = InterviewStage.phoneScreen.rawValue
+    var date: Date = Date()
     var interviewerName: String?
-    var rating: Int
+    var rating: Int = 3
     var notes: String?
 
     var application: JobApplication?

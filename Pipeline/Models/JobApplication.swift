@@ -3,20 +3,20 @@ import SwiftData
 
 @Model
 final class JobApplication {
-    var id: UUID
-    var companyName: String
+    var id: UUID = UUID()
+    var companyName: String = ""
     var companyLogoURL: String?
-    var role: String
-    var location: String
+    var role: String = ""
+    var location: String = ""
     var jobURL: String?
     var jobDescription: String?
 
-    private(set) var statusRawValue: String
-    private(set) var priorityRawValue: String
-    private var sourceRawValue: String
-    private var platformRawValue: String
+    private(set) var statusRawValue: String = ApplicationStatus.saved.rawValue
+    private(set) var priorityRawValue: String = Priority.medium.rawValue
+    private var sourceRawValue: String = Source.jobPortal.rawValue
+    private var platformRawValue: String = Platform.other.rawValue
     private var interviewStageRawValue: String?
-    private var currencyRawValue: String
+    private var currencyRawValue: String = Currency.usd.rawValue
 
     var salaryMin: Int?
     var salaryMax: Int?
@@ -26,8 +26,8 @@ final class JobApplication {
     @Relationship(deleteRule: .cascade, inverse: \InterviewLog.application)
     var interviewLogs: [InterviewLog]?
 
-    var createdAt: Date
-    var updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 
     // MARK: - Computed Properties for Enums
 

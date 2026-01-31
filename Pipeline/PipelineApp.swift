@@ -6,7 +6,7 @@ import SwiftData
 // To re-enable later:
 // 1) Switch CODE_SIGN_ENTITLEMENTS to `Pipeline.CloudKit.entitlements` in Xcode, and
 // 2) Set this flag to true.
-private let enableCloudKitSync = false
+private let enableCloudKitSync = true
 
 @main
 struct PipelineApp: App {
@@ -20,7 +20,7 @@ struct PipelineApp: App {
             ])
 
             let cloudKitConfig: ModelConfiguration.CloudKitDatabase = enableCloudKitSync
-                ? .private("iCloud.com.pipeline.app")
+                ? .private(Constants.iCloud.containerID)
                 : .none
 
             let modelConfiguration = ModelConfiguration(
