@@ -15,7 +15,7 @@ final class InterviewLog {
     // MARK: - Computed Properties
 
     var interviewType: InterviewStage {
-        get { InterviewStage(rawValue: interviewTypeRawValue) ?? .phoneScreen }
+        get { InterviewStage(rawValue: interviewTypeRawValue) }
         set { interviewTypeRawValue = newValue.rawValue }
     }
 
