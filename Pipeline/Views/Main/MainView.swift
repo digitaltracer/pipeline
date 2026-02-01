@@ -79,7 +79,7 @@ struct MainView: View {
                     .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
                 } detail: {
                     contentColumn
-                        .navigationSplitViewColumnWidth(min: 520, ideal: 720, max: 940)
+                        .navigationSplitViewColumnWidth(min: 520, ideal: 720)
                         .navigationTitle("")
                         .toolbar {
                             ToolbarItem(placement: .automatic) {
@@ -104,7 +104,7 @@ struct MainView: View {
                     .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
                 } content: {
                     contentColumn
-                        .navigationSplitViewColumnWidth(min: 520, ideal: 720, max: 940)
+                        .navigationSplitViewColumnWidth(min: 520, ideal: 720)
                         .navigationTitle("")
                         .toolbar {
                             ToolbarItem(placement: .automatic) {
@@ -121,7 +121,7 @@ struct MainView: View {
                         JobDetailView(application: application, onClose: {
                             selectedApplication = nil
                         })
-                        .navigationSplitViewColumnWidth(min: 360, ideal: 440, max: 560)
+                        .navigationSplitViewColumnWidth(min: 360, ideal: 440)
                         .background(DesignSystem.Colors.contentBackground(colorScheme))
                     }
                 }
