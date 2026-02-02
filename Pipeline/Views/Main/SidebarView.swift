@@ -73,15 +73,19 @@ struct SidebarView: View {
             .padding(.bottom, 16)
 
             // Filter List
-            List(selection: $selectedFilter) {
+            List {
                 Section {
                     ForEach(SidebarFilter.allCases) { filter in
-                        SidebarFilterRow(
-                            filter: filter,
-                            count: statusCounts[filter] ?? 0,
-                            isSelected: selectedFilter == filter
-                        )
-                        .tag(filter)
+                        Button {
+                            selectedFilter = filter
+                        } label: {
+                            SidebarFilterRow(
+                                filter: filter,
+                                count: statusCounts[filter] ?? 0,
+                                isSelected: selectedFilter == filter
+                            )
+                        }
+                        .buttonStyle(.plain)
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                     }
@@ -159,7 +163,7 @@ struct SidebarFilterRow: View {
         .padding(.horizontal, 10)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isSelected ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.25 : 0.12) : Color.clear)
+                .fill(isSelected ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.85 : 1.0) : Color.clear)
         )
         .contentShape(Rectangle())
     }
