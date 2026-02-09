@@ -8,6 +8,7 @@ struct ApplicationListView: View {
     let applications: [JobApplication]
     @Binding var selectedApplication: JobApplication?
     @Binding var searchText: String
+    @State private var actionErrorMessage: String?
 
     private let columns = [
         GridItem(.adaptive(minimum: 260, maximum: 340), spacing: 16)
@@ -54,6 +55,14 @@ struct ApplicationListView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: applications.count)
+        .alert("Action Failed", isPresented: Binding(
+            get: { actionErrorMessage != nil },
+            set: { if !$0 { actionErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(actionErrorMessage ?? "An unknown error occurred.")
+        }
     }
 
     @ViewBuilder
@@ -82,9 +91,7 @@ struct ApplicationListView: View {
         Menu("Change Status") {
             ForEach(statusMenuOptions) { status in
                 Button {
-                    application.status = status
-                    application.updateTimestamp()
-                    try? modelContext.save()
+                    applyStatus(status, to: application)
                 } label: {
                     Label(status.displayName, systemImage: status.icon)
                 }
@@ -94,9 +101,7 @@ struct ApplicationListView: View {
         Menu("Set Priority") {
             ForEach(Priority.allCases) { priority in
                 Button {
-                    application.priority = priority
-                    application.updateTimestamp()
-                    try? modelContext.save()
+                    applyPriority(priority, to: application)
                 } label: {
                     Label(priority.displayName, systemImage: priority.icon)
                 }
@@ -107,22 +112,65 @@ struct ApplicationListView: View {
 
         if application.status != .archived {
             Button {
-                application.status = .archived
-                application.updateTimestamp()
-                try? modelContext.save()
+                applyStatus(.archived, to: application)
             } label: {
                 Label("Archive", systemImage: "archivebox")
             }
         }
 
         Button(role: .destructive) {
-            if selectedApplication?.id == application.id {
-                selectedApplication = nil
-            }
-            modelContext.delete(application)
-            try? modelContext.save()
+            delete(application)
         } label: {
             Label("Delete", systemImage: "trash")
+        }
+    }
+
+    private func applyStatus(_ status: ApplicationStatus, to application: JobApplication) {
+        let previousStatus = application.status
+        let previousAppliedDate = application.appliedDate
+        application.status = status
+        if (status == .applied || status == .interviewing), application.appliedDate == nil {
+            application.appliedDate = Date()
+        }
+        application.updateTimestamp()
+
+        do {
+            try modelContext.save()
+            Task { @MainActor in
+                await NotificationService.shared.syncFollowUpReminder(for: application)
+            }
+        } catch {
+            application.status = previousStatus
+            application.appliedDate = previousAppliedDate
+            actionErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func applyPriority(_ priority: Priority, to application: JobApplication) {
+        let previousPriority = application.priority
+        application.priority = priority
+        application.updateTimestamp()
+
+        do {
+            try modelContext.save()
+        } catch {
+            application.priority = previousPriority
+            actionErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func delete(_ application: JobApplication) {
+        if selectedApplication?.id == application.id {
+            selectedApplication = nil
+        }
+
+        modelContext.delete(application)
+        do {
+            try modelContext.save()
+            Task { await NotificationService.shared.removeNotifications(for: application.id) }
+        } catch {
+            modelContext.rollback()
+            actionErrorMessage = error.localizedDescription
         }
     }
 }
