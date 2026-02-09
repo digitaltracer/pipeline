@@ -5,7 +5,6 @@ import SwiftData
 final class JobApplication {
     var id: UUID = UUID()
     var companyName: String = ""
-    var companyLogoURL: String?
     var role: String = ""
     var location: String = ""
     var jobURL: String?
@@ -77,7 +76,7 @@ final class JobApplication {
     }
 
     var companyDomain: String? {
-        // Try to extract domain from company name for logo fetching
+        // Best-effort domain derived from company name (used for optional features like favicons).
         let cleaned = companyName.lowercased()
             .replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: ",", with: "")
@@ -89,6 +88,13 @@ final class JobApplication {
         return "\(cleaned).com"
     }
 
+    func googleS2FaviconURL(size: Int = 64) -> URL? {
+        let domainFromJobURL = jobURL.flatMap { URLHelpers.extractCompanyDomain(from: $0) }
+        let domain = domainFromJobURL ?? companyDomain
+        guard let domain else { return nil }
+        return URLHelpers.googleFaviconURL(domain: domain, size: size)
+    }
+
     var companyInitial: String {
         String(companyName.prefix(1)).uppercased()
     }
@@ -98,7 +104,6 @@ final class JobApplication {
     init(
         id: UUID = UUID(),
         companyName: String,
-        companyLogoURL: String? = nil,
         role: String,
         location: String,
         jobURL: String? = nil,
@@ -119,7 +124,6 @@ final class JobApplication {
     ) {
         self.id = id
         self.companyName = companyName
-        self.companyLogoURL = companyLogoURL
         self.role = role
         self.location = location
         self.jobURL = jobURL
