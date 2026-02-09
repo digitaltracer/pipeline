@@ -7,7 +7,6 @@ struct AIProviderSettingsView: View {
     @State private var isAPIKeyVisible: Bool = false
     @State private var showingSaveConfirmation: Bool = false
     @State private var saveError: String?
-    @State private var customModelID: String = ""
     @State private var confirmationResetTask: Task<Void, Never>?
 
     var body: some View {
@@ -17,23 +16,26 @@ struct AIProviderSettingsView: View {
             }
 
             Section("Model") {
-                Picker("Model", selection: $viewModel.selectedAIModel) {
-                    ForEach(viewModel.availableModels(for: viewModel.selectedAIProvider), id: \.self) { model in
-                        Text(model).tag(model)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Selected Model")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    HStack(spacing: 8) {
+                        Image(systemName: "cpu")
+                            .foregroundColor(DesignSystem.Colors.accent)
+
+                        Picker("Model", selection: $viewModel.selectedAIModel) {
+                            ForEach(viewModel.availableModels(for: viewModel.selectedAIProvider), id: \.self) { model in
+                                Text(model).tag(model)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-
-                HStack {
-                    TextField("Add custom model ID", text: $customModelID)
-                        .textFieldStyle(.roundedBorder)
-
-                    Button("Add") {
-                        viewModel.addCustomModel(customModelID, for: viewModel.selectedAIProvider)
-                        viewModel.selectedAIModel = customModelID.trimmingCharacters(in: .whitespacesAndNewlines)
-                        customModelID = ""
-                    }
-                    .disabled(customModelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
+                .appInput()
 
                 modelRefreshControls
             }
@@ -99,7 +101,6 @@ struct AIProviderSettingsView: View {
             if let firstModel = viewModel.availableModels(for: newProvider).first {
                 viewModel.selectedAIModel = firstModel
             }
-            customModelID = ""
             Task {
                 await viewModel.refreshModelsIfNeeded(for: newProvider)
             }
@@ -190,7 +191,6 @@ struct AIProviderSettingsContent: View {
     @Bindable var viewModel: SettingsViewModel
 
     @State private var hasAPIKey: Bool = false
-    @State private var customModelID: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -232,26 +232,26 @@ struct AIProviderSettingsContent: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
 
-                Picker("Model", selection: $viewModel.selectedAIModel) {
-                    ForEach(viewModel.availableModels(for: viewModel.selectedAIProvider), id: \.self) { model in
-                        Text(model).tag(model)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Selected Model")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    HStack(spacing: 8) {
+                        Image(systemName: "cpu")
+                            .foregroundColor(DesignSystem.Colors.accent)
+
+                        Picker("Model", selection: $viewModel.selectedAIModel) {
+                            ForEach(viewModel.availableModels(for: viewModel.selectedAIProvider), id: \.self) { model in
+                                Text(model).tag(model)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .labelsHidden()
-
-                HStack(spacing: 10) {
-                    TextField("Custom model ID", text: $customModelID)
-                        .textFieldStyle(.plain)
-                        .appInput()
-
-                    Button("Add") {
-                        viewModel.addCustomModel(customModelID, for: viewModel.selectedAIProvider)
-                        viewModel.selectedAIModel = customModelID.trimmingCharacters(in: .whitespacesAndNewlines)
-                        customModelID = ""
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(customModelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
+                .appInput()
 
                 HStack(spacing: 10) {
                     Button {
@@ -315,7 +315,6 @@ struct AIProviderSettingsContent: View {
             if let firstModel = viewModel.availableModels(for: newProvider).first {
                 viewModel.selectedAIModel = firstModel
             }
-            customModelID = ""
             Task {
                 await viewModel.refreshModelsIfNeeded(for: newProvider)
             }
