@@ -8,6 +8,7 @@ struct AIProviderSettingsView: View {
     @State private var showingSaveConfirmation: Bool = false
     @State private var saveError: String?
     @State private var customModelID: String = ""
+    @State private var confirmationResetTask: Task<Void, Never>?
 
     var body: some View {
         Form {
@@ -33,6 +34,8 @@ struct AIProviderSettingsView: View {
                     }
                     .disabled(customModelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
+
+                modelRefreshControls
             }
 
             Section {
@@ -83,6 +86,13 @@ struct AIProviderSettingsView: View {
         .navigationTitle("AI Provider")
         .onAppear {
             loadAPIKey(for: viewModel.selectedAIProvider)
+            Task {
+                await viewModel.refreshModelsIfNeeded(for: viewModel.selectedAIProvider)
+            }
+        }
+        .onDisappear {
+            confirmationResetTask?.cancel()
+            confirmationResetTask = nil
         }
         .onChange(of: viewModel.selectedAIProvider) { _, newProvider in
             loadAPIKey(for: newProvider)
@@ -90,41 +100,23 @@ struct AIProviderSettingsView: View {
                 viewModel.selectedAIModel = firstModel
             }
             customModelID = ""
+            Task {
+                await viewModel.refreshModelsIfNeeded(for: newProvider)
+            }
         }
     }
 
     @ViewBuilder
     private var providerInfo: some View {
-        switch viewModel.selectedAIProvider {
-        case .openAI:
-            VStack(alignment: .leading, spacing: 8) {
-                Text("OpenAI provides GPT models for job posting parsing.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+        let descriptor = viewModel.selectedAIProvider.descriptor
 
-                Link("Get API Key", destination: URL(string: "https://platform.openai.com/api-keys")!)
-                    .font(.caption)
-            }
+        VStack(alignment: .leading, spacing: 8) {
+            Text(descriptor.aboutText)
+                .font(.caption)
+                .foregroundColor(.secondary)
 
-        case .anthropic:
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Anthropic provides Claude 3 models with excellent reasoning capabilities.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                Link("Get API Key", destination: URL(string: "https://platform.claude.com/")!)
-                    .font(.caption)
-            }
-
-        case .gemini:
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Google Gemini offers powerful multimodal AI capabilities.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                Link("Get API Key", destination: URL(string: "https://ai.google.dev/aistudio")!)
-                    .font(.caption)
-            }
+            Link("Get API Key", destination: URL(string: descriptor.apiKeyURL)!)
+                .font(.caption)
         }
     }
 
@@ -144,12 +136,52 @@ struct AIProviderSettingsView: View {
             showingSaveConfirmation = true
             saveError = nil
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            Task {
+                await viewModel.refreshModels(for: viewModel.selectedAIProvider, force: true)
+            }
+
+            confirmationResetTask?.cancel()
+            confirmationResetTask = Task {
+                try? await Task.sleep(for: .seconds(3))
+                guard !Task.isCancelled else { return }
                 showingSaveConfirmation = false
             }
         } catch {
             saveError = "Failed to save API key: \(error.localizedDescription)"
             showingSaveConfirmation = false
+        }
+    }
+
+    @ViewBuilder
+    private var modelRefreshControls: some View {
+        HStack(spacing: 10) {
+            Button {
+                Task { await viewModel.refreshModels(for: viewModel.selectedAIProvider, force: true) }
+            } label: {
+                if viewModel.isRefreshingModels(for: viewModel.selectedAIProvider) {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Label("Refresh Models", systemImage: "arrow.clockwise")
+                }
+            }
+            .disabled(!viewModel.hasAPIKey(for: viewModel.selectedAIProvider))
+
+            if let refreshedAt = viewModel.lastModelRefreshDate(for: viewModel.selectedAIProvider) {
+                Text("Updated \(refreshedAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                Text("Using bundled defaults")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+
+        if let refreshError = viewModel.modelRefreshError(for: viewModel.selectedAIProvider) {
+            Text(refreshError)
+                .font(.caption)
+                .foregroundColor(.red)
         }
     }
 }
@@ -220,6 +252,39 @@ struct AIProviderSettingsContent: View {
                     .buttonStyle(.bordered)
                     .disabled(customModelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
+
+                HStack(spacing: 10) {
+                    Button {
+                        Task { await viewModel.refreshModels(for: viewModel.selectedAIProvider, force: true) }
+                    } label: {
+                        if viewModel.isRefreshingModels(for: viewModel.selectedAIProvider) {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Label("Refresh Models", systemImage: "arrow.clockwise")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!viewModel.hasAPIKey(for: viewModel.selectedAIProvider))
+
+                    if let refreshedAt = viewModel.lastModelRefreshDate(for: viewModel.selectedAIProvider) {
+                        Text("Updated \(refreshedAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("Using bundled defaults")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+                }
+
+                if let refreshError = viewModel.modelRefreshError(for: viewModel.selectedAIProvider) {
+                    Text(refreshError)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
             }
 
             // API Key Input
@@ -230,12 +295,20 @@ struct AIProviderSettingsContent: View {
 
                 APIKeyInputField(
                     provider: viewModel.selectedAIProvider,
-                    onSave: { checkAPIKey(for: viewModel.selectedAIProvider) }
+                    onSave: {
+                        checkAPIKey(for: viewModel.selectedAIProvider)
+                        Task {
+                            await viewModel.refreshModels(for: viewModel.selectedAIProvider, force: true)
+                        }
+                    }
                 )
             }
         }
         .onAppear {
             checkAPIKey(for: viewModel.selectedAIProvider)
+            Task {
+                await viewModel.refreshModelsIfNeeded(for: viewModel.selectedAIProvider)
+            }
         }
         .onChange(of: viewModel.selectedAIProvider) { _, newProvider in
             checkAPIKey(for: newProvider)
@@ -243,6 +316,9 @@ struct AIProviderSettingsContent: View {
                 viewModel.selectedAIModel = firstModel
             }
             customModelID = ""
+            Task {
+                await viewModel.refreshModelsIfNeeded(for: newProvider)
+            }
         }
     }
 
@@ -296,51 +372,67 @@ struct APIKeyInputField: View {
     @State private var apiKey: String = ""
     @State private var isVisible: Bool = false
     @State private var showSuccess: Bool = false
+    @State private var errorMessage: String?
+    @State private var successResetTask: Task<Void, Never>?
 
     var body: some View {
-        HStack(spacing: 8) {
-            if isVisible {
-                TextField("Enter API key...", text: $apiKey)
-                    .textFieldStyle(.roundedBorder)
-            } else {
-                SecureField("Enter API key...", text: $apiKey)
-                    .textFieldStyle(.roundedBorder)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                if isVisible {
+                    TextField("Enter API key...", text: $apiKey)
+                        .textFieldStyle(.roundedBorder)
+                } else {
+                    SecureField("Enter API key...", text: $apiKey)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                Button {
+                    isVisible.toggle()
+                } label: {
+                    Image(systemName: isVisible ? "eye.slash" : "eye")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+
+                Button("Save") {
+                    saveKey()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(apiKey.isEmpty)
+            }
+            .overlay(alignment: .trailing) {
+                if showSuccess {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                        .padding(.trailing, 80)
+                }
             }
 
-            Button {
-                isVisible.toggle()
-            } label: {
-                Image(systemName: isVisible ? "eye.slash" : "eye")
-                    .foregroundColor(.secondary)
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundColor(.red)
             }
-            .buttonStyle(.plain)
-
-            Button("Save") {
-                saveKey()
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(apiKey.isEmpty)
         }
         .onAppear {
             loadKey()
         }
+        .onDisappear {
+            successResetTask?.cancel()
+            successResetTask = nil
+        }
         .onChange(of: provider) { _, _ in
             loadKey()
-        }
-        .overlay(alignment: .trailing) {
-            if showSuccess {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
-                    .padding(.trailing, 80)
-            }
         }
     }
 
     private func loadKey() {
         do {
             apiKey = try KeychainService.shared.getAPIKey(for: provider)
+            errorMessage = nil
         } catch {
             apiKey = ""
+            errorMessage = nil
         }
     }
 
@@ -348,13 +440,18 @@ struct APIKeyInputField: View {
         do {
             try KeychainService.shared.saveAPIKey(apiKey, for: provider)
             showSuccess = true
+            errorMessage = nil
             onSave()
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            successResetTask?.cancel()
+            successResetTask = Task {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
                 showSuccess = false
             }
         } catch {
-            // Handle error silently or show alert
+            errorMessage = "Failed to save API key: \(error.localizedDescription)"
+            showSuccess = false
         }
     }
 }
