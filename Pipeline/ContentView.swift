@@ -8,7 +8,7 @@ struct ContentView: View {
     @State private var selectedApplication: JobApplication?
     @State private var showingAddApplication = false
     @State private var searchText = ""
-    @State private var settingsViewModel = SettingsViewModel()
+    @Bindable var settingsViewModel: SettingsViewModel
 
     private var filteredApplications: [JobApplication] {
         guard !searchText.isEmpty else { return applications }
@@ -50,13 +50,13 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showingAddApplication) {
-            AddApplicationView()
+            AddApplicationView(settingsViewModel: settingsViewModel)
         }
         #endif
     }
 }
 
 #Preview {
-    ContentView()
+    ContentView(settingsViewModel: SettingsViewModel())
         .modelContainer(for: [JobApplication.self, InterviewLog.self], inMemory: true)
 }
