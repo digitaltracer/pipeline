@@ -59,44 +59,88 @@ enum AIServicePrompts {
 
 enum AIResponseParser {
     static func parseJobData(from jsonString: String) throws -> AIParsingViewModel.ParsedJobData {
-        // Clean up the response - remove markdown code blocks if present
-        var cleaned = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
-        if cleaned.hasPrefix("```json") {
-            cleaned = String(cleaned.dropFirst(7))
-        }
-        if cleaned.hasPrefix("```") {
-            cleaned = String(cleaned.dropFirst(3))
-        }
-        if cleaned.hasSuffix("```") {
-            cleaned = String(cleaned.dropLast(3))
-        }
-        cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleaned = stripMarkdownFences(from: jsonString)
+        let jsonPayload = extractJSONObject(from: cleaned) ?? cleaned
 
-        guard let data = cleaned.data(using: .utf8) else {
+        guard let data = jsonPayload.data(using: .utf8) else {
             throw AIServiceError.parsingError("Failed to convert response to data")
         }
 
         let decoder = JSONDecoder()
 
-        struct JobResponse: Codable {
+        struct JobResponse: Decodable {
             let companyName: String?
             let role: String?
             let location: String?
             let jobDescription: String?
-            let salaryMin: Int?
-            let salaryMax: Int?
+            let salaryMin: FlexibleInt?
+            let salaryMax: FlexibleInt?
             let currency: String?
         }
 
-        let response = try decoder.decode(JobResponse.self, from: data)
+        struct FlexibleInt: Decodable {
+            let value: Int?
 
-        let currencyEnum: Currency
-        switch response.currency?.uppercased() {
-        case "USD": currencyEnum = .usd
-        case "INR": currencyEnum = .inr
-        case "EUR": currencyEnum = .eur
-        case "GBP": currencyEnum = .gbp
-        default: currencyEnum = .usd
+            init(from decoder: Decoder) throws {
+                let container = try decoder.singleValueContainer()
+
+                if let intValue = try? container.decode(Int.self) {
+                    value = intValue
+                    return
+                }
+
+                if let doubleValue = try? container.decode(Double.self) {
+                    value = Int(doubleValue.rounded())
+                    return
+                }
+
+                if let stringValue = try? container.decode(String.self) {
+                    value = Self.parseInt(from: stringValue)
+                    return
+                }
+
+                value = nil
+            }
+
+            private static func parseInt(from string: String) -> Int? {
+                let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return nil }
+
+                let plain = trimmed.replacingOccurrences(of: ",", with: "")
+                if let intValue = Int(plain) {
+                    return intValue
+                }
+
+                if let doubleValue = Double(plain) {
+                    return Int(doubleValue.rounded())
+                }
+
+                let pattern = #"-?\d+(?:\.\d+)?"#
+                guard let regex = try? NSRegularExpression(pattern: pattern),
+                      let match = regex.firstMatch(
+                        in: plain,
+                        range: NSRange(plain.startIndex..., in: plain)
+                      ),
+                      let range = Range(match.range, in: plain) else {
+                    return nil
+                }
+
+                let numeric = String(plain[range])
+                if let intValue = Int(numeric) {
+                    return intValue
+                }
+                if let doubleValue = Double(numeric) {
+                    return Int(doubleValue.rounded())
+                }
+                return nil
+            }
+        }
+
+        let response: JobResponse
+        do {
+            response = try decoder.decode(JobResponse.self, from: data)
+        } catch {
+            throw AIServiceError.parsingError(error.localizedDescription)
         }
 
         return AIParsingViewModel.ParsedJobData(
@@ -104,9 +148,87 @@ enum AIResponseParser {
             role: response.role ?? "",
             location: response.location ?? "",
             jobDescription: response.jobDescription ?? "",
-            salaryMin: response.salaryMin,
-            salaryMax: response.salaryMax,
-            currency: currencyEnum
+            salaryMin: response.salaryMin?.value,
+            salaryMax: response.salaryMax?.value,
+            currency: parseCurrency(from: response.currency)
         )
+    }
+
+    private static func parseCurrency(from rawValue: String?) -> Currency {
+        let normalized = rawValue?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased() ?? ""
+
+        if normalized.contains("INR") || normalized.contains("RUPEE") || normalized.contains("₹") {
+            return .inr
+        }
+        if normalized.contains("EUR") || normalized.contains("EURO") || normalized.contains("€") {
+            return .eur
+        }
+        if normalized.contains("GBP") || normalized.contains("POUND") || normalized.contains("£") {
+            return .gbp
+        }
+        if normalized.contains("USD") || normalized.contains("DOLLAR") || normalized.contains("$") {
+            return .usd
+        }
+
+        return .usd
+    }
+
+    private static func stripMarkdownFences(from text: String) -> String {
+        var cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        cleaned = cleaned.replacingOccurrences(
+            of: #"^```[a-zA-Z0-9_-]*\s*"#,
+            with: "",
+            options: .regularExpression
+        )
+        cleaned = cleaned.replacingOccurrences(
+            of: #"\s*```$"#,
+            with: "",
+            options: .regularExpression
+        )
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Extract the first balanced JSON object from mixed text output.
+    private static func extractJSONObject(from text: String) -> String? {
+        var startIndex: String.Index?
+        var depth = 0
+        var isInsideString = false
+        var isEscaped = false
+
+        for index in text.indices {
+            let character = text[index]
+
+            if isInsideString {
+                if isEscaped {
+                    isEscaped = false
+                } else if character == "\\" {
+                    isEscaped = true
+                } else if character == "\"" {
+                    isInsideString = false
+                }
+                continue
+            }
+
+            if character == "\"" {
+                isInsideString = true
+                continue
+            }
+
+            if character == "{" {
+                if depth == 0 {
+                    startIndex = index
+                }
+                depth += 1
+            } else if character == "}", depth > 0 {
+                depth -= 1
+                if depth == 0, let startIndex {
+                    return String(text[startIndex...index])
+                }
+            }
+        }
+
+        return nil
     }
 }
