@@ -4,6 +4,20 @@ import SwiftUI
 
 @Observable
 final class AddEditApplicationViewModel {
+    enum SaveError: LocalizedError {
+        case validationFailed([String])
+
+        var errorDescription: String? {
+            switch self {
+            case .validationFailed(let errors):
+                if let first = errors.first {
+                    return first
+                }
+                return "Please fix validation errors before saving."
+            }
+        }
+    }
+
     // Form fields
     var companyName: String = ""
     var role: String = ""
@@ -82,7 +96,7 @@ final class AddEditApplicationViewModel {
             errors.append("Location is required")
         }
 
-        if !jobURL.isEmpty, URL(string: jobURL) == nil {
+        if !jobURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, normalizedJobURL == nil {
             errors.append("Invalid job URL")
         }
 
@@ -107,21 +121,36 @@ final class AddEditApplicationViewModel {
         isEditing ? "Edit Application" : "Add Application"
     }
 
+    private var normalizedJobURL: String? {
+        let trimmed = jobURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let normalized = URLHelpers.normalize(trimmed)
+        guard URLHelpers.isValidWebURL(normalized) else { return nil }
+        return normalized
+    }
+
     // MARK: - Actions
 
-    func save(context: ModelContext) -> Bool {
-        guard isValid else { return false }
+    func save(context: ModelContext) throws {
+        guard isValid else { throw SaveError.validationFailed(validationErrors) }
 
+        let savedApplication: JobApplication
         if isEditing, let app = editingApplication {
             updateApplication(app)
-            try? context.save()
+            try context.save()
+            savedApplication = app
         } else {
             let app = createApplication()
             context.insert(app)
-            try? context.save()
+            try context.save()
+            savedApplication = app
         }
 
-        return true
+        Task {
+            @MainActor in
+            await NotificationService.shared.syncFollowUpReminder(for: savedApplication)
+        }
     }
 
     private func createApplication() -> JobApplication {
@@ -129,7 +158,7 @@ final class AddEditApplicationViewModel {
             companyName: companyName.trimmingCharacters(in: .whitespacesAndNewlines),
             role: role.trimmingCharacters(in: .whitespacesAndNewlines),
             location: location.trimmingCharacters(in: .whitespacesAndNewlines),
-            jobURL: jobURL.isEmpty ? nil : jobURL,
+            jobURL: normalizedJobURL,
             jobDescription: jobDescription.isEmpty ? nil : jobDescription,
             status: status,
             priority: priority,
@@ -144,8 +173,8 @@ final class AddEditApplicationViewModel {
         )
 
         // Auto-detect platform from URL if not manually set
-        if platform == .other && !jobURL.isEmpty {
-            app.platform = Platform.detect(from: jobURL)
+        if platform == .other, let normalizedJobURL {
+            app.platform = Platform.detect(from: normalizedJobURL)
         }
 
         return app
@@ -155,7 +184,7 @@ final class AddEditApplicationViewModel {
         app.companyName = companyName.trimmingCharacters(in: .whitespacesAndNewlines)
         app.role = role.trimmingCharacters(in: .whitespacesAndNewlines)
         app.location = location.trimmingCharacters(in: .whitespacesAndNewlines)
-        app.jobURL = jobURL.isEmpty ? nil : jobURL
+        app.jobURL = normalizedJobURL
         app.jobDescription = jobDescription.isEmpty ? nil : jobDescription
         app.status = status
         app.priority = priority
@@ -170,18 +199,18 @@ final class AddEditApplicationViewModel {
         app.updateTimestamp()
 
         // Auto-detect platform from URL if set to other
-        if platform == .other && !jobURL.isEmpty {
-            app.platform = Platform.detect(from: jobURL)
+        if platform == .other, let normalizedJobURL {
+            app.platform = Platform.detect(from: normalizedJobURL)
         }
     }
 
     // MARK: - URL Changed Handler
 
     func onJobURLChanged() {
-        guard !jobURL.isEmpty else { return }
+        guard let normalizedJobURL else { return }
 
         // Auto-detect platform
-        let detectedPlatform = Platform.detect(from: jobURL)
+        let detectedPlatform = Platform.detect(from: normalizedJobURL)
         if detectedPlatform != .other {
             platform = detectedPlatform
         }
