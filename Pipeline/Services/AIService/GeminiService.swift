@@ -29,13 +29,14 @@ final class GeminiService: AIServiceProtocol {
             ]
         ]
 
-        guard let url = URL(string: "\(baseURL)/\(model):generateContent?key=\(apiKey)") else {
+        guard let url = URL(string: "\(baseURL)/\(model):generateContent") else {
             throw AIServiceError.invalidURL
         }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
 
         let (data, response) = try await URLSession.shared.data(for: request)
