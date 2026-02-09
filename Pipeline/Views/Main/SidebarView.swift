@@ -4,6 +4,7 @@ import SwiftUI
 struct SidebarView: View {
     @Binding var selectedFilter: SidebarFilter
     @Binding var showingAddApplication: Bool
+    @Binding var showingSettings: Bool
     let statusCounts: [SidebarFilter: Int]
     @Bindable var settingsViewModel: SettingsViewModel
     @Environment(\.colorScheme) private var colorScheme
@@ -97,25 +98,23 @@ struct SidebarView: View {
             Divider()
                 .padding(.horizontal)
 
-            // Settings Link
-            #if os(macOS)
-            SettingsLink {
-                Label("Settings", systemImage: "gear")
-                    .padding(.vertical, 8)
-                    .padding(.horizontal)
+            Button {
+                showingSettings = true
+            } label: {
+                Label("Settings", systemImage: "gearshape.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+                    )
             }
             .buttonStyle(.plain)
+            .padding(.horizontal, 16)
             .padding(.bottom, 16)
-            #else
-            NavigationLink {
-                SettingsView()
-            } label: {
-                Label("Settings", systemImage: "gear")
-                    .padding(.vertical, 8)
-                    .padding(.horizontal)
-            }
-            .padding(.bottom, 16)
-            #endif
         }
         .background(DesignSystem.Colors.sidebarBackground(colorScheme))
     }
@@ -173,6 +172,7 @@ struct SidebarFilterRow: View {
     SidebarView(
         selectedFilter: .constant(.all),
         showingAddApplication: .constant(false),
+        showingSettings: .constant(false),
         statusCounts: [
             .all: 25,
             .saved: 5,
@@ -192,6 +192,7 @@ struct SidebarFilterRow: View {
 struct SidebarView: View {
     @Binding var selectedFilter: SidebarFilter
     @Binding var showingAddApplication: Bool
+    @Binding var showingSettings: Bool
     let statusCounts: [SidebarFilter: Int]
     @Bindable var settingsViewModel: SettingsViewModel
 

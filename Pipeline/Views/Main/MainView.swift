@@ -13,6 +13,7 @@ struct MainView: View {
     @Bindable var settingsViewModel: SettingsViewModel
 
     @State private var viewModel = ApplicationListViewModel()
+    @State private var showingSettings = false
 
     private var filteredCount: Int {
         viewModel.filterApplications(applications).count
@@ -73,6 +74,7 @@ struct MainView: View {
                     SidebarView(
                         selectedFilter: $selectedFilter,
                         showingAddApplication: $showingAddApplication,
+                        showingSettings: $showingSettings,
                         statusCounts: viewModel.statusCounts(from: applications),
                         settingsViewModel: settingsViewModel
                     )
@@ -98,6 +100,7 @@ struct MainView: View {
                     SidebarView(
                         selectedFilter: $selectedFilter,
                         showingAddApplication: $showingAddApplication,
+                        showingSettings: $showingSettings,
                         statusCounts: viewModel.statusCounts(from: applications),
                         settingsViewModel: settingsViewModel
                     )
@@ -128,7 +131,19 @@ struct MainView: View {
             }
         }
         .sheet(isPresented: $showingAddApplication) {
-            AddApplicationView()
+            AddApplicationView(
+                settingsViewModel: settingsViewModel,
+                onOpenSettings: {
+                    showingAddApplication = false
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(250))
+                        showingSettings = true
+                    }
+                }
+            )
+        }
+        .sheet(isPresented: $showingSettings) {
+            SettingsView(viewModel: settingsViewModel, isPresentedInSheet: true)
         }
         .onChange(of: searchText) { _, newValue in
             viewModel.searchText = newValue

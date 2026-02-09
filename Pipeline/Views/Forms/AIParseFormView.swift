@@ -4,6 +4,7 @@ struct AIParseFormView: View {
     @Bindable var aiViewModel: AIParsingViewModel
     @Bindable var formViewModel: AddEditApplicationViewModel
     let onApplyParsedData: () -> Void
+    let onOpenSettings: (() -> Void)?
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -38,12 +39,21 @@ struct AIParseFormView: View {
                 .frame(maxWidth: 360)
 
             #if os(macOS)
-            SettingsLink {
-                Text("Go to Settings")
-                    .frame(width: 160)
+            if let onOpenSettings {
+                Button("Go to Settings") {
+                    onOpenSettings()
+                }
+                .frame(width: 160)
+                .buttonStyle(.borderedProminent)
+                .tint(DesignSystem.Colors.accent)
+            } else {
+                SettingsLink {
+                    Text("Go to Settings")
+                        .frame(width: 160)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DesignSystem.Colors.accent)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(DesignSystem.Colors.accent)
             #else
             Text("Open Settings to add an API key.")
                 .font(.caption)
@@ -196,6 +206,7 @@ struct ParsedFieldRow: View {
     AIParseFormView(
         aiViewModel: AIParsingViewModel(),
         formViewModel: AddEditApplicationViewModel(),
-        onApplyParsedData: {}
+        onApplyParsedData: {},
+        onOpenSettings: nil
     )
 }

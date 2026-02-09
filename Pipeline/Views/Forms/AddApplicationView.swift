@@ -6,9 +6,11 @@ struct AddApplicationView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var viewModel = AddEditApplicationViewModel()
-    @State private var aiViewModel = AIParsingViewModel()
+    @State private var aiViewModel: AIParsingViewModel
     @State private var selectedTab: AddTab = .manual
+    @State private var saveErrorMessage: String?
     @Environment(\.colorScheme) private var colorScheme
+    let onOpenSettings: (() -> Void)?
 
     enum AddTab: String, CaseIterable {
         case manual = "Manual Entry"
@@ -22,94 +24,117 @@ struct AddApplicationView: View {
         }
     }
 
+    init(
+        settingsViewModel: SettingsViewModel = SettingsViewModel(),
+        onOpenSettings: (() -> Void)? = nil
+    ) {
+        _aiViewModel = State(initialValue: AIParsingViewModel(settingsViewModel: settingsViewModel))
+        self.onOpenSettings = onOpenSettings
+    }
+
     var body: some View {
-        #if os(macOS)
-        VStack(spacing: 0) {
-            header
-
-            Divider().overlay(DesignSystem.Colors.divider(colorScheme))
-
-            tabBar
-
-            Divider().overlay(DesignSystem.Colors.divider(colorScheme))
-
-            ScrollView {
-                Group {
-                    switch selectedTab {
-                    case .manual:
-                        ManualEntryFormView(viewModel: viewModel)
-                    case .aiParse:
-                        AIParseFormView(
-                            aiViewModel: aiViewModel,
-                            formViewModel: viewModel,
-                            onApplyParsedData: { selectedTab = .manual }
-                        )
-                    }
-                }
-                .padding(24)
-            }
-
-            Divider().overlay(DesignSystem.Colors.divider(colorScheme))
-
-            footer
-        }
-        .frame(width: 760, height: 620)
-        .background(DesignSystem.Colors.contentBackground(colorScheme))
-        #else
-        NavigationStack {
+        Group {
+            #if os(macOS)
             VStack(spacing: 0) {
-                // Underlined Tab Bar
-                HStack(spacing: 0) {
-                    ForEach(AddTab.allCases, id: \.self) { tab in
-                        TabButton(
-                            title: tab.rawValue,
-                            icon: tab.icon,
-                            isSelected: selectedTab == tab
-                        ) {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                selectedTab = tab
+                header
+
+                Divider().overlay(DesignSystem.Colors.divider(colorScheme))
+
+                tabBar
+
+                Divider().overlay(DesignSystem.Colors.divider(colorScheme))
+
+                ScrollView {
+                    Group {
+                        switch selectedTab {
+                        case .manual:
+                            ManualEntryFormView(viewModel: viewModel)
+                        case .aiParse:
+                            AIParseFormView(
+                                aiViewModel: aiViewModel,
+                                formViewModel: viewModel,
+                                onApplyParsedData: { selectedTab = .manual },
+                                onOpenSettings: onOpenSettings
+                            )
+                        }
+                    }
+                    .padding(24)
+                }
+
+                Divider().overlay(DesignSystem.Colors.divider(colorScheme))
+
+                footer
+            }
+            .frame(width: 760, height: 620)
+            .background(DesignSystem.Colors.contentBackground(colorScheme))
+            #else
+            NavigationStack {
+                VStack(spacing: 0) {
+                    // Underlined Tab Bar
+                    HStack(spacing: 0) {
+                        ForEach(AddTab.allCases, id: \.self) { tab in
+                            TabButton(
+                                title: tab.rawValue,
+                                icon: tab.icon,
+                                isSelected: selectedTab == tab
+                            ) {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    selectedTab = tab
+                                }
                             }
                         }
                     }
-                }
-                .padding(.horizontal)
-                .padding(.top, 8)
+                    .padding(.horizontal)
+                    .padding(.top, 8)
 
-                Divider()
+                    Divider()
 
-                TabView(selection: $selectedTab) {
-                    ManualEntryFormView(viewModel: viewModel)
-                        .tag(AddTab.manual)
+                    TabView(selection: $selectedTab) {
+                        ManualEntryFormView(viewModel: viewModel)
+                            .tag(AddTab.manual)
 
-                    AIParseFormView(
-                        aiViewModel: aiViewModel,
-                        formViewModel: viewModel,
-                        onApplyParsedData: {
-                            selectedTab = .manual
-                        }
-                    )
-                    .tag(AddTab.aiParse)
-                }
-                .tabViewStyle(.automatic)
-            }
-            .navigationTitle("Add Application")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        if viewModel.save(context: modelContext) {
-                            dismiss()
-                        }
+                        AIParseFormView(
+                            aiViewModel: aiViewModel,
+                            formViewModel: viewModel,
+                            onApplyParsedData: {
+                                selectedTab = .manual
+                            },
+                            onOpenSettings: onOpenSettings
+                        )
+                        .tag(AddTab.aiParse)
                     }
-                    .disabled(!viewModel.isValid || selectedTab == .aiParse)
+                    .tabViewStyle(.automatic)
                 }
+                .navigationTitle("Add Application")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { dismiss() }
+                    }
+
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") {
+                            do {
+                                try viewModel.save(context: modelContext)
+                                dismiss()
+                            } catch {
+                                saveErrorMessage = error.localizedDescription
+                            }
+                        }
+                        .disabled(!viewModel.isValid || selectedTab == .aiParse)
+                    }
+                }
+                .frame(minWidth: 500, minHeight: 600)
             }
-            .frame(minWidth: 500, minHeight: 600)
+            #endif
         }
-        #endif
+        .alert("Unable to Save", isPresented: Binding(
+            get: { saveErrorMessage != nil },
+            set: { if !$0 { saveErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveErrorMessage ?? "An unknown error occurred.")
+        }
     }
 
     #if os(macOS)
@@ -163,8 +188,11 @@ struct AddApplicationView: View {
                 .buttonStyle(.bordered)
 
             Button("Add Application") {
-                if viewModel.save(context: modelContext) {
+                do {
+                    try viewModel.save(context: modelContext)
                     dismiss()
+                } catch {
+                    saveErrorMessage = error.localizedDescription
                 }
             }
             .buttonStyle(.borderedProminent)
@@ -176,7 +204,7 @@ struct AddApplicationView: View {
         .background(DesignSystem.Colors.surfaceElevated(colorScheme))
     }
     #endif
-}
+    }
 
 struct TabButton: View {
     let title: String
