@@ -101,16 +101,25 @@ struct SidebarView: View {
             Button {
                 showingSettings = true
             } label: {
-                Label("Settings", systemImage: "gearshape.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.primary)
-                    .padding(.vertical, 10)
-                    .padding(.horizontal, 14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
-                    )
+                ZStack {
+                    Text("Settings")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+
+                    HStack {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.primary)
+                        Spacer()
+                    }
+                }
+                .padding(.vertical, 10)
+                .padding(.horizontal, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(DesignSystem.Colors.sidebarBackground(colorScheme))
+                )
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 16)
