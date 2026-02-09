@@ -11,6 +11,7 @@ private let enableCloudKitSync = true
 @main
 struct PipelineApp: App {
     let modelContainer: ModelContainer
+    @State private var settingsViewModel = SettingsViewModel()
 
     init() {
         do {
@@ -40,7 +41,7 @@ struct PipelineApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(settingsViewModel: settingsViewModel)
         }
         .modelContainer(modelContainer)
         #if os(macOS)
@@ -50,7 +51,7 @@ struct PipelineApp: App {
 
         #if os(macOS)
         Settings {
-            SettingsView()
+            SettingsView(viewModel: settingsViewModel)
                 .modelContainer(modelContainer)
         }
         #endif
