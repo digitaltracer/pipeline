@@ -12,6 +12,7 @@ struct AddInterviewLogView: View {
     @State private var interviewerName: String = ""
     @State private var rating: Int = 3
     @State private var notes: String = ""
+    @State private var saveErrorMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -71,6 +72,14 @@ struct AddInterviewLogView: View {
             }
             .frame(minWidth: 400, minHeight: 450)
         }
+        .alert("Unable to Save Log", isPresented: Binding(
+            get: { saveErrorMessage != nil },
+            set: { if !$0 { saveErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveErrorMessage ?? "An unknown error occurred.")
+        }
     }
 
     private var ratingDescription: String {
@@ -94,7 +103,8 @@ struct AddInterviewLogView: View {
             application: application
         )
 
-        application.addInterviewLog(log)
+        modelContext.insert(log)
+        application.updateTimestamp()
 
         // Update interview stage if this is a later stage
         if let currentStage = application.interviewStage {
@@ -110,8 +120,13 @@ struct AddInterviewLogView: View {
             application.status = .interviewing
         }
 
-        try? modelContext.save()
-        dismiss()
+        do {
+            try modelContext.save()
+            dismiss()
+        } catch {
+            modelContext.rollback()
+            saveErrorMessage = error.localizedDescription
+        }
     }
 }
 
