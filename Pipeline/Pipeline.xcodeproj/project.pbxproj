@@ -55,7 +55,6 @@
 		000000000000000000000046 /* AnthropicService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000046 /* AnthropicService.swift */; };
 		000000000000000000000047 /* GeminiService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000047 /* GeminiService.swift */; };
 		000000000000000000000048 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000048 /* KeychainService.swift */; };
-		000000000000000000000049 /* LogoFetchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000049 /* LogoFetchService.swift */; };
 		000000000000000000000050 /* PlatformDetectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000050 /* PlatformDetectionService.swift */; };
 		000000000000000000000051 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000051 /* NotificationService.swift */; };
 		000000000000000000000052 /* DateFormatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000052 /* DateFormatters.swift */; };
@@ -113,7 +112,6 @@
 		100000000000000000000046 /* AnthropicService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnthropicService.swift; sourceTree = "<group>"; };
 		100000000000000000000047 /* GeminiService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiService.swift; sourceTree = "<group>"; };
 		100000000000000000000048 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
-		100000000000000000000049 /* LogoFetchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogoFetchService.swift; sourceTree = "<group>"; };
 		100000000000000000000050 /* PlatformDetectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformDetectionService.swift; sourceTree = "<group>"; };
 		100000000000000000000051 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		100000000000000000000052 /* DateFormatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateFormatters.swift; sourceTree = "<group>"; };
@@ -206,7 +204,6 @@
 			children = (
 				300000000000000000000017 /* AIService */,
 				100000000000000000000048 /* KeychainService.swift */,
-				100000000000000000000049 /* LogoFetchService.swift */,
 				100000000000000000000050 /* PlatformDetectionService.swift */,
 				100000000000000000000051 /* NotificationService.swift */,
 			);
@@ -439,7 +436,6 @@
 				000000000000000000000046 /* AnthropicService.swift in Sources */,
 				000000000000000000000047 /* GeminiService.swift in Sources */,
 				000000000000000000000048 /* KeychainService.swift in Sources */,
-				000000000000000000000049 /* LogoFetchService.swift in Sources */,
 				000000000000000000000050 /* PlatformDetectionService.swift in Sources */,
 				000000000000000000000051 /* NotificationService.swift in Sources */,
 				000000000000000000000052 /* DateFormatters.swift in Sources */,
