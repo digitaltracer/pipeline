@@ -32,7 +32,7 @@ struct AIParseFormView: View {
             Text("AI Not Configured")
                 .font(.headline)
 
-            Text("Add your API key in settings to use AI-powered job parsing.")
+            Text("Add at least one provider API key in settings to use AI-powered job parsing.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -83,6 +83,8 @@ struct AIParseFormView: View {
                     .multilineTextAlignment(.center)
             }
             .padding(.top, 8)
+
+            providerSelectionSection
 
             VStack(alignment: .leading, spacing: 10) {
                 Text("Job URL")
@@ -181,6 +183,60 @@ struct AIParseFormView: View {
         }
         .padding(16)
         .appCard(cornerRadius: 16, elevated: true, shadow: false)
+    }
+
+    @ViewBuilder
+    private var providerSelectionSection: some View {
+        if aiViewModel.configuredProviders.count > 1 {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("AI Provider")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                HStack(spacing: 10) {
+                    Image(systemName: aiViewModel.parseProvider.icon)
+                        .foregroundColor(DesignSystem.Colors.accent)
+
+                    Picker("AI Provider", selection: $aiViewModel.parseProvider) {
+                        ForEach(aiViewModel.configuredProviders) { provider in
+                            Text(provider.rawValue).tag(provider)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .appInput()
+
+                if !aiViewModel.parseModel.isEmpty {
+                    Text("Using model \(aiViewModel.parseModel)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        } else if let provider = aiViewModel.configuredProviders.first {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("AI Provider")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                HStack(spacing: 8) {
+                    Image(systemName: provider.icon)
+                        .foregroundColor(DesignSystem.Colors.accent)
+                    Text(provider.rawValue)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    Spacer()
+                }
+                .appInput()
+
+                if !aiViewModel.parseModel.isEmpty {
+                    Text("Using model \(aiViewModel.parseModel)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
     }
 }
 
