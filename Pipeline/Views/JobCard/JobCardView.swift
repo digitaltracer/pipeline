@@ -12,7 +12,7 @@ struct JobCardView: View {
             HStack(alignment: .top, spacing: 12) {
                 CompanyAvatar(
                     companyName: application.companyName,
-                    logoURL: application.companyLogoURL ?? logoURL,
+                    logoURL: application.googleS2FaviconURL(size: 64)?.absoluteString,
                     size: 44,
                     cornerRadius: 14
                 )
@@ -99,11 +99,6 @@ struct JobCardView: View {
                 .stroke(isSelected ? DesignSystem.Colors.accent : DesignSystem.Colors.stroke(colorScheme), lineWidth: isSelected ? 2 : 1)
                 .opacity(isSelected ? 1 : 0.6)
         )
-    }
-
-    private var logoURL: String? {
-        guard let domain = application.companyDomain else { return nil }
-        return "https://logo.clearbit.com/\(domain)"
     }
 }
 
