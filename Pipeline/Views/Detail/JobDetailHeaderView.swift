@@ -24,15 +24,14 @@ struct JobDetailHeaderView: View {
     }
 
     private var logoURL: String? {
-        guard let domain = application.companyDomain else { return nil }
-        return "https://logo.clearbit.com/\(domain)"
+        application.googleS2FaviconURL(size: 96)?.absoluteString
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             CompanyAvatar(
                 companyName: application.companyName,
-                logoURL: application.companyLogoURL ?? logoURL,
+                logoURL: logoURL,
                 size: 54,
                 cornerRadius: 16
             )
