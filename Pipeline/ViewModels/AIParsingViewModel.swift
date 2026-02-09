@@ -11,27 +11,40 @@ final class AIParsingViewModel {
     var error: String?
     var parsedData: ParsedJobData?
     var isConfigured: Bool = false
+    private(set) var configuredProviders: [AIProvider] = []
+    var parseProvider: AIProvider
+    var parseModel: String {
+        settingsViewModel.preferredModel(for: parseProvider)
+    }
 
     // Services
     private let settingsViewModel: SettingsViewModel
 
     init(settingsViewModel: SettingsViewModel = SettingsViewModel()) {
         self.settingsViewModel = settingsViewModel
-    }
-
-    var selectedProvider: AIProvider {
-        settingsViewModel.selectedAIProvider
+        self.parseProvider = settingsViewModel.selectedAIProvider
     }
 
     // MARK: - Configuration
 
     @MainActor
     func refreshConfiguration() {
-        do {
-            let apiKey = try KeychainService.shared.getAPIKey(for: settingsViewModel.selectedAIProvider)
-            isConfigured = !apiKey.isEmpty
-        } catch {
-            isConfigured = false
+        configuredProviders = AIProvider.allCases.filter { settingsViewModel.hasAPIKey(for: $0) }
+        isConfigured = !configuredProviders.isEmpty
+
+        guard isConfigured else {
+            parseProvider = settingsViewModel.selectedAIProvider
+            return
+        }
+
+        if configuredProviders.contains(parseProvider) {
+            return
+        }
+
+        if configuredProviders.contains(settingsViewModel.selectedAIProvider) {
+            parseProvider = settingsViewModel.selectedAIProvider
+        } else if let firstConfiguredProvider = configuredProviders.first {
+            parseProvider = firstConfiguredProvider
         }
     }
 
@@ -90,18 +103,23 @@ final class AIParsingViewModel {
 
         do {
             // Get API key from Keychain
-            let apiKey = try KeychainService.shared.getAPIKey(for: settingsViewModel.selectedAIProvider)
+            let apiKey = try KeychainService.shared.getAPIKey(for: parseProvider)
 
             guard !apiKey.isEmpty else {
                 error = "API key not configured. Please set up your API key in Settings."
                 return
             }
 
+            guard !parseModel.isEmpty else {
+                error = "No compatible model available for \(parseProvider.rawValue)."
+                return
+            }
+
             // Create appropriate AI service
-            let service = createAIService(provider: settingsViewModel.selectedAIProvider, apiKey: apiKey)
+            let service = createAIService(provider: parseProvider, apiKey: apiKey)
 
             // Fetch and parse the job posting
-            let parsed = try await service.parseJobPosting(from: normalizedJobURL, model: settingsViewModel.selectedAIModel)
+            let parsed = try await service.parseJobPosting(from: normalizedJobURL, model: parseModel)
             parsedData = parsed
 
         } catch let aiError as AIServiceError {
