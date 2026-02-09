@@ -1,32 +1,40 @@
 import Foundation
 import SwiftData
-import SwiftUI
 
 @Observable
 final class ApplicationDetailViewModel {
-    var application: JobApplication?
-    var isEditing = false
-    var showingAddInterviewLog = false
-    var showingDeleteConfirmation = false
-
     // MARK: - Actions
 
-    func archive(context: ModelContext) {
-        guard let application = application else { return }
+    func archive(_ application: JobApplication, context: ModelContext) throws {
+        let previousStatus = application.status
         application.status = .archived
         application.updateTimestamp()
-        try? context.save()
+
+        do {
+            try context.save()
+            Task { @MainActor in
+                await NotificationService.shared.syncFollowUpReminder(for: application)
+            }
+        } catch {
+            application.status = previousStatus
+            throw error
+        }
     }
 
-    func delete(context: ModelContext) {
-        guard let application = application else { return }
+    func delete(_ application: JobApplication, context: ModelContext) throws {
         context.delete(application)
-        try? context.save()
-        self.application = nil
+        do {
+            try context.save()
+            Task { await NotificationService.shared.removeNotifications(for: application.id) }
+        } catch {
+            context.rollback()
+            throw error
+        }
     }
 
-    func updateStatus(_ status: ApplicationStatus, context: ModelContext) {
-        guard let application = application else { return }
+    func updateStatus(_ status: ApplicationStatus, for application: JobApplication, context: ModelContext) throws {
+        let previousStatus = application.status
+        let previousAppliedDate = application.appliedDate
         application.status = status
         application.updateTimestamp()
 
@@ -40,25 +48,43 @@ final class ApplicationDetailViewModel {
             application.appliedDate = Date()
         }
 
-        try? context.save()
+        do {
+            try context.save()
+            Task { @MainActor in
+                await NotificationService.shared.syncFollowUpReminder(for: application)
+            }
+        } catch {
+            application.status = previousStatus
+            application.appliedDate = previousAppliedDate
+            throw error
+        }
     }
 
-    func updateInterviewStage(_ stage: InterviewStage?, context: ModelContext) {
-        guard let application = application else { return }
+    func updateInterviewStage(_ stage: InterviewStage?, for application: JobApplication, context: ModelContext) throws {
+        let previousStage = application.interviewStage
         application.interviewStage = stage
         application.updateTimestamp()
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            application.interviewStage = previousStage
+            throw error
+        }
     }
 
-    func updatePriority(_ priority: Priority, context: ModelContext) {
-        guard let application = application else { return }
+    func updatePriority(_ priority: Priority, for application: JobApplication, context: ModelContext) throws {
+        let previousPriority = application.priority
         application.priority = priority
         application.updateTimestamp()
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            application.priority = previousPriority
+            throw error
+        }
     }
 
-    func addInterviewLog(_ log: InterviewLog, context: ModelContext) {
-        guard let application = application else { return }
+    func addInterviewLog(_ log: InterviewLog, to application: JobApplication, context: ModelContext) throws {
         application.addInterviewLog(log)
 
         // Update interview stage if the log type is newer
@@ -75,33 +101,22 @@ final class ApplicationDetailViewModel {
             application.status = .interviewing
         }
 
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
     }
 
-    func deleteInterviewLog(_ log: InterviewLog, context: ModelContext) {
+    func deleteInterviewLog(_ log: InterviewLog, from application: JobApplication, context: ModelContext) throws {
         context.delete(log)
-        application?.updateTimestamp()
-        try? context.save()
-    }
-
-    // MARK: - Computed Properties
-
-    var canEdit: Bool {
-        application != nil
-    }
-
-    var canArchive: Bool {
-        guard let app = application else { return false }
-        return app.status != .archived
-    }
-
-    var hasJobURL: Bool {
-        guard let app = application else { return false }
-        return app.jobURL != nil && !app.jobURL!.isEmpty
-    }
-
-    var jobURL: URL? {
-        guard let urlString = application?.jobURL else { return nil }
-        return URL(string: urlString)
+        application.updateTimestamp()
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
     }
 }
