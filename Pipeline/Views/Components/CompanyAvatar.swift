@@ -21,7 +21,7 @@ struct CompanyAvatar: View {
                         .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
                 )
 
-            if let logoURL = logoURL, let url = URL(string: logoURL) {
+            if let logoURL, let url = URL(string: logoURL) {
                 AsyncImage(url: url) { phase in
                     switch phase {
                     case .empty:
@@ -51,27 +51,12 @@ struct CompanyAvatar: View {
     }
 }
 
-struct CompanyAvatarWithDomain: View {
-    let companyName: String
-    let domain: String?
-    var size: CGFloat = 48
-
-    private var logoURL: String? {
-        guard let domain = domain else { return nil }
-        return "https://logo.clearbit.com/\(domain)"
-    }
-
-    var body: some View {
-        CompanyAvatar(companyName: companyName, logoURL: logoURL, size: size)
-    }
-}
-
 #Preview {
     VStack(spacing: 20) {
         HStack(spacing: 16) {
-            CompanyAvatar(companyName: "Apple", logoURL: "https://logo.clearbit.com/apple.com", size: 48)
-            CompanyAvatar(companyName: "Google", logoURL: "https://logo.clearbit.com/google.com", size: 48)
-            CompanyAvatar(companyName: "Microsoft", logoURL: "https://logo.clearbit.com/microsoft.com", size: 48)
+            CompanyAvatar(companyName: "Apple", logoURL: nil, size: 48)
+            CompanyAvatar(companyName: "Google", logoURL: nil, size: 48)
+            CompanyAvatar(companyName: "Microsoft", logoURL: nil, size: 48)
         }
 
         HStack(spacing: 16) {
