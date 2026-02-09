@@ -12,6 +12,18 @@ enum URLHelpers {
         return url.scheme != nil && url.host != nil
     }
 
+    /// Validate a web URL (http/https only)
+    static func isValidWebURL(_ string: String) -> Bool {
+        guard let url = URL(string: string),
+              let scheme = url.scheme?.lowercased(),
+              let host = url.host,
+              !host.isEmpty else {
+            return false
+        }
+
+        return scheme == "http" || scheme == "https"
+    }
+
     /// Normalize a URL string (add https if missing)
     static func normalize(_ urlString: String) -> String {
         var normalized = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -96,6 +108,30 @@ enum URLHelpers {
     static func linkedInCompanyURL(companyName: String) -> URL? {
         let query = companyName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         return URL(string: "https://www.linkedin.com/company/\(query)")
+    }
+
+    /// Build a Google S2 favicon URL for a domain.
+    /// Example: https://www.google.com/s2/favicons?domain=apple.com&sz=64
+    static func googleFaviconURL(domain: String, size: Int = 64) -> URL? {
+        var normalizedDomain = domain.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if normalizedDomain.lowercased().hasPrefix("http://") || normalizedDomain.lowercased().hasPrefix("https://") {
+            normalizedDomain = extractDomain(from: normalizedDomain) ?? normalizedDomain
+        }
+
+        if normalizedDomain.hasPrefix("www.") {
+            normalizedDomain = String(normalizedDomain.dropFirst(4))
+        }
+
+        guard !normalizedDomain.isEmpty else { return nil }
+
+        var components = URLComponents(string: "https://www.google.com/s2/favicons")
+        components?.queryItems = [
+            URLQueryItem(name: "domain", value: normalizedDomain),
+            URLQueryItem(name: "sz", value: "\(max(16, min(size, 256)))")
+        ]
+
+        return components?.url
     }
 
     /// Open a URL in the default browser
