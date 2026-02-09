@@ -70,20 +70,23 @@ final class AIParsingViewModel {
     @MainActor
     func parseJobURL() async {
         refreshConfiguration()
+        let trimmed = jobURL.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard !jobURL.isEmpty else {
+        guard !trimmed.isEmpty else {
             error = "Please enter a job URL"
             return
         }
 
-        guard URL(string: jobURL) != nil else {
-            error = "Invalid URL format"
+        let normalizedJobURL = URLHelpers.normalize(trimmed)
+        guard URLHelpers.isValidWebURL(normalizedJobURL) else {
+            error = "Invalid URL. Please use a valid http or https link."
             return
         }
 
         isLoading = true
         error = nil
         parsedData = nil
+        defer { isLoading = false }
 
         do {
             // Get API key from Keychain
@@ -91,7 +94,6 @@ final class AIParsingViewModel {
 
             guard !apiKey.isEmpty else {
                 error = "API key not configured. Please set up your API key in Settings."
-                isLoading = false
                 return
             }
 
@@ -99,7 +101,7 @@ final class AIParsingViewModel {
             let service = createAIService(provider: settingsViewModel.selectedAIProvider, apiKey: apiKey)
 
             // Fetch and parse the job posting
-            let parsed = try await service.parseJobPosting(from: jobURL, model: settingsViewModel.selectedAIModel)
+            let parsed = try await service.parseJobPosting(from: normalizedJobURL, model: settingsViewModel.selectedAIModel)
             parsedData = parsed
 
         } catch let aiError as AIServiceError {
@@ -107,8 +109,6 @@ final class AIParsingViewModel {
         } catch {
             self.error = "Failed to parse job posting: \(error.localizedDescription)"
         }
-
-        isLoading = false
     }
 
     private func createAIService(provider: AIProvider, apiKey: String) -> AIServiceProtocol {
