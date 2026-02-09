@@ -65,7 +65,6 @@ enum Constants {
     // MARK: - External URLs
 
     enum URLs {
-        static let clearbitLogo = "https://logo.clearbit.com/"
         static let privacyPolicy = "https://github.com"
         static let termsOfService = "https://github.com"
         static let support = "https://github.com"
