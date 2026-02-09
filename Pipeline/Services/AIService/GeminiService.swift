@@ -13,7 +13,7 @@ final class GeminiService: AIServiceProtocol {
         let webContent = try await fetchWebContent(from: url)
 
         // Build the request
-        let prompt = "\(AIServicePrompts.jobParsingPrompt)\n\nParse this job posting:\n\n\(webContent)"
+        let prompt = "\(AIServicePrompts.jobParsingPrompt)\n\n\(AIServicePrompts.jobParsingUserPrompt(webContent: webContent))"
 
         let requestBody: [String: Any] = [
             "contents": [
@@ -25,7 +25,8 @@ final class GeminiService: AIServiceProtocol {
             ],
             "generationConfig": [
                 "temperature": 0.1,
-                "maxOutputTokens": 2000
+                "maxOutputTokens": 2000,
+                "responseMimeType": "application/json"
             ]
         ]
 
@@ -66,9 +67,16 @@ final class GeminiService: AIServiceProtocol {
               let candidates = json["candidates"] as? [[String: Any]],
               let firstCandidate = candidates.first,
               let content = firstCandidate["content"] as? [String: Any],
-              let parts = content["parts"] as? [[String: Any]],
-              let firstPart = parts.first,
-              let text = firstPart["text"] as? String else {
+              let parts = content["parts"] as? [[String: Any]] else {
+            throw AIServiceError.invalidResponse
+        }
+
+        let text = parts
+            .compactMap { $0["text"] as? String }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !text.isEmpty else {
             throw AIServiceError.invalidResponse
         }
 

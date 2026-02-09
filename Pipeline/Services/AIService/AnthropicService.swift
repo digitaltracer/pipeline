@@ -19,7 +19,7 @@ final class AnthropicService: AIServiceProtocol {
             "max_tokens": 2000,
             "system": AIServicePrompts.jobParsingPrompt,
             "messages": [
-                ["role": "user", "content": "Parse this job posting:\n\n\(webContent)"]
+                ["role": "user", "content": AIServicePrompts.jobParsingUserPrompt(webContent: webContent)]
             ]
         ]
 
@@ -58,9 +58,19 @@ final class AnthropicService: AIServiceProtocol {
 
         // Parse the response
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let content = json["content"] as? [[String: Any]],
-              let firstContent = content.first,
-              let text = firstContent["text"] as? String else {
+              let contentBlocks = json["content"] as? [[String: Any]] else {
+            throw AIServiceError.invalidResponse
+        }
+
+        let text = contentBlocks
+            .compactMap { block -> String? in
+                guard let type = block["type"] as? String, type == "text" else { return nil }
+                return block["text"] as? String
+            }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !text.isEmpty else {
             throw AIServiceError.invalidResponse
         }
 

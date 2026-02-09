@@ -41,18 +41,35 @@ enum AIServiceError: LocalizedError {
 
 enum AIServicePrompts {
     static let jobParsingPrompt = """
-    Extract job posting information from the following content. Return a JSON object with these fields:
-    - companyName: string (the company name)
-    - role: string (the job title/position)
-    - location: string (job location, include remote if applicable)
-    - jobDescription: string (full job description, requirements, and responsibilities)
-    - salaryMin: number or null (minimum salary if mentioned, as annual amount)
-    - salaryMax: number or null (maximum salary if mentioned, as annual amount)
-    - currency: string ("USD", "INR", "EUR", or "GBP" based on salary or location)
+    You are extracting structured job posting data.
 
-    If a field cannot be determined, use reasonable defaults or null for optional fields.
-    Return ONLY the JSON object, no additional text.
+    Return exactly one valid JSON object with this schema and field names:
+    {
+      "companyName": string,
+      "role": string,
+      "location": string,
+      "jobDescription": string,
+      "salaryMin": number|null,
+      "salaryMax": number|null,
+      "currency": "USD"|"INR"|"EUR"|"GBP"
+    }
+
+    Rules:
+    - Use empty strings for unknown string fields.
+    - Use null for unknown salary fields.
+    - Salary numbers must be annual base units as plain integers (example: 120000), not "120k" and no currency symbols.
+    - Include remote/hybrid details in location when present.
+    - Do not include any fields other than the schema above.
+    - Output raw JSON only. No markdown fences. No prose.
     """
+
+    static func jobParsingUserPrompt(webContent: String) -> String {
+        """
+        Parse this job posting content:
+
+        \(webContent)
+        """
+    }
 }
 
 // MARK: - Response Parsing Helper
@@ -66,91 +83,47 @@ enum AIResponseParser {
             throw AIServiceError.parsingError("Failed to convert response to data")
         }
 
-        let decoder = JSONDecoder()
-
-        struct JobResponse: Decodable {
-            let companyName: String?
-            let role: String?
-            let location: String?
-            let jobDescription: String?
-            let salaryMin: FlexibleInt?
-            let salaryMax: FlexibleInt?
-            let currency: String?
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw AIServiceError.parsingError("Response was not a JSON object")
         }
 
-        struct FlexibleInt: Decodable {
-            let value: Int?
-
-            init(from decoder: Decoder) throws {
-                let container = try decoder.singleValueContainer()
-
-                if let intValue = try? container.decode(Int.self) {
-                    value = intValue
-                    return
-                }
-
-                if let doubleValue = try? container.decode(Double.self) {
-                    value = Int(doubleValue.rounded())
-                    return
-                }
-
-                if let stringValue = try? container.decode(String.self) {
-                    value = Self.parseInt(from: stringValue)
-                    return
-                }
-
-                value = nil
-            }
-
-            private static func parseInt(from string: String) -> Int? {
-                let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return nil }
-
-                let plain = trimmed.replacingOccurrences(of: ",", with: "")
-                if let intValue = Int(plain) {
-                    return intValue
-                }
-
-                if let doubleValue = Double(plain) {
-                    return Int(doubleValue.rounded())
-                }
-
-                let pattern = #"-?\d+(?:\.\d+)?"#
-                guard let regex = try? NSRegularExpression(pattern: pattern),
-                      let match = regex.firstMatch(
-                        in: plain,
-                        range: NSRange(plain.startIndex..., in: plain)
-                      ),
-                      let range = Range(match.range, in: plain) else {
-                    return nil
-                }
-
-                let numeric = String(plain[range])
-                if let intValue = Int(numeric) {
-                    return intValue
-                }
-                if let doubleValue = Double(numeric) {
-                    return Int(doubleValue.rounded())
-                }
-                return nil
-            }
-        }
-
-        let response: JobResponse
-        do {
-            response = try decoder.decode(JobResponse.self, from: data)
-        } catch {
-            throw AIServiceError.parsingError(error.localizedDescription)
-        }
+        let companyName = parseString(
+            in: root,
+            keys: ["companyName", "company", "company_name", "employer", "organization"]
+        )
+        let role = parseString(
+            in: root,
+            keys: ["role", "jobTitle", "job_title", "title", "position"]
+        )
+        let location = parseString(
+            in: root,
+            keys: ["location", "jobLocation", "job_location", "city", "place"]
+        )
+        let jobDescription = parseString(
+            in: root,
+            keys: ["jobDescription", "job_description", "description", "summary"]
+        )
+        let salaryMin = parseInt(
+            in: root,
+            keys: ["salaryMin", "salary_min", "minSalary", "min_salary", "salaryFrom", "salary_from"]
+        )
+        let salaryMax = parseInt(
+            in: root,
+            keys: ["salaryMax", "salary_max", "maxSalary", "max_salary", "salaryTo", "salary_to"]
+        )
+        let currency = parseString(
+            in: root,
+            keys: ["currency", "salaryCurrency", "salary_currency"]
+        )
 
         return AIParsingViewModel.ParsedJobData(
-            companyName: response.companyName ?? "",
-            role: response.role ?? "",
-            location: response.location ?? "",
-            jobDescription: response.jobDescription ?? "",
-            salaryMin: response.salaryMin?.value,
-            salaryMax: response.salaryMax?.value,
-            currency: parseCurrency(from: response.currency)
+            companyName: companyName,
+            role: role,
+            location: location,
+            jobDescription: jobDescription,
+            salaryMin: salaryMin,
+            salaryMax: salaryMax,
+            currency: parseCurrency(from: currency)
         )
     }
 
@@ -188,6 +161,133 @@ enum AIResponseParser {
             options: .regularExpression
         )
         return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func parseString(in root: [String: Any], keys: [String]) -> String {
+        for key in keys {
+            guard let value = root[key] else { continue }
+
+            if value is NSNull {
+                continue
+            }
+
+            if let text = value as? String {
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    return trimmed
+                }
+            } else if let number = value as? NSNumber {
+                return number.stringValue
+            }
+        }
+
+        return ""
+    }
+
+    private static func parseInt(in root: [String: Any], keys: [String]) -> Int? {
+        for key in keys {
+            guard let value = root[key] else { continue }
+            if let parsed = parseIntValue(value) {
+                return parsed
+            }
+        }
+
+        return nil
+    }
+
+    private static func parseIntValue(_ value: Any) -> Int? {
+        if value is NSNull {
+            return nil
+        }
+
+        if let intValue = value as? Int {
+            return intValue
+        }
+
+        if let doubleValue = value as? Double {
+            return Int(doubleValue.rounded())
+        }
+
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+
+        if let stringValue = value as? String {
+            return parseInt(from: stringValue)
+        }
+
+        return nil
+    }
+
+    private static func parseInt(from raw: String) -> Int? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { return nil }
+
+        let sanitized = trimmed
+            .replacingOccurrences(of: ",", with: "")
+            .replacingOccurrences(of: "$", with: "")
+            .replacingOccurrences(of: "₹", with: "")
+            .replacingOccurrences(of: "€", with: "")
+            .replacingOccurrences(of: "£", with: "")
+
+        if let intValue = Int(sanitized) {
+            return intValue
+        }
+
+        if let doubleValue = Double(sanitized) {
+            return Int(doubleValue.rounded())
+        }
+
+        let compact = sanitized.replacingOccurrences(of: " ", with: "")
+        if let suffixed = parseWithSuffix(compact) {
+            return suffixed
+        }
+
+        let pattern = #"-?\d+(?:\.\d+)?(?:[kmb])?"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                in: compact,
+                range: NSRange(compact.startIndex..., in: compact)
+              ),
+              let range = Range(match.range, in: compact) else {
+            return nil
+        }
+
+        return parseWithSuffix(String(compact[range]))
+    }
+
+    private static func parseWithSuffix(_ token: String) -> Int? {
+        guard !token.isEmpty else { return nil }
+
+        let lower = token.lowercased()
+        let last = lower.last
+        let multiplier: Double
+        let numberPortion: String
+
+        switch last {
+        case "k":
+            multiplier = 1_000
+            numberPortion = String(lower.dropLast())
+        case "m":
+            multiplier = 1_000_000
+            numberPortion = String(lower.dropLast())
+        case "b":
+            multiplier = 1_000_000_000
+            numberPortion = String(lower.dropLast())
+        default:
+            multiplier = 1
+            numberPortion = lower
+        }
+
+        if let intValue = Int(numberPortion), multiplier == 1 {
+            return intValue
+        }
+
+        guard let numeric = Double(numberPortion) else {
+            return nil
+        }
+
+        return Int((numeric * multiplier).rounded())
     }
 
     /// Extract the first balanced JSON object from mixed text output.

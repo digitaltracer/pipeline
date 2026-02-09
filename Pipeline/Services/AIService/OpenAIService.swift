@@ -15,7 +15,7 @@ final class OpenAIService: AIServiceProtocol {
         // Build the request
         let messages: [[String: Any]] = [
             ["role": "system", "content": AIServicePrompts.jobParsingPrompt],
-            ["role": "user", "content": "Parse this job posting:\n\n\(webContent)"]
+            ["role": "user", "content": AIServicePrompts.jobParsingUserPrompt(webContent: webContent)]
         ]
 
         let requestBody: [String: Any] = [
@@ -61,12 +61,35 @@ final class OpenAIService: AIServiceProtocol {
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let choices = json["choices"] as? [[String: Any]],
               let firstChoice = choices.first,
-              let message = firstChoice["message"] as? [String: Any],
-              let content = message["content"] as? String else {
+              let message = firstChoice["message"] as? [String: Any] else {
             throw AIServiceError.invalidResponse
         }
 
-        return try AIResponseParser.parseJobData(from: content)
+        let contentText: String
+        if let text = message["content"] as? String {
+            contentText = text
+        } else if let parts = message["content"] as? [[String: Any]] {
+            contentText = parts
+                .compactMap { part -> String? in
+                    if let text = part["text"] as? String {
+                        return text
+                    }
+                    if let nested = part["content"] as? String {
+                        return nested
+                    }
+                    return nil
+                }
+                .joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            contentText = ""
+        }
+
+        guard !contentText.isEmpty else {
+            throw AIServiceError.invalidResponse
+        }
+
+        return try AIResponseParser.parseJobData(from: contentText)
     }
 
     private func fetchWebContent(from urlString: String) async throws -> String {
