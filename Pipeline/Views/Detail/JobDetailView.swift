@@ -10,6 +10,7 @@ struct JobDetailView: View {
     @State private var showingEditSheet = false
     @State private var showingAddInterviewLog = false
     @State private var showingDeleteAlert = false
+    @State private var actionErrorMessage: String?
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -22,12 +23,18 @@ struct JobDetailView: View {
                         onClose: onClose,
                         onDelete: { showingDeleteAlert = true },
                         onStatusChange: { status in
-                            viewModel.application = application
-                            viewModel.updateStatus(status, context: modelContext)
+                            do {
+                                try viewModel.updateStatus(status, for: application, context: modelContext)
+                            } catch {
+                                actionErrorMessage = error.localizedDescription
+                            }
                         },
                         onPriorityChange: { priority in
-                            viewModel.application = application
-                            viewModel.updatePriority(priority, context: modelContext)
+                            do {
+                                try viewModel.updatePriority(priority, for: application, context: modelContext)
+                            } catch {
+                                actionErrorMessage = error.localizedDescription
+                            }
                         }
                     )
 
@@ -43,8 +50,11 @@ struct JobDetailView: View {
                         InterviewStageIndicator(
                             currentStage: application.interviewStage,
                             onStageChange: { newStage in
-                                viewModel.application = application
-                                viewModel.updateInterviewStage(newStage, context: modelContext)
+                                do {
+                                    try viewModel.updateInterviewStage(newStage, for: application, context: modelContext)
+                                } catch {
+                                    actionErrorMessage = error.localizedDescription
+                                }
                             }
                         )
                         .padding(.horizontal, 6)
@@ -62,8 +72,11 @@ struct JobDetailView: View {
                             showingAddInterviewLog = true
                         },
                         onDeleteLog: { log in
-                            viewModel.application = application
-                            viewModel.deleteInterviewLog(log, context: modelContext)
+                            do {
+                                try viewModel.deleteInterviewLog(log, from: application, context: modelContext)
+                            } catch {
+                                actionErrorMessage = error.localizedDescription
+                            }
                         }
                     )
                 }
@@ -84,11 +97,23 @@ struct JobDetailView: View {
         .alert("Delete Application", isPresented: $showingDeleteAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
-                viewModel.application = application
-                viewModel.delete(context: modelContext)
+                do {
+                    try viewModel.delete(application, context: modelContext)
+                    onClose?()
+                } catch {
+                    actionErrorMessage = error.localizedDescription
+                }
             }
         } message: {
             Text("Are you sure you want to delete this application? This action cannot be undone.")
+        }
+        .alert("Action Failed", isPresented: Binding(
+            get: { actionErrorMessage != nil },
+            set: { if !$0 { actionErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(actionErrorMessage ?? "An unknown error occurred.")
         }
     }
 
@@ -113,8 +138,11 @@ struct JobDetailView: View {
 
             if application.status != .archived {
                 Button {
-                    viewModel.application = application
-                    viewModel.archive(context: modelContext)
+                    do {
+                        try viewModel.archive(application, context: modelContext)
+                    } catch {
+                        actionErrorMessage = error.localizedDescription
+                    }
                 } label: {
                     Label("Archive", systemImage: "archivebox")
                         .frame(width: 120)
