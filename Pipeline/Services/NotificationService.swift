@@ -8,6 +8,22 @@ final class NotificationService {
 
     private init() {}
 
+    private struct ReminderConfiguration {
+        let notificationsEnabled: Bool
+        let timing: ReminderTiming
+
+        static func current() -> ReminderConfiguration {
+            let defaults = UserDefaults.standard
+            let enabled = defaults.bool(forKey: Constants.UserDefaultsKeys.notificationsEnabled)
+            let timingRaw = defaults.string(forKey: Constants.UserDefaultsKeys.reminderTiming)
+            let timing = timingRaw.flatMap(ReminderTiming.init(rawValue:)) ?? .dayBefore
+            return ReminderConfiguration(
+                notificationsEnabled: enabled,
+                timing: timing
+            )
+        }
+    }
+
     // MARK: - Permission
 
     func requestPermission() async -> Bool {
@@ -73,6 +89,60 @@ final class NotificationService {
         }
     }
 
+    /// Keep a single application's reminder state in sync with app settings.
+    @MainActor
+    func syncFollowUpReminder(for application: JobApplication) async {
+        let config = ReminderConfiguration.current()
+        await syncFollowUpReminder(
+            for: application,
+            notificationsEnabled: config.notificationsEnabled,
+            timing: config.timing
+        )
+    }
+
+    /// Sync reminders for all applications using explicit settings.
+    @MainActor
+    func syncFollowUpReminders(
+        for applications: [JobApplication],
+        notificationsEnabled: Bool,
+        timing: ReminderTiming
+    ) async {
+        for application in applications {
+            await syncFollowUpReminder(
+                for: application,
+                notificationsEnabled: notificationsEnabled,
+                timing: timing
+            )
+        }
+    }
+
+    private func syncFollowUpReminder(
+        for application: JobApplication,
+        notificationsEnabled: Bool,
+        timing: ReminderTiming
+    ) async {
+        guard notificationsEnabled,
+              application.status != .archived,
+              let followUpDate = application.nextFollowUpDate else {
+            await removeNotifications(for: application.id)
+            return
+        }
+
+        let startOfToday = Calendar.current.startOfDay(for: Date())
+        guard followUpDate >= startOfToday else {
+            await removeNotifications(for: application.id)
+            return
+        }
+
+        await scheduleFollowUpReminder(
+            for: application.id,
+            companyName: application.companyName,
+            role: application.role,
+            followUpDate: followUpDate,
+            timing: timing
+        )
+    }
+
     private func scheduleDayBeforeNotification(
         identifier: String,
         companyName: String,
@@ -86,10 +156,17 @@ final class NotificationService {
         content.categoryIdentifier = "FOLLOWUP_REMINDER"
 
         // Schedule for 9 AM the day before
-        let dayBefore = Calendar.current.date(byAdding: .day, value: -1, to: followUpDate)!
+        guard let dayBefore = Calendar.current.date(byAdding: .day, value: -1, to: followUpDate) else {
+            return
+        }
         var dateComponents = Calendar.current.dateComponents([.year, .month, .day], from: dayBefore)
         dateComponents.hour = 9
         dateComponents.minute = 0
+
+        guard let fireDate = Calendar.current.date(from: dateComponents),
+              fireDate > Date() else {
+            return
+        }
 
         let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: false)
 
@@ -118,6 +195,11 @@ final class NotificationService {
         var dateComponents = Calendar.current.dateComponents([.year, .month, .day], from: followUpDate)
         dateComponents.hour = 9
         dateComponents.minute = 0
+
+        guard let fireDate = Calendar.current.date(from: dateComponents),
+              fireDate > Date() else {
+            return
+        }
 
         let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: false)
 
