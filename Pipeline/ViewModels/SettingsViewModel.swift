@@ -134,6 +134,20 @@ final class SettingsViewModel {
         return (base + custom).uniquedPreservingOrder()
     }
 
+    func preferredModel(for provider: AIProvider) -> String {
+        let models = availableModels(for: provider)
+        guard !models.isEmpty else { return "" }
+
+        if provider == selectedAIProvider {
+            let selected = selectedAIModel.trimmingCharacters(in: .whitespacesAndNewlines)
+            if models.contains(selected) {
+                return selected
+            }
+        }
+
+        return models.first ?? ""
+    }
+
     func addCustomModel(_ model: String, for provider: AIProvider) {
         let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
