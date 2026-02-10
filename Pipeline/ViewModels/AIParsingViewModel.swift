@@ -76,6 +76,15 @@ final class AIParsingViewModel {
             self.salaryMax = salaryMax
             self.currency = currency
         }
+
+        var hasMeaningfulContent: Bool {
+            !companyName.isEmpty ||
+                !role.isEmpty ||
+                !location.isEmpty ||
+                !jobDescription.isEmpty ||
+                salaryMin != nil ||
+                salaryMax != nil
+        }
     }
 
     // MARK: - Actions
@@ -84,15 +93,24 @@ final class AIParsingViewModel {
     func parseJobURL() async {
         refreshConfiguration()
         let trimmed = jobURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let model = parseModel
+
+        AIParseDebugLogger.info(
+            "AIParsingViewModel: parse requested provider=\(parseProvider.rawValue) model=\(model) url=\(AIParseDebugLogger.summarizedURL(trimmed))."
+        )
 
         guard !trimmed.isEmpty else {
             error = "Please enter a job URL"
+            AIParseDebugLogger.warning("AIParsingViewModel: parse blocked because URL input is empty.")
             return
         }
 
         let normalizedJobURL = URLHelpers.normalize(trimmed)
         guard URLHelpers.isValidWebURL(normalizedJobURL) else {
             error = "Invalid URL. Please use a valid http or https link."
+            AIParseDebugLogger.warning(
+                "AIParsingViewModel: parse blocked due to invalid URL: \(normalizedJobURL)."
+            )
             return
         }
 
@@ -107,24 +125,46 @@ final class AIParsingViewModel {
 
             guard !apiKey.isEmpty else {
                 error = "API key not configured. Please set up your API key in Settings."
+                AIParseDebugLogger.warning(
+                    "AIParsingViewModel: no API key configured for provider \(parseProvider.rawValue)."
+                )
                 return
             }
 
-            guard !parseModel.isEmpty else {
+            guard !model.isEmpty else {
                 error = "No compatible model available for \(parseProvider.rawValue)."
+                AIParseDebugLogger.warning(
+                    "AIParsingViewModel: no compatible model configured for provider \(parseProvider.rawValue)."
+                )
                 return
             }
 
             // Create appropriate AI service
             let service = createAIService(provider: parseProvider, apiKey: apiKey)
+            AIParseDebugLogger.info(
+                "AIParsingViewModel: invoking \(parseProvider.rawValue) service with model \(model)."
+            )
 
             // Fetch and parse the job posting
-            let parsed = try await service.parseJobPosting(from: normalizedJobURL, model: parseModel)
+            let parsed = try await service.parseJobPosting(from: normalizedJobURL, model: model)
+            guard parsed.hasMeaningfulContent else {
+                AIParseDebugLogger.warning(
+                    "AIParsingViewModel: parse finished but extracted fields were empty."
+                )
+                throw AIServiceError.noDataExtracted
+            }
             parsedData = parsed
+            AIParseDebugLogger.info("AIParsingViewModel: parse completed successfully.")
 
         } catch let aiError as AIServiceError {
+            AIParseDebugLogger.error(
+                "AIParsingViewModel: parse failed with AIServiceError: \(aiError.localizedDescription)."
+            )
             error = aiError.localizedDescription
         } catch {
+            AIParseDebugLogger.error(
+                "AIParsingViewModel: parse failed with unexpected error: \(error.localizedDescription)."
+            )
             self.error = "Failed to parse job posting: \(error.localizedDescription)"
         }
     }

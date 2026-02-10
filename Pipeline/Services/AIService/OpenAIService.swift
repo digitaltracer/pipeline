@@ -9,8 +9,18 @@ final class OpenAIService: AIServiceProtocol {
     }
 
     func parseJobPosting(from url: String, model: String) async throws -> AIParsingViewModel.ParsedJobData {
+        AIParseDebugLogger.info(
+            "OpenAIService: parse start url=\(AIParseDebugLogger.summarizedURL(url)) model=\(model)."
+        )
+
         // First, fetch the webpage content
         let webContent = try await fetchWebContent(from: url)
+        AIParseDebugLogger.info("OpenAIService: fetched webpage text (\(webContent.count) chars).")
+
+        guard !webContent.isEmpty else {
+            AIParseDebugLogger.warning("OpenAIService: webpage content is empty after HTML stripping.")
+            throw AIServiceError.parsingError("Fetched page content was empty.")
+        }
 
         // Build the request
         let messages: [[String: Any]] = [
@@ -35,11 +45,22 @@ final class OpenAIService: AIServiceProtocol {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            AIParseDebugLogger.error("OpenAIService: network error during OpenAI call: \(error.localizedDescription).")
+            throw AIServiceError.networkError(error)
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
+            AIParseDebugLogger.error("OpenAIService: missing HTTP response from OpenAI.")
             throw AIServiceError.invalidResponse
         }
+
+        AIParseDebugLogger.info(
+            "OpenAIService: OpenAI response status=\(httpResponse.statusCode) bytes=\(data.count)."
+        )
 
         switch httpResponse.statusCode {
         case 200:
@@ -52,16 +73,26 @@ final class OpenAIService: AIServiceProtocol {
             if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let error = errorJson["error"] as? [String: Any],
                let message = error["message"] as? String {
+                AIParseDebugLogger.error("OpenAIService: API error status=\(httpResponse.statusCode) message=\(message).")
                 throw AIServiceError.apiError(message)
             }
+            AIParseDebugLogger.error("OpenAIService: API error status=\(httpResponse.statusCode).")
             throw AIServiceError.apiError("HTTP \(httpResponse.statusCode)")
         }
 
         // Parse the response
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+        let jsonObject: Any
+        do {
+            jsonObject = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            throw AIServiceError.parsingError("Unable to decode OpenAI response.")
+        }
+
+        guard let json = jsonObject as? [String: Any],
               let choices = json["choices"] as? [[String: Any]],
               let firstChoice = choices.first,
               let message = firstChoice["message"] as? [String: Any] else {
+            AIParseDebugLogger.error("OpenAIService: response JSON missing expected fields.")
             throw AIServiceError.invalidResponse
         }
 
@@ -86,56 +117,17 @@ final class OpenAIService: AIServiceProtocol {
         }
 
         guard !contentText.isEmpty else {
+            AIParseDebugLogger.error("OpenAIService: model content text is empty.")
             throw AIServiceError.invalidResponse
         }
 
+        AIParseDebugLogger.info(
+            "OpenAIService: model output preview: \(AIParseDebugLogger.preview(contentText, maxLength: 280))."
+        )
         return try AIResponseParser.parseJobData(from: contentText)
     }
 
     private func fetchWebContent(from urlString: String) async throws -> String {
-        guard let url = URL(string: urlString) else {
-            throw AIServiceError.invalidURL
-        }
-
-        var request = URLRequest(url: url)
-        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36", forHTTPHeaderField: "User-Agent")
-
-        let (data, _) = try await URLSession.shared.data(for: request)
-
-        guard let html = String(data: data, encoding: .utf8) else {
-            throw AIServiceError.parsingError("Failed to decode webpage")
-        }
-
-        // Basic HTML to text conversion
-        return stripHTML(html)
-    }
-
-    private func stripHTML(_ html: String) -> String {
-        var text = html
-
-        // Remove script and style tags with their content
-        text = text.replacingOccurrences(of: "<script[^>]*>[\\s\\S]*?</script>", with: "", options: .regularExpression)
-        text = text.replacingOccurrences(of: "<style[^>]*>[\\s\\S]*?</style>", with: "", options: .regularExpression)
-
-        // Remove HTML tags
-        text = text.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
-
-        // Decode common HTML entities
-        text = text.replacingOccurrences(of: "&nbsp;", with: " ")
-        text = text.replacingOccurrences(of: "&amp;", with: "&")
-        text = text.replacingOccurrences(of: "&lt;", with: "<")
-        text = text.replacingOccurrences(of: "&gt;", with: ">")
-        text = text.replacingOccurrences(of: "&quot;", with: "\"")
-        text = text.replacingOccurrences(of: "&#39;", with: "'")
-
-        // Clean up whitespace
-        text = text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-
-        // Limit length to avoid token limits
-        if text.count > 15000 {
-            text = String(text.prefix(15000))
-        }
-
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        try await WebContentFetcher.fetchText(from: urlString, serviceName: "OpenAIService")
     }
 }
