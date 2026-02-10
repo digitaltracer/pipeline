@@ -646,8 +646,10 @@ private struct OptionalDateField: View {
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
             .appInput()
             .popover(isPresented: $showingPicker, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 14) {
@@ -679,42 +681,34 @@ private struct OptionalDateField: View {
                             QuickDateButton(title: "Tomorrow") {
                                 date = Calendar.current.date(byAdding: .day, value: 1, to: Date())
                                 isEnabled = true
+                                showingPicker = false
                             }
 
                             QuickDateButton(title: "Next week") {
                                 date = Calendar.current.date(byAdding: .day, value: 7, to: Date())
                                 isEnabled = true
+                                showingPicker = false
                             }
 
                             QuickDateButton(title: "2 weeks") {
                                 date = Calendar.current.date(byAdding: .day, value: 14, to: Date())
                                 isEnabled = true
+                                showingPicker = false
                             }
                         }
                     }
 
-                    GeometryReader { proxy in
-                        DatePicker(
-                            "",
-                            selection: Binding(
-                                get: { date ?? Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date() },
-                                set: {
-                                    date = $0
-                                    isEnabled = true
-                                }
-                            ),
-                            displayedComponents: .date
-                        )
-                        .labelsHidden()
-                        .datePickerStyle(.graphical)
-                        #if os(macOS)
-                        .focusable(false)
-                        .controlSize(.small)
-                        #endif
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                        .scaleEffect(min(1.25, (proxy.size.width - 24) / 300), anchor: .center)
-                    }
-                    .frame(height: 280)
+                    FollowUpCalendarView(
+                        selectedDate: Binding(
+                            get: { date ?? Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date() },
+                            set: {
+                                date = $0
+                                isEnabled = true
+                            }
+                        ),
+                        onDateSelected: { showingPicker = false }
+                    )
+                    .frame(height: 324)
                     .padding(10)
                     .frame(maxWidth: .infinity)
                     .background(
@@ -742,7 +736,113 @@ private struct OptionalDateField: View {
                     }
                 }
                 .padding(16)
-                .frame(width: 440)
+                .frame(width: 396)
+            }
+        }
+    }
+}
+
+private struct FollowUpCalendarView: View {
+    @Binding var selectedDate: Date
+    let onDateSelected: () -> Void
+    @State private var displayedMonth: Date
+
+    private let calendar = Calendar.current
+
+    init(selectedDate: Binding<Date>, onDateSelected: @escaping () -> Void = {}) {
+        self._selectedDate = selectedDate
+        self.onDateSelected = onDateSelected
+        let month = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: selectedDate.wrappedValue)) ?? Date()
+        self._displayedMonth = State(initialValue: month)
+    }
+
+    private var monthTitle: String {
+        displayedMonth.formatted(.dateTime.month(.wide).year())
+    }
+
+    private var weekdaySymbols: [String] {
+        let symbols = calendar.veryShortStandaloneWeekdaySymbols
+        let firstWeekdayIndex = max(0, calendar.firstWeekday - 1)
+        return Array(symbols[firstWeekdayIndex...] + symbols[..<firstWeekdayIndex])
+    }
+
+    private var gridDates: [Date] {
+        let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: displayedMonth)) ?? displayedMonth
+        let firstWeekday = calendar.component(.weekday, from: monthStart)
+        let offset = (firstWeekday - calendar.firstWeekday + 7) % 7
+        let gridStart = calendar.date(byAdding: .day, value: -offset, to: monthStart) ?? monthStart
+
+        return (0..<42).compactMap { index in
+            calendar.date(byAdding: .day, value: index, to: gridStart)
+        }
+    }
+
+    private func isInDisplayedMonth(_ date: Date) -> Bool {
+        calendar.isDate(date, equalTo: displayedMonth, toGranularity: .month)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(monthTitle)
+                    .font(.title2.weight(.semibold))
+
+                Spacer()
+
+                HStack(spacing: 6) {
+                    Button {
+                        displayedMonth = calendar.date(byAdding: .month, value: -1, to: displayedMonth) ?? displayedMonth
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        displayedMonth = calendar.date(byAdding: .month, value: 1, to: displayedMonth) ?? displayedMonth
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .foregroundColor(.secondary)
+            }
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 7), spacing: 8) {
+                ForEach(weekdaySymbols, id: \.self) { symbol in
+                    Text(symbol)
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+
+            GeometryReader { proxy in
+                let cellHeight = max(30, (proxy.size.height - (5 * 8)) / 6)
+
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 7), spacing: 8) {
+                    ForEach(gridDates, id: \.self) { day in
+                        let isSelected = calendar.isDate(day, inSameDayAs: selectedDate)
+                        let inMonth = isInDisplayedMonth(day)
+
+                        Button {
+                            selectedDate = day
+                            displayedMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: day)) ?? displayedMonth
+                            onDateSelected()
+                        } label: {
+                            Text(String(calendar.component(.day, from: day)))
+                                .font(.headline.weight(.medium))
+                                .foregroundColor(isSelected ? .white : (inMonth ? .primary : .secondary.opacity(0.55)))
+                                .frame(maxWidth: .infinity, minHeight: cellHeight)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(isSelected ? DesignSystem.Colors.accent : .clear)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
             }
         }
     }
@@ -755,7 +855,9 @@ private struct QuickDateButton: View {
     var body: some View {
         Button(title) { action() }
             .buttonStyle(.bordered)
-            .controlSize(.small)
+            .controlSize(.regular)
+            .font(.subheadline.weight(.semibold))
+            .frame(minHeight: 34)
     }
 }
 #endif
