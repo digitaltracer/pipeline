@@ -197,16 +197,18 @@ struct AIProviderSettingsContent: View {
             // Provider Cards
             HStack(spacing: 12) {
                 ForEach(AIProvider.allCases) { provider in
-                    ProviderCard(
-                        provider: provider,
-                        isSelected: viewModel.selectedAIProvider == provider
-                    )
-                    .onTapGesture {
+                    Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             viewModel.selectedAIProvider = provider
                             checkAPIKey(for: provider)
                         }
+                    } label: {
+                        ProviderCard(
+                            provider: provider,
+                            isSelected: viewModel.selectedAIProvider == provider
+                        )
                     }
+                    .buttonStyle(.plain)
                 }
             }
 
@@ -361,6 +363,7 @@ struct ProviderCard: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(isSelected ? DesignSystem.Colors.accent : Color.clear, lineWidth: 2)
         }
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 

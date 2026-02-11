@@ -20,15 +20,17 @@ struct AppearanceSettingsContent: View {
     var body: some View {
         HStack(spacing: 16) {
             ForEach(AppearanceMode.allCases) { mode in
-                ThemeCard(
-                    mode: mode,
-                    isSelected: viewModel.appearanceMode == mode
-                )
-                .onTapGesture {
+                Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         viewModel.appearanceMode = mode
                     }
+                } label: {
+                    ThemeCard(
+                        mode: mode,
+                        isSelected: viewModel.appearanceMode == mode
+                    )
                 }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -96,6 +98,7 @@ struct ThemeCard: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(isSelected ? DesignSystem.Colors.accent : Color.clear, lineWidth: 2)
         }
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 

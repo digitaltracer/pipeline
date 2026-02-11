@@ -264,6 +264,7 @@ private struct SettingsCategoryRow: View {
 
                 Spacer()
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
             .background(
@@ -283,6 +284,7 @@ private struct SettingsCategoryRow: View {
                         lineWidth: 1
                     )
             )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -382,6 +384,7 @@ private struct SettingsLinkRow: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .appCard(cornerRadius: 12, elevated: true, shadow: false)
+        .contentShape(Rectangle())
     }
 }
 
