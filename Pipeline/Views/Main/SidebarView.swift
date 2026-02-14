@@ -1,10 +1,12 @@
 import SwiftUI
+import PipelineKit
 
 #if os(macOS)
 struct SidebarView: View {
     @Binding var selectedFilter: SidebarFilter
     @Binding var showingAddApplication: Bool
     @Binding var showingSettings: Bool
+    @Binding var showingDashboard: Bool
     let statusCounts: [SidebarFilter: Int]
     @Bindable var settingsViewModel: SettingsViewModel
     @Environment(\.colorScheme) private var colorScheme
@@ -76,14 +78,41 @@ struct SidebarView: View {
             // Filter List
             List {
                 Section {
+                    // Dashboard item
+                    Button {
+                        showingDashboard = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "chart.bar.xaxis")
+                                .foregroundColor(showingDashboard ? .white : .indigo)
+                                .frame(width: 20)
+
+                            Text("Dashboard")
+                                .foregroundColor(showingDashboard ? .white : .primary)
+
+                            Spacer()
+                        }
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(showingDashboard ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.85 : 1.0) : Color.clear)
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+
                     ForEach(SidebarFilter.allCases) { filter in
                         Button {
+                            showingDashboard = false
                             selectedFilter = filter
                         } label: {
                             SidebarFilterRow(
                                 filter: filter,
                                 count: statusCounts[filter] ?? 0,
-                                isSelected: selectedFilter == filter
+                                isSelected: !showingDashboard && selectedFilter == filter
                             )
                         }
                         .buttonStyle(.plain)
@@ -182,6 +211,7 @@ struct SidebarFilterRow: View {
         selectedFilter: .constant(.all),
         showingAddApplication: .constant(false),
         showingSettings: .constant(false),
+        showingDashboard: .constant(false),
         statusCounts: [
             .all: 25,
             .saved: 5,
@@ -202,6 +232,7 @@ struct SidebarView: View {
     @Binding var selectedFilter: SidebarFilter
     @Binding var showingAddApplication: Bool
     @Binding var showingSettings: Bool
+    @Binding var showingDashboard: Bool
     let statusCounts: [SidebarFilter: Int]
     @Bindable var settingsViewModel: SettingsViewModel
 
