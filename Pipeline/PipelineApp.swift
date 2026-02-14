@@ -2,16 +2,14 @@ import SwiftUI
 import SwiftData
 
 // MARK: - Development Flag
-// Set to false to disable CloudKit/iCloud sync (works with Personal Team provisioning).
-// To re-enable later:
-// 1) Switch CODE_SIGN_ENTITLEMENTS to `Pipeline.CloudKit.entitlements` in Xcode, and
-// 2) Set this flag to true.
-private let enableCloudKitSync = true
+// Set to false to hide/disable CloudKit sync controls and force local-only storage.
+// Useful when signing does not include iCloud capabilities.
+private let cloudSyncSupportedInThisBuild = true
 
 @main
 struct PipelineApp: App {
     let modelContainer: ModelContainer
-    @State private var settingsViewModel = SettingsViewModel()
+    @State private var settingsViewModel: SettingsViewModel
 
     init() {
         do {
@@ -20,23 +18,68 @@ struct PipelineApp: App {
                 InterviewLog.self
             ])
 
-            let cloudKitConfig: ModelConfiguration.CloudKitDatabase = enableCloudKitSync
-                ? .private(Constants.iCloud.containerID)
-                : .none
+            let storedSyncPreference = UserDefaults.standard.object(
+                forKey: Constants.UserDefaultsKeys.cloudSyncEnabled
+            ) as? Bool
 
-            let modelConfiguration = ModelConfiguration(
-                schema: schema,
-                isStoredInMemoryOnly: false,
-                cloudKitDatabase: cloudKitConfig
+            let preferredSyncEnabled = cloudSyncSupportedInThisBuild && (storedSyncPreference ?? true)
+
+            let container: ModelContainer
+            let syncEnabledAtLaunch: Bool
+
+            if preferredSyncEnabled {
+                do {
+                    container = try Self.makeModelContainer(
+                        schema: schema,
+                        cloudKitDatabase: .private(Constants.iCloud.containerID)
+                    )
+                    syncEnabledAtLaunch = true
+                } catch {
+                    // If CloudKit setup is invalid for the current signing profile, keep the app usable.
+                    container = try Self.makeModelContainer(
+                        schema: schema,
+                        cloudKitDatabase: .none
+                    )
+                    syncEnabledAtLaunch = false
+                    UserDefaults.standard.set(false, forKey: Constants.UserDefaultsKeys.cloudSyncEnabled)
+                    print("CloudKit initialization failed; using local storage only: \(error)")
+                }
+            } else {
+                container = try Self.makeModelContainer(
+                    schema: schema,
+                    cloudKitDatabase: .none
+                )
+                syncEnabledAtLaunch = false
+            }
+
+            self.modelContainer = container
+            _settingsViewModel = State(
+                initialValue: SettingsViewModel(
+                    cloudSyncSupported: cloudSyncSupportedInThisBuild,
+                    cloudSyncEnabledAtLaunch: syncEnabledAtLaunch
+                )
             )
 
-            modelContainer = try ModelContainer(
-                for: schema,
-                configurations: [modelConfiguration]
-            )
+            NotificationService.shared.registerCategories()
         } catch {
             fatalError("Could not initialize ModelContainer: \(error)")
         }
+    }
+
+    private static func makeModelContainer(
+        schema: Schema,
+        cloudKitDatabase: ModelConfiguration.CloudKitDatabase
+    ) throws -> ModelContainer {
+        let modelConfiguration = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: false,
+            cloudKitDatabase: cloudKitDatabase
+        )
+
+        return try ModelContainer(
+            for: schema,
+            configurations: [modelConfiguration]
+        )
     }
 
     var body: some Scene {
