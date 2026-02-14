@@ -7,6 +7,7 @@ final class SettingsViewModel {
         static let appearanceMode = "appearanceMode"
         static let selectedAIProvider = "selectedAIProvider"
         static let selectedAIModel = "selectedAIModel"
+        static let cloudSyncEnabled = Constants.UserDefaultsKeys.cloudSyncEnabled
 
         static let customModelsByProviderID = "customModelsByProviderID"
         static let cachedModelsByProviderID = "cachedModelsByProviderID"
@@ -80,9 +81,33 @@ final class SettingsViewModel {
         }
     }
 
+    // MARK: - Sync
+
+    let cloudSyncSupported: Bool
+    let cloudSyncEnabledAtLaunch: Bool
+
+    var cloudSyncEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(cloudSyncEnabled, forKey: StorageKeys.cloudSyncEnabled)
+        }
+    }
+
+    var cloudSyncNeedsRestart: Bool {
+        cloudSyncEnabled != cloudSyncEnabledAtLaunch
+    }
+
     // MARK: - Initialization
 
-    init() {
+    init(
+        cloudSyncSupported: Bool = true,
+        cloudSyncEnabledAtLaunch: Bool? = nil
+    ) {
+        self.cloudSyncSupported = cloudSyncSupported
+        let storedCloudSyncPreference = UserDefaults.standard.object(forKey: StorageKeys.cloudSyncEnabled) as? Bool
+        let initialCloudSyncEnabled = cloudSyncSupported ? (storedCloudSyncPreference ?? true) : false
+        self.cloudSyncEnabled = initialCloudSyncEnabled
+        self.cloudSyncEnabledAtLaunch = cloudSyncEnabledAtLaunch ?? initialCloudSyncEnabled
+
         if let rawValue = UserDefaults.standard.string(forKey: StorageKeys.appearanceMode),
            let mode = AppearanceMode(rawValue: rawValue) {
             self.appearanceMode = mode
