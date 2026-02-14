@@ -86,6 +86,7 @@ enum Constants {
         static let appearanceMode = "appearanceMode"
         static let selectedAIProvider = "selectedAIProvider"
         static let selectedAIModel = "selectedAIModel"
+        static let cloudSyncEnabled = "cloudSyncEnabled"
         static let notificationsEnabled = "notificationsEnabled"
         static let reminderTiming = "reminderTiming"
         static let lastSyncDate = "lastSyncDate"
