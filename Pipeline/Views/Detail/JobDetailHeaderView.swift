@@ -1,4 +1,5 @@
 import SwiftUI
+import PipelineKit
 
 struct JobDetailHeaderView: View {
     let application: JobApplication

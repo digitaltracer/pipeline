@@ -1,4 +1,5 @@
 import SwiftUI
+import PipelineKit
 
 struct StarRating: View {
     @Binding var rating: Int

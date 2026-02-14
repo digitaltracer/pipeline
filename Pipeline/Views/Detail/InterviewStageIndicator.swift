@@ -1,4 +1,5 @@
 import SwiftUI
+import PipelineKit
 
 struct InterviewStageIndicator: View {
     let currentStage: InterviewStage?

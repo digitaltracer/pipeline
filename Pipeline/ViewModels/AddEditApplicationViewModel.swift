@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import SwiftUI
+import PipelineKit
 
 @Observable
 final class AddEditApplicationViewModel {

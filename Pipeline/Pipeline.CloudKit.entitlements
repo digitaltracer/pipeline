@@ -14,6 +14,11 @@
 	<key>com.apple.developer.ubiquity-kvstore-identifier</key>
 	<string>$(TeamIdentifierPrefix)com.pipeline.app</string>
 
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.io.github.digitaltracer.pipeline</string>
+	</array>
+
 	<!-- Keep macOS sandbox entitlements consistent with the non-CloudKit file. -->
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
@@ -21,6 +26,10 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)io.github.digitaltracer.pipeline</string>
+	</array>
 </dict>
 </plist>
 

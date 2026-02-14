@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import PipelineKit
 
 @Observable
 final class ApplicationDetailViewModel {

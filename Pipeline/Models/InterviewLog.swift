@@ -1,52 +1,8 @@
+// InterviewLog is now provided by PipelineKit.
+// Sample data kept here for previews.
 import Foundation
 import SwiftData
-
-@Model
-final class InterviewLog {
-    var id: UUID = UUID()
-    private var interviewTypeRawValue: String = InterviewStage.phoneScreen.rawValue
-    var date: Date = Date()
-    var interviewerName: String?
-    var rating: Int = 3
-    var notes: String?
-
-    var application: JobApplication?
-
-    // MARK: - Computed Properties
-
-    var interviewType: InterviewStage {
-        get { InterviewStage(rawValue: interviewTypeRawValue) }
-        set { interviewTypeRawValue = newValue.rawValue }
-    }
-
-    // MARK: - Initializer
-
-    init(
-        id: UUID = UUID(),
-        interviewType: InterviewStage,
-        date: Date = Date(),
-        interviewerName: String? = nil,
-        rating: Int = 3,
-        notes: String? = nil,
-        application: JobApplication? = nil
-    ) {
-        self.id = id
-        self.interviewTypeRawValue = interviewType.rawValue
-        self.date = date
-        self.interviewerName = interviewerName
-        self.rating = min(max(rating, 1), 5) // Clamp between 1 and 5
-        self.notes = notes
-        self.application = application
-    }
-
-    // MARK: - Validation
-
-    var isValid: Bool {
-        rating >= 1 && rating <= 5
-    }
-}
-
-// MARK: - Sample Data
+import PipelineKit
 
 extension InterviewLog {
     static var sampleData: [InterviewLog] {

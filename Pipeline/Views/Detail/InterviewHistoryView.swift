@@ -1,4 +1,5 @@
 import SwiftUI
+import PipelineKit
 
 struct InterviewHistoryView: View {
     let logs: [InterviewLog]

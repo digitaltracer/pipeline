@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import PipelineKit
 
 // MARK: - Development Flag
 // Set to false to hide/disable CloudKit sync controls and force local-only storage.
@@ -12,12 +13,10 @@ struct PipelineApp: App {
     @State private var settingsViewModel: SettingsViewModel
 
     init() {
-        do {
-            let schema = Schema([
-                JobApplication.self,
-                InterviewLog.self
-            ])
+        // Migrate legacy store to App Group container before opening
+        SharedContainer.migrateStoreIfNeeded()
 
+        do {
             let storedSyncPreference = UserDefaults.standard.object(
                 forKey: Constants.UserDefaultsKeys.cloudSyncEnabled
             ) as? Bool
@@ -29,15 +28,13 @@ struct PipelineApp: App {
 
             if preferredSyncEnabled {
                 do {
-                    container = try Self.makeModelContainer(
-                        schema: schema,
+                    container = try SharedContainer.makeModelContainer(
                         cloudKitDatabase: .private(Constants.iCloud.containerID)
                     )
                     syncEnabledAtLaunch = true
                 } catch {
                     // If CloudKit setup is invalid for the current signing profile, keep the app usable.
-                    container = try Self.makeModelContainer(
-                        schema: schema,
+                    container = try SharedContainer.makeModelContainer(
                         cloudKitDatabase: .none
                     )
                     syncEnabledAtLaunch = false
@@ -45,8 +42,7 @@ struct PipelineApp: App {
                     print("CloudKit initialization failed; using local storage only: \(error)")
                 }
             } else {
-                container = try Self.makeModelContainer(
-                    schema: schema,
+                container = try SharedContainer.makeModelContainer(
                     cloudKitDatabase: .none
                 )
                 syncEnabledAtLaunch = false
@@ -64,22 +60,6 @@ struct PipelineApp: App {
         } catch {
             fatalError("Could not initialize ModelContainer: \(error)")
         }
-    }
-
-    private static func makeModelContainer(
-        schema: Schema,
-        cloudKitDatabase: ModelConfiguration.CloudKitDatabase
-    ) throws -> ModelContainer {
-        let modelConfiguration = ModelConfiguration(
-            schema: schema,
-            isStoredInMemoryOnly: false,
-            cloudKitDatabase: cloudKitDatabase
-        )
-
-        return try ModelContainer(
-            for: schema,
-            configurations: [modelConfiguration]
-        )
     }
 
     var body: some Scene {

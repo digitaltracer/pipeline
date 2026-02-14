@@ -1,4 +1,5 @@
 import SwiftUI
+import PipelineKit
 
 struct StatsBarView: View {
     let stats: ApplicationStats

@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import PipelineKit
 
 struct EditApplicationView: View {
     @Environment(\.modelContext) private var modelContext

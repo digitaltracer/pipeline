@@ -1,4 +1,5 @@
 import SwiftUI
+import PipelineKit
 
 struct AIProviderSettingsView: View {
     @Bindable var viewModel: SettingsViewModel

@@ -1,4 +1,5 @@
 import SwiftUI
+import PipelineKit
 
 struct AIParseFormView: View {
     @Bindable var aiViewModel: AIParsingViewModel
@@ -148,7 +149,7 @@ struct AIParseFormView: View {
     }
 
     @ViewBuilder
-    private func parsedDataPreview(_ data: AIParsingViewModel.ParsedJobData) -> some View {
+    private func parsedDataPreview(_ data: ParsedJobData) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Extracted Information")
                 .font(.headline)

@@ -1,4 +1,5 @@
 import SwiftUI
+import PipelineKit
 
 struct SearchBar: View {
     @Binding var text: String

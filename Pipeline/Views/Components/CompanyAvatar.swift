@@ -1,4 +1,5 @@
 import SwiftUI
+import PipelineKit
 
 struct CompanyAvatar: View {
     let companyName: String

@@ -1,4 +1,5 @@
 import SwiftUI
+import PipelineKit
 
 struct ManualEntryFormView: View {
     @Bindable var viewModel: AddEditApplicationViewModel

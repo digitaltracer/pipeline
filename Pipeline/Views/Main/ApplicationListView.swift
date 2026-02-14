@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import PipelineKit
 
 struct ApplicationListView: View {
     @Environment(\.modelContext) private var modelContext

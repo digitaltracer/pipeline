@@ -1,4 +1,5 @@
 import SwiftUI
+import PipelineKit
 
 struct StatusBadge: View {
     let status: ApplicationStatus

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import PipelineKit
 
 @Observable
 final class AIParsingViewModel {
@@ -48,45 +49,6 @@ final class AIParsingViewModel {
         }
     }
 
-    // MARK: - Parsed Data
-
-    struct ParsedJobData {
-        var companyName: String
-        var role: String
-        var location: String
-        var jobDescription: String
-        var salaryMin: Int?
-        var salaryMax: Int?
-        var currency: Currency
-
-        init(
-            companyName: String = "",
-            role: String = "",
-            location: String = "",
-            jobDescription: String = "",
-            salaryMin: Int? = nil,
-            salaryMax: Int? = nil,
-            currency: Currency = .usd
-        ) {
-            self.companyName = companyName
-            self.role = role
-            self.location = location
-            self.jobDescription = jobDescription
-            self.salaryMin = salaryMin
-            self.salaryMax = salaryMax
-            self.currency = currency
-        }
-
-        var hasMeaningfulContent: Bool {
-            !companyName.isEmpty ||
-                !role.isEmpty ||
-                !location.isEmpty ||
-                !jobDescription.isEmpty ||
-                salaryMin != nil ||
-                salaryMax != nil
-        }
-    }
-
     // MARK: - Actions
 
     @MainActor
@@ -120,7 +82,6 @@ final class AIParsingViewModel {
         defer { isLoading = false }
 
         do {
-            // Get API key from Keychain
             let apiKey = try KeychainService.shared.getAPIKey(for: parseProvider)
 
             guard !apiKey.isEmpty else {
@@ -139,13 +100,11 @@ final class AIParsingViewModel {
                 return
             }
 
-            // Create appropriate AI service
             let service = createAIService(provider: parseProvider, apiKey: apiKey)
             AIParseDebugLogger.info(
                 "AIParsingViewModel: invoking \(parseProvider.rawValue) service with model \(model)."
             )
 
-            // Fetch and parse the job posting
             let parsed = try await service.parseJobPosting(from: normalizedJobURL, model: model)
             guard parsed.hasMeaningfulContent else {
                 AIParseDebugLogger.warning(
@@ -170,13 +129,14 @@ final class AIParsingViewModel {
     }
 
     private func createAIService(provider: AIProvider, apiKey: String) -> AIServiceProtocol {
+        let contentProvider = WKWebViewContentProvider(serviceName: "\(provider.rawValue)Service")
         switch provider {
         case .openAI:
-            return OpenAIService(apiKey: apiKey)
+            return OpenAIService(apiKey: apiKey, contentProvider: contentProvider)
         case .anthropic:
-            return AnthropicService(apiKey: apiKey)
+            return AnthropicService(apiKey: apiKey, contentProvider: contentProvider)
         case .gemini:
-            return GeminiService(apiKey: apiKey)
+            return GeminiService(apiKey: apiKey, contentProvider: contentProvider)
         }
     }
 
@@ -199,7 +159,6 @@ final class AIParsingViewModel {
             viewModel.salaryMaxString = String(max)
         }
 
-        // Auto-detect platform
         viewModel.platform = Platform.detect(from: jobURL)
     }
 

@@ -1,4 +1,5 @@
 import SwiftUI
+import PipelineKit
 
 struct JobDescriptionView: View {
     let description: String

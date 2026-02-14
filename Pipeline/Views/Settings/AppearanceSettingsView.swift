@@ -1,4 +1,5 @@
 import SwiftUI
+import PipelineKit
 
 struct AppearanceSettingsView: View {
     @Bindable var viewModel: SettingsViewModel

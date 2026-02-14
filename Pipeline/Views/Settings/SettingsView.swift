@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import UserNotifications
+import PipelineKit
 
 #if os(macOS)
 private enum SettingsCategory: String, CaseIterable, Identifiable {

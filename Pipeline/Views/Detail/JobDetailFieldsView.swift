@@ -1,4 +1,5 @@
 import SwiftUI
+import PipelineKit
 
 struct JobDetailFieldsView: View {
     let application: JobApplication

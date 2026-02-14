@@ -1,4 +1,5 @@
 import SwiftUI
+import PipelineKit
 
 struct PlatformIcon: View {
     let platform: Platform
