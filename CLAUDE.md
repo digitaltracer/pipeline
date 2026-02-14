@@ -51,10 +51,16 @@ pipeline/                              # Git repo root
     │
     ├── Services/                      # Business logic services
     │   ├── AIService/                 # AI provider implementations
-    │   ├── KeychainService.swift
-    │   ├── LogoFetchService.swift
-    │   ├── PlatformDetectionService.swift
-    │   └── NotificationService.swift
+    │   │   ├── AIServiceProtocol.swift    # Protocol, error types, debug logger
+    │   │   ├── WebContentFetcher.swift    # URL→text extraction (URLSession + WKWebView fallback)
+    │   │   ├── AIResponseParser.swift     # JSON recovery, salary parsing, field mapping
+    │   │   ├── AIServicePrompts.swift     # Standardized prompts for all providers
+    │   │   ├── OpenAIService.swift        # GPT integration
+    │   │   ├── AnthropicService.swift     # Claude integration
+    │   │   └── GeminiService.swift        # Gemini integration
+    │   ├── KeychainService.swift          # Secure API key storage (kSecClassGenericPassword)
+    │   ├── PlatformDetectionService.swift # Job board URL detection & job ID extraction
+    │   └── NotificationService.swift      # Follow-up reminder scheduling (UNUserNotification)
     │
     ├── Utilities/                     # Helpers and constants
     │   ├── DateFormatters.swift
@@ -138,6 +144,26 @@ enum SomeEnum: String, Codable, CaseIterable, Identifiable {
 | `Pipeline/Views/Forms/AddApplicationView.swift` | Modal with Manual/AI Parse tabs |
 | `Pipeline/Services/KeychainService.swift` | Secure API key storage |
 | `Pipeline/Services/AIService/AIServiceProtocol.swift` | AI service interface and helpers |
+| `Pipeline/Services/AIService/WebContentFetcher.swift` | Extracts text from job posting URLs |
+| `Pipeline/Services/AIService/AIResponseParser.swift` | JSON recovery and salary parsing |
+| `Pipeline/Utilities/Constants.swift` | Design system, external URLs, UserDefaults keys, limits |
+
+## Custom Values System
+
+Users can add custom statuses, sources, and interview stages beyond the built-in options. These are stored in UserDefaults via helpers in `Constants.swift` and deduplicated case-insensitively.
+
+## AI Parsing Pipeline
+
+The AI parse flow works as follows:
+1. **WebContentFetcher** extracts text from a job URL (URLSession primary, WKWebView fallback for JS-heavy sites)
+2. **AIServicePrompts** wraps the content in a structured prompt requesting JSON output
+3. Provider service (OpenAI/Anthropic/Gemini) sends request and gets raw response
+4. **AIResponseParser** recovers valid JSON from the response (handles truncation, markdown fences, field name variants, salary formats)
+5. Parsed data populates `AddEditApplicationViewModel` form fields
+
+## Model Catalog
+
+`SettingsViewModel` contains a nested `ModelCatalogService` that fetches live model lists from each AI provider's API. Results are cached for 24 hours. Models are filtered to only show relevant ones (e.g., GPT/O-series for OpenAI, Claude for Anthropic, Gemini with generateContent support).
 
 ## Common Tasks
 
