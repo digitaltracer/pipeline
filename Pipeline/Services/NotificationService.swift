@@ -1,5 +1,10 @@
 import Foundation
 import UserNotifications
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 final class NotificationService {
     static let shared = NotificationService()
@@ -39,6 +44,31 @@ final class NotificationService {
     func checkPermissionStatus() async -> UNAuthorizationStatus {
         let settings = await notificationCenter.notificationSettings()
         return settings.authorizationStatus
+    }
+
+    func authorizationStatusAfterPromptIfNeeded() async -> UNAuthorizationStatus {
+        let currentStatus = await checkPermissionStatus()
+        guard currentStatus == .notDetermined else {
+            return currentStatus
+        }
+
+        _ = await requestPermission()
+        return await checkPermissionStatus()
+    }
+
+    func isPermissionGranted(_ status: UNAuthorizationStatus) -> Bool {
+        Self.isPermissionGrantedStatus(status)
+    }
+
+    @MainActor
+    func openNotificationSettings() {
+        #if canImport(UIKit)
+        guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(settingsURL)
+        #elseif canImport(AppKit)
+        guard let settingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.notifications") else { return }
+        NSWorkspace.shared.open(settingsURL)
+        #endif
     }
 
     // MARK: - Scheduling
@@ -93,9 +123,10 @@ final class NotificationService {
     @MainActor
     func syncFollowUpReminder(for application: JobApplication) async {
         let config = ReminderConfiguration.current()
+        let status = await checkPermissionStatus()
         await syncFollowUpReminder(
             for: application,
-            notificationsEnabled: config.notificationsEnabled,
+            notificationsEnabled: config.notificationsEnabled && Self.isPermissionGrantedStatus(status),
             timing: config.timing
         )
     }
@@ -107,10 +138,13 @@ final class NotificationService {
         notificationsEnabled: Bool,
         timing: ReminderTiming
     ) async {
+        let permissionStatus = await checkPermissionStatus()
+        let effectiveNotificationsEnabled = notificationsEnabled && Self.isPermissionGrantedStatus(permissionStatus)
+
         for application in applications {
             await syncFollowUpReminder(
                 for: application,
-                notificationsEnabled: notificationsEnabled,
+                notificationsEnabled: effectiveNotificationsEnabled,
                 timing: timing
             )
         }
@@ -247,5 +281,16 @@ final class NotificationService {
         )
 
         notificationCenter.setNotificationCategories([followUpCategory])
+    }
+
+    private static func isPermissionGrantedStatus(_ status: UNAuthorizationStatus) -> Bool {
+        switch status {
+        case .authorized, .provisional, .ephemeral:
+            return true
+        case .notDetermined, .denied:
+            return false
+        @unknown default:
+            return false
+        }
     }
 }
