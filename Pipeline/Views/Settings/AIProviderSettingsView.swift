@@ -7,6 +7,7 @@ struct AIProviderSettingsView: View {
     @State private var isAPIKeyVisible: Bool = false
     @State private var showingSaveConfirmation: Bool = false
     @State private var saveError: String?
+    @State private var isValidatingAPIKey: Bool = false
     @State private var confirmationResetTask: Task<Void, Never>?
 
     var body: some View {
@@ -58,13 +59,19 @@ struct AIProviderSettingsView: View {
                     .buttonStyle(.plain)
                 }
 
-                Button("Save API Key") {
+                Button {
                     saveAPIKey()
+                } label: {
+                    if isValidatingAPIKey {
+                        Label("Validating...", systemImage: "hourglass")
+                    } else {
+                        Text("Save API Key")
+                    }
                 }
-                .disabled(apiKey.isEmpty)
+                .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isValidatingAPIKey)
 
                 if showingSaveConfirmation {
-                    Label("API Key saved successfully", systemImage: "checkmark.circle.fill")
+                    Label("API key verified and saved", systemImage: "checkmark.circle.fill")
                         .foregroundColor(.green)
                 }
 
@@ -132,24 +139,32 @@ struct AIProviderSettingsView: View {
     }
 
     private func saveAPIKey() {
-        do {
-            try KeychainService.shared.saveAPIKey(apiKey, for: viewModel.selectedAIProvider)
-            showingSaveConfirmation = true
+        guard !isValidatingAPIKey else { return }
+
+        let provider = viewModel.selectedAIProvider
+        let candidateKey = apiKey
+
+        Task { @MainActor in
+            isValidatingAPIKey = true
+            showingSaveConfirmation = false
             saveError = nil
 
-            Task {
-                await viewModel.refreshModels(for: viewModel.selectedAIProvider, force: true)
-            }
+            do {
+                try await viewModel.validateAndSaveAPIKey(candidateKey, for: provider)
 
-            confirmationResetTask?.cancel()
-            confirmationResetTask = Task {
-                try? await Task.sleep(for: .seconds(3))
-                guard !Task.isCancelled else { return }
+                showingSaveConfirmation = true
+                confirmationResetTask?.cancel()
+                confirmationResetTask = Task {
+                    try? await Task.sleep(for: .seconds(3))
+                    guard !Task.isCancelled else { return }
+                    showingSaveConfirmation = false
+                }
+            } catch {
+                saveError = "Failed to validate API key: \(error.localizedDescription)"
                 showingSaveConfirmation = false
             }
-        } catch {
-            saveError = "Failed to save API key: \(error.localizedDescription)"
-            showingSaveConfirmation = false
+
+            isValidatingAPIKey = false
         }
     }
 
@@ -296,12 +311,10 @@ struct AIProviderSettingsContent: View {
                     .foregroundColor(.secondary)
 
                 APIKeyInputField(
+                    viewModel: viewModel,
                     provider: viewModel.selectedAIProvider,
                     onSave: {
                         checkAPIKey(for: viewModel.selectedAIProvider)
-                        Task {
-                            await viewModel.refreshModels(for: viewModel.selectedAIProvider, force: true)
-                        }
                     }
                 )
             }
@@ -368,12 +381,14 @@ struct ProviderCard: View {
 }
 
 struct APIKeyInputField: View {
+    @Bindable var viewModel: SettingsViewModel
     let provider: AIProvider
     let onSave: () -> Void
 
     @State private var apiKey: String = ""
     @State private var isVisible: Bool = false
     @State private var showSuccess: Bool = false
+    @State private var isValidating: Bool = false
     @State private var errorMessage: String?
     @State private var successResetTask: Task<Void, Never>?
 
@@ -396,11 +411,17 @@ struct APIKeyInputField: View {
                 }
                 .buttonStyle(.plain)
 
-                Button("Save") {
+                Button {
                     saveKey()
+                } label: {
+                    if isValidating {
+                        Label("Validating...", systemImage: "hourglass")
+                    } else {
+                        Text("Save")
+                    }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(apiKey.isEmpty)
+                .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isValidating)
             }
             .overlay(alignment: .trailing) {
                 if showSuccess {
@@ -439,21 +460,33 @@ struct APIKeyInputField: View {
     }
 
     private func saveKey() {
-        do {
-            try KeychainService.shared.saveAPIKey(apiKey, for: provider)
-            showSuccess = true
-            errorMessage = nil
-            onSave()
+        guard !isValidating else { return }
 
-            successResetTask?.cancel()
-            successResetTask = Task {
-                try? await Task.sleep(for: .seconds(2))
-                guard !Task.isCancelled else { return }
+        let candidateKey = apiKey
+        let currentProvider = provider
+
+        Task { @MainActor in
+            isValidating = true
+            showSuccess = false
+            errorMessage = nil
+
+            do {
+                try await viewModel.validateAndSaveAPIKey(candidateKey, for: currentProvider)
+                showSuccess = true
+                onSave()
+
+                successResetTask?.cancel()
+                successResetTask = Task {
+                    try? await Task.sleep(for: .seconds(2))
+                    guard !Task.isCancelled else { return }
+                    showSuccess = false
+                }
+            } catch {
+                errorMessage = "Failed to validate API key: \(error.localizedDescription)"
                 showSuccess = false
             }
-        } catch {
-            errorMessage = "Failed to save API key: \(error.localizedDescription)"
-            showSuccess = false
+
+            isValidating = false
         }
     }
 }

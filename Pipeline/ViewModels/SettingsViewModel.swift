@@ -3,6 +3,20 @@ import SwiftUI
 
 @Observable
 final class SettingsViewModel {
+    enum APIKeyValidationError: LocalizedError {
+        case emptyKey
+        case noCompatibleModels
+
+        var errorDescription: String? {
+            switch self {
+            case .emptyKey:
+                return "API key cannot be empty."
+            case .noCompatibleModels:
+                return "No compatible models were returned for this key."
+            }
+        }
+    }
+
     private enum StorageKeys {
         static let appearanceMode = "appearanceMode"
         static let selectedAIProvider = "selectedAIProvider"
@@ -251,6 +265,29 @@ final class SettingsViewModel {
             modelRefreshErrorsByProviderID[provider.providerID] = aiError.localizedDescription
         } catch {
             modelRefreshErrorsByProviderID[provider.providerID] = "Could not refresh models. Using saved list."
+        }
+    }
+
+    @MainActor
+    func validateAndSaveAPIKey(_ rawAPIKey: String, for provider: AIProvider) async throws {
+        let apiKey = rawAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !apiKey.isEmpty else {
+            throw APIKeyValidationError.emptyKey
+        }
+
+        let models = try await ModelCatalogService.shared.fetchModels(for: provider, apiKey: apiKey)
+        guard !models.isEmpty else {
+            throw APIKeyValidationError.noCompatibleModels
+        }
+
+        try KeychainService.shared.saveAPIKey(apiKey, for: provider)
+
+        cachedModelsByProviderID[provider.providerID] = models
+        modelRefreshTimestampsByProviderID[provider.providerID] = Date().timeIntervalSince1970
+        modelRefreshErrorsByProviderID[provider.providerID] = nil
+
+        if selectedAIProvider == provider {
+            ensureSelectedAIModelIsValid()
         }
     }
 
