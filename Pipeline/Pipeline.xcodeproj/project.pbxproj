@@ -13,12 +13,6 @@
 		000000000000000000000004 /* JobApplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000004 /* JobApplication.swift */; };
 		000000000000000000000005 /* InterviewLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000005 /* InterviewLog.swift */; };
 		000000000000000000000006 /* SidebarFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000006 /* SidebarFilter.swift */; };
-		000000000000000000000007 /* ApplicationStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000007 /* ApplicationStatus.swift */; };
-		000000000000000000000008 /* InterviewStage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000008 /* InterviewStage.swift */; };
-		000000000000000000000009 /* Priority.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000009 /* Priority.swift */; };
-		000000000000000000000010 /* Source.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000010 /* Source.swift */; };
-		000000000000000000000011 /* Platform.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000011 /* Platform.swift */; };
-		000000000000000000000012 /* Currency.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000012 /* Currency.swift */; };
 		000000000000000000000013 /* ApplicationListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000013 /* ApplicationListViewModel.swift */; };
 		000000000000000000000014 /* ApplicationDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000014 /* ApplicationDetailViewModel.swift */; };
 		000000000000000000000015 /* AddEditApplicationViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000015 /* AddEditApplicationViewModel.swift */; };
@@ -60,7 +54,74 @@
 		000000000000000000000052 /* DateFormatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000052 /* DateFormatters.swift */; };
 		000000000000000000000053 /* URLHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000053 /* URLHelpers.swift */; };
 		000000000000000000000054 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000054 /* Constants.swift */; };
+		000000000000000000000056 /* KanbanViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000056 /* KanbanViewModel.swift */; };
+		000000000000000000000057 /* KanbanCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000057 /* KanbanCardView.swift */; };
+		000000000000000000000058 /* KanbanColumnView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000058 /* KanbanColumnView.swift */; };
+		000000000000000000000059 /* KanbanBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000059 /* KanbanBoardView.swift */; };
+		000000000000000000000060 /* InterviewPrepViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000060 /* InterviewPrepViewModel.swift */; };
+		000000000000000000000061 /* InterviewPrepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000061 /* InterviewPrepView.swift */; };
+		800000000000000000000001 /* PipelineKit in Frameworks */ = {isa = PBXBuildFile; productRef = 900000000000000000000001 /* PipelineKit */; };
+		000000000000000000000062 /* FollowUpDrafterViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000062 /* FollowUpDrafterViewModel.swift */; };
+		000000000000000000000063 /* FollowUpDrafterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000063 /* FollowUpDrafterView.swift */; };
+		000000000000000000000064 /* DashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000064 /* DashboardViewModel.swift */; };
+		000000000000000000000065 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000065 /* DashboardView.swift */; };
+		A00000000000000000000010 /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01000000000000000000010 /* SafariWebExtensionHandler.swift */; };
+		A00000000000000000000020 /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = A01000000000000000000020 /* manifest.json */; };
+		A00000000000000000000030 /* content.js in Resources */ = {isa = PBXBuildFile; fileRef = A01000000000000000000030 /* content.js */; };
+		A00000000000000000000040 /* background.js in Resources */ = {isa = PBXBuildFile; fileRef = A01000000000000000000040 /* background.js */; };
+		A00000000000000000000050 /* popup.html in Resources */ = {isa = PBXBuildFile; fileRef = A01000000000000000000050 /* popup.html */; };
+		A00000000000000000000060 /* popup.js in Resources */ = {isa = PBXBuildFile; fileRef = A01000000000000000000060 /* popup.js */; };
+		A00000000000000000000070 /* popup.css in Resources */ = {isa = PBXBuildFile; fileRef = A01000000000000000000070 /* popup.css */; };
+		A00000000000000000000080 /* SafariServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A01000000000000000000100 /* SafariServices.framework */; };
+		A00000000000000000000090 /* PipelineKit in Frameworks */ = {isa = PBXBuildFile; productRef = A09000000000000000000010 /* PipelineKit */; };
+		A00000000000000000000100 /* PipelineSafariExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A01000000000000000000200 /* PipelineSafariExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B00000000000000000000010 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = B01000000000000000000010 /* main.swift */; };
+		B00000000000000000000020 /* NativeMessageHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B01000000000000000000020 /* NativeMessageHandler.swift */; };
+		B00000000000000000000030 /* PipelineKit in Frameworks */ = {isa = PBXBuildFile; productRef = B09000000000000000000010 /* PipelineKit */; };
+		B00000000000000000000100 /* PipelineNativeHost in Embed Executables */ = {isa = PBXBuildFile; fileRef = B01000000000000000000200 /* PipelineNativeHost */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A08000000000000000000010 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 600000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A04000000000000000010010;
+			remoteInfo = PipelineSafariExtension;
+		};
+		B08000000000000000000010 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 600000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B04000000000000000010010;
+			remoteInfo = PipelineNativeHost;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A04000000000000000000100 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A00000000000000000000100 /* PipelineSafariExtension.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B04000000000000000000100 /* Embed Executables */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 6;
+			files = (
+				B00000000000000000000100 /* PipelineNativeHost in Embed Executables */,
+			);
+			name = "Embed Executables";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		100000000000000000000000 /* Pipeline.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pipeline.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -70,12 +131,6 @@
 		100000000000000000000004 /* JobApplication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobApplication.swift; sourceTree = "<group>"; };
 		100000000000000000000005 /* InterviewLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterviewLog.swift; sourceTree = "<group>"; };
 		100000000000000000000006 /* SidebarFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarFilter.swift; sourceTree = "<group>"; };
-		100000000000000000000007 /* ApplicationStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationStatus.swift; sourceTree = "<group>"; };
-		100000000000000000000008 /* InterviewStage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterviewStage.swift; sourceTree = "<group>"; };
-		100000000000000000000009 /* Priority.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Priority.swift; sourceTree = "<group>"; };
-		100000000000000000000010 /* Source.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Source.swift; sourceTree = "<group>"; };
-		100000000000000000000011 /* Platform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Platform.swift; sourceTree = "<group>"; };
-		100000000000000000000012 /* Currency.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Currency.swift; sourceTree = "<group>"; };
 		100000000000000000000013 /* ApplicationListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationListViewModel.swift; sourceTree = "<group>"; };
 		100000000000000000000014 /* ApplicationDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationDetailViewModel.swift; sourceTree = "<group>"; };
 		100000000000000000000015 /* AddEditApplicationViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddEditApplicationViewModel.swift; sourceTree = "<group>"; };
@@ -118,6 +173,30 @@
 		100000000000000000000053 /* URLHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLHelpers.swift; sourceTree = "<group>"; };
 		100000000000000000000054 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		100000000000000000000055 /* Pipeline.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Pipeline.entitlements; sourceTree = "<group>"; };
+		100000000000000000000056 /* KanbanViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanViewModel.swift; sourceTree = "<group>"; };
+		100000000000000000000057 /* KanbanCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardView.swift; sourceTree = "<group>"; };
+		100000000000000000000058 /* KanbanColumnView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanColumnView.swift; sourceTree = "<group>"; };
+		100000000000000000000059 /* KanbanBoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanBoardView.swift; sourceTree = "<group>"; };
+		100000000000000000000060 /* InterviewPrepViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterviewPrepViewModel.swift; sourceTree = "<group>"; };
+		100000000000000000000061 /* InterviewPrepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterviewPrepView.swift; sourceTree = "<group>"; };
+		100000000000000000000062 /* FollowUpDrafterViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowUpDrafterViewModel.swift; sourceTree = "<group>"; };
+		100000000000000000000063 /* FollowUpDrafterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowUpDrafterView.swift; sourceTree = "<group>"; };
+		100000000000000000000064 /* DashboardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardViewModel.swift; sourceTree = "<group>"; };
+		100000000000000000000065 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		A01000000000000000000010 /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
+		A01000000000000000000020 /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = manifest.json; sourceTree = "<group>"; };
+		A01000000000000000000030 /* content.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = content.js; sourceTree = "<group>"; };
+		A01000000000000000000040 /* background.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = background.js; sourceTree = "<group>"; };
+		A01000000000000000000050 /* popup.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = popup.html; sourceTree = "<group>"; };
+		A01000000000000000000060 /* popup.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = popup.js; sourceTree = "<group>"; };
+		A01000000000000000000070 /* popup.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = popup.css; sourceTree = "<group>"; };
+		A01000000000000000000080 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A01000000000000000000090 /* PipelineSafariExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PipelineSafariExtension.entitlements; sourceTree = "<group>"; };
+		A01000000000000000000100 /* SafariServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SafariServices.framework; path = System/Library/Frameworks/SafariServices.framework; sourceTree = SDKROOT; };
+		A01000000000000000000200 /* PipelineSafariExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PipelineSafariExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B01000000000000000000010 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		B01000000000000000000020 /* NativeMessageHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMessageHandler.swift; sourceTree = "<group>"; };
+		B01000000000000000000200 /* PipelineNativeHost */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = PipelineNativeHost; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -125,6 +204,24 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				800000000000000000000001 /* PipelineKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A04000000000000000000020 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000080 /* SafariServices.framework in Frameworks */,
+				A00000000000000000000090 /* PipelineKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B04000000000000000000020 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00000000000000000000030 /* PipelineKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -135,7 +232,10 @@
 			isa = PBXGroup;
 			children = (
 				300000000000000000000002 /* Pipeline */,
+				A03000000000000000000010 /* PipelineSafariExtension */,
+				B03000000000000000000010 /* PipelineNativeHost */,
 				300000000000000000000003 /* Products */,
+				A03000000000000000000030 /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -159,6 +259,8 @@
 			isa = PBXGroup;
 			children = (
 				100000000000000000000000 /* Pipeline.app */,
+				A01000000000000000000200 /* PipelineSafariExtension.appex */,
+				B01000000000000000000200 /* PipelineNativeHost */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -169,7 +271,6 @@
 				100000000000000000000004 /* JobApplication.swift */,
 				100000000000000000000005 /* InterviewLog.swift */,
 				100000000000000000000006 /* SidebarFilter.swift */,
-				300000000000000000000010 /* Enums */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -182,6 +283,10 @@
 				100000000000000000000015 /* AddEditApplicationViewModel.swift */,
 				100000000000000000000016 /* SettingsViewModel.swift */,
 				100000000000000000000017 /* AIParsingViewModel.swift */,
+				100000000000000000000056 /* KanbanViewModel.swift */,
+				100000000000000000000060 /* InterviewPrepViewModel.swift */,
+				100000000000000000000062 /* FollowUpDrafterViewModel.swift */,
+				100000000000000000000064 /* DashboardViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -195,8 +300,19 @@
 				300000000000000000000014 /* Forms */,
 				300000000000000000000015 /* Settings */,
 				300000000000000000000016 /* Components */,
+				300000000000000000000018 /* Kanban */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		300000000000000000000018 /* Kanban */ = {
+			isa = PBXGroup;
+			children = (
+				100000000000000000000057 /* KanbanCardView.swift */,
+				100000000000000000000058 /* KanbanColumnView.swift */,
+				100000000000000000000059 /* KanbanBoardView.swift */,
+			);
+			path = Kanban;
 			sourceTree = "<group>";
 		};
 		300000000000000000000007 /* Services */ = {
@@ -228,19 +344,6 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
-		300000000000000000000010 /* Enums */ = {
-			isa = PBXGroup;
-			children = (
-				100000000000000000000007 /* ApplicationStatus.swift */,
-				100000000000000000000008 /* InterviewStage.swift */,
-				100000000000000000000009 /* Priority.swift */,
-				100000000000000000000010 /* Source.swift */,
-				100000000000000000000011 /* Platform.swift */,
-				100000000000000000000012 /* Currency.swift */,
-			);
-			path = Enums;
-			sourceTree = "<group>";
-		};
 		300000000000000000000011 /* Main */ = {
 			isa = PBXGroup;
 			children = (
@@ -248,6 +351,7 @@
 				100000000000000000000019 /* SidebarView.swift */,
 				100000000000000000000020 /* ApplicationListView.swift */,
 				100000000000000000000021 /* StatsBarView.swift */,
+				100000000000000000000065 /* DashboardView.swift */,
 			);
 			path = Main;
 			sourceTree = "<group>";
@@ -269,6 +373,8 @@
 				100000000000000000000026 /* InterviewStageIndicator.swift */,
 				100000000000000000000027 /* JobDescriptionView.swift */,
 				100000000000000000000028 /* InterviewHistoryView.swift */,
+				100000000000000000000061 /* InterviewPrepView.swift */,
+				100000000000000000000063 /* FollowUpDrafterView.swift */,
 			);
 			path = Detail;
 			sourceTree = "<group>";
@@ -320,6 +426,47 @@
 			path = AIService;
 			sourceTree = "<group>";
 		};
+		A03000000000000000000010 /* PipelineSafariExtension */ = {
+			isa = PBXGroup;
+			children = (
+				A01000000000000000000010 /* SafariWebExtensionHandler.swift */,
+				A03000000000000000000020 /* Resources */,
+				A01000000000000000000080 /* Info.plist */,
+				A01000000000000000000090 /* PipelineSafariExtension.entitlements */,
+			);
+			path = PipelineSafariExtension;
+			sourceTree = "<group>";
+		};
+		A03000000000000000000020 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				A01000000000000000000020 /* manifest.json */,
+				A01000000000000000000030 /* content.js */,
+				A01000000000000000000040 /* background.js */,
+				A01000000000000000000050 /* popup.html */,
+				A01000000000000000000060 /* popup.js */,
+				A01000000000000000000070 /* popup.css */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		A03000000000000000000030 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				A01000000000000000000100 /* SafariServices.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		B03000000000000000000010 /* PipelineNativeHost */ = {
+			isa = PBXGroup;
+			children = (
+				B01000000000000000000010 /* main.swift */,
+				B01000000000000000000020 /* NativeMessageHandler.swift */,
+			);
+			path = PipelineNativeHost;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -330,15 +477,61 @@
 				400000000000000000000002 /* Sources */,
 				200000000000000000000001 /* Frameworks */,
 				400000000000000000000003 /* Resources */,
+				A04000000000000000000100 /* Embed App Extensions */,
+				B04000000000000000000100 /* Embed Executables */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A06000000000000000000010 /* PBXTargetDependency */,
+				B06000000000000000000010 /* PBXTargetDependency */,
+			);
+			name = Pipeline;
+			packageProductDependencies = (
+				900000000000000000000001 /* PipelineKit */,
+			);
+			productName = Pipeline;
+			productReference = 100000000000000000000000 /* Pipeline.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A04000000000000000010010 /* PipelineSafariExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A05000000000000000000010 /* Build configuration list for PBXNativeTarget "PipelineSafariExtension" */;
+			buildPhases = (
+				A04000000000000000000010 /* Sources */,
+				A04000000000000000000020 /* Frameworks */,
+				A04000000000000000000030 /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
-			name = Pipeline;
-			productName = Pipeline;
-			productReference = 100000000000000000000000 /* Pipeline.app */;
-			productType = "com.apple.product-type.application";
+			name = PipelineSafariExtension;
+			packageProductDependencies = (
+				A09000000000000000000010 /* PipelineKit */,
+			);
+			productName = PipelineSafariExtension;
+			productReference = A01000000000000000000200 /* PipelineSafariExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		B04000000000000000010010 /* PipelineNativeHost */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B05000000000000000000010 /* Build configuration list for PBXNativeTarget "PipelineNativeHost" */;
+			buildPhases = (
+				B04000000000000000000010 /* Sources */,
+				B04000000000000000000020 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PipelineNativeHost;
+			packageProductDependencies = (
+				B09000000000000000000010 /* PipelineKit */,
+			);
+			productName = PipelineNativeHost;
+			productReference = B01000000000000000000200 /* PipelineNativeHost */;
+			productType = "com.apple.product-type.tool";
 		};
 /* End PBXNativeTarget section */
 
@@ -353,6 +546,12 @@
 					400000000000000000000001 = {
 						CreatedOnToolsVersion = 15.0;
 					};
+					A04000000000000000010010 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+					B04000000000000000010010 = {
+						CreatedOnToolsVersion = 15.0;
+					};
 				};
 			};
 			buildConfigurationList = 500000000000000000000002 /* Build configuration list for PBXProject "Pipeline" */;
@@ -364,11 +563,16 @@
 				Base,
 			);
 			mainGroup = 300000000000000000000001;
+			packageReferences = (
+				A00000000000000000000001 /* XCLocalSwiftPackageReference "../PipelineKit" */,
+			);
 			productRefGroup = 300000000000000000000003 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				400000000000000000000001 /* Pipeline */,
+				A04000000000000000010010 /* PipelineSafariExtension */,
+				B04000000000000000010010 /* PipelineNativeHost */,
 			);
 		};
 /* End PBXProject section */
@@ -379,6 +583,19 @@
 			buildActionMask = 2147483647;
 			files = (
 				000000000000000000000003 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A04000000000000000000030 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000020 /* manifest.json in Resources */,
+				A00000000000000000000030 /* content.js in Resources */,
+				A00000000000000000000040 /* background.js in Resources */,
+				A00000000000000000000050 /* popup.html in Resources */,
+				A00000000000000000000060 /* popup.js in Resources */,
+				A00000000000000000000070 /* popup.css in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -394,28 +611,32 @@
 				000000000000000000000004 /* JobApplication.swift in Sources */,
 				000000000000000000000005 /* InterviewLog.swift in Sources */,
 				000000000000000000000006 /* SidebarFilter.swift in Sources */,
-				000000000000000000000007 /* ApplicationStatus.swift in Sources */,
-				000000000000000000000008 /* InterviewStage.swift in Sources */,
-				000000000000000000000009 /* Priority.swift in Sources */,
-				000000000000000000000010 /* Source.swift in Sources */,
-				000000000000000000000011 /* Platform.swift in Sources */,
-				000000000000000000000012 /* Currency.swift in Sources */,
 				000000000000000000000013 /* ApplicationListViewModel.swift in Sources */,
 				000000000000000000000014 /* ApplicationDetailViewModel.swift in Sources */,
 				000000000000000000000015 /* AddEditApplicationViewModel.swift in Sources */,
 				000000000000000000000016 /* SettingsViewModel.swift in Sources */,
 				000000000000000000000017 /* AIParsingViewModel.swift in Sources */,
+				000000000000000000000056 /* KanbanViewModel.swift in Sources */,
+				000000000000000000000060 /* InterviewPrepViewModel.swift in Sources */,
+				000000000000000000000062 /* FollowUpDrafterViewModel.swift in Sources */,
+				000000000000000000000064 /* DashboardViewModel.swift in Sources */,
 				000000000000000000000018 /* MainView.swift in Sources */,
 				000000000000000000000019 /* SidebarView.swift in Sources */,
 				000000000000000000000020 /* ApplicationListView.swift in Sources */,
 				000000000000000000000021 /* StatsBarView.swift in Sources */,
+				000000000000000000000065 /* DashboardView.swift in Sources */,
 				000000000000000000000022 /* JobCardView.swift in Sources */,
+				000000000000000000000057 /* KanbanCardView.swift in Sources */,
+				000000000000000000000058 /* KanbanColumnView.swift in Sources */,
+				000000000000000000000059 /* KanbanBoardView.swift in Sources */,
 				000000000000000000000023 /* JobDetailView.swift in Sources */,
 				000000000000000000000024 /* JobDetailHeaderView.swift in Sources */,
 				000000000000000000000025 /* JobDetailFieldsView.swift in Sources */,
 				000000000000000000000026 /* InterviewStageIndicator.swift in Sources */,
 				000000000000000000000027 /* JobDescriptionView.swift in Sources */,
 				000000000000000000000028 /* InterviewHistoryView.swift in Sources */,
+				000000000000000000000061 /* InterviewPrepView.swift in Sources */,
+				000000000000000000000063 /* FollowUpDrafterView.swift in Sources */,
 				000000000000000000000029 /* AddApplicationView.swift in Sources */,
 				000000000000000000000030 /* ManualEntryFormView.swift in Sources */,
 				000000000000000000000031 /* AIParseFormView.swift in Sources */,
@@ -444,7 +665,37 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A04000000000000000000010 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000010 /* SafariWebExtensionHandler.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B04000000000000000000010 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00000000000000000000010 /* main.swift in Sources */,
+				B00000000000000000000020 /* NativeMessageHandler.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A06000000000000000000010 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A04000000000000000010010 /* PipelineSafariExtension */;
+			targetProxy = A08000000000000000000010 /* PBXContainerItemProxy */;
+		};
+		B06000000000000000000010 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B04000000000000000010010 /* PipelineNativeHost */;
+			targetProxy = B08000000000000000000010 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		700000000000000000000001 /* Debug */ = {
@@ -663,6 +914,98 @@
 			};
 			name = Release;
 		};
+		A07000000000000000000010 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = PipelineSafariExtension/PipelineSafariExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = N3B962X7RX;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PipelineSafariExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = PipelineSafariExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "io.github.digitaltracer.pipeline.safari-extension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A07000000000000000000020 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = PipelineSafariExtension/PipelineSafariExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = N3B962X7RX;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PipelineSafariExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = PipelineSafariExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "io.github.digitaltracer.pipeline.safari-extension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		B07000000000000000000010 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = N3B962X7RX;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "io.github.digitaltracer.pipeline.native-host";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		B07000000000000000000020 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = N3B962X7RX;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "io.github.digitaltracer.pipeline.native-host";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -684,7 +1027,47 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		A05000000000000000000010 /* Build configuration list for PBXNativeTarget "PipelineSafariExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A07000000000000000000010 /* Debug */,
+				A07000000000000000000020 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B05000000000000000000010 /* Build configuration list for PBXNativeTarget "PipelineNativeHost" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B07000000000000000000010 /* Debug */,
+				B07000000000000000000020 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A00000000000000000000001 /* XCLocalSwiftPackageReference "../PipelineKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../PipelineKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		900000000000000000000001 /* PipelineKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PipelineKit;
+		};
+		A09000000000000000000010 /* PipelineKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PipelineKit;
+		};
+		B09000000000000000000010 /* PipelineKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PipelineKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 600000000000000000000001 /* Project object */;
 }
