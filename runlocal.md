@@ -49,21 +49,27 @@ To enable data sync between devices:
 3. Add **iCloud**
 4. Check **CloudKit**
 5. Click the **+** under Containers and create: `iCloud.com.pipeline.app`
-   - Or use your own identifier matching the one in `PipelineApp.swift`
+   - Or use your own identifier matching the one in `Constants.swift`
 
 ### 2. Update Container Identifier
 
-If using a different container ID, update `Pipeline/PipelineApp.swift`:
+If using a different container ID, update `Pipeline/Utilities/Constants.swift`:
 
 ```swift
-let modelConfiguration = ModelConfiguration(
-    schema: schema,
-    isStoredInMemoryOnly: false,
-    cloudKitDatabase: .private("iCloud.com.YOUR_CONTAINER_ID")
-)
+enum iCloud {
+    static let containerID = "iCloud.com.YOUR_CONTAINER_ID"
+}
 ```
 
-### 3. Enable Push Notifications (for sync)
+### 3. Turn on Sync in App Settings
+
+1. Launch Pipeline
+2. Open **Settings**
+3. Open **iCloud Sync**
+4. Enable **iCloud Sync**
+5. Restart the app to apply the change
+
+### 4. Enable Push Notifications (for sync)
 
 1. Add **Push Notifications** capability
 2. Add **Background Modes** capability

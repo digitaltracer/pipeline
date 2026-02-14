@@ -38,9 +38,10 @@ flowchart LR
 1. `PipelineApp` creates a `ModelContainer` with schema:
    - `JobApplication`
    - `InterviewLog`
-2. Cloud sync is selected by `enableCloudKitSync`:
+2. Cloud sync mode is read from the saved `cloudSyncEnabled` preference:
    - `true`: private CloudKit database with `iCloud.com.pipeline.app`
    - `false`: local-only store
+   - changes are applied on next launch
 3. `ContentView` loads applications via `@Query` sorted by `updatedAt` descending.
 4. Platform-specific shell renders:
    - macOS: split-view app shell (`Sidebar` -> list content -> detail)
@@ -50,7 +51,7 @@ flowchart LR
 flowchart TD
     A["App Launch"] --> B["PipelineApp init"]
     B --> C["Create SwiftData schema and ModelContainer"]
-    C --> D{"CloudKit sync enabled"}
+    C --> D{"cloudSyncEnabled preference true?"}
     D -->|"Yes"| E["Use private iCloud container"]
     D -->|"No"| F["Use local-only SwiftData store"]
     E --> G["Render ContentView"]
