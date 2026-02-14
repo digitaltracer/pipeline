@@ -1,11 +1,13 @@
 import SwiftUI
 import SwiftData
+import UserNotifications
 
 #if os(macOS)
 private enum SettingsCategory: String, CaseIterable, Identifiable {
     case appearance
     case aiProvider
     case notifications
+    case sync
     case about
 
     var id: String { rawValue }
@@ -15,6 +17,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .appearance: return "Appearance"
         case .aiProvider: return "AI Provider"
         case .notifications: return "Notifications"
+        case .sync: return "iCloud Sync"
         case .about: return "About"
         }
     }
@@ -27,6 +30,8 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
             return "Provider, model, and API key"
         case .notifications:
             return "Follow-up reminder behavior"
+        case .sync:
+            return "Choose local-only or iCloud-backed storage"
         case .about:
             return "Support links and app details"
         }
@@ -37,6 +42,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .appearance: return "paintbrush.fill"
         case .aiProvider: return "brain.head.profile"
         case .notifications: return "bell.badge.fill"
+        case .sync: return "icloud.fill"
         case .about: return "info.circle.fill"
         }
     }
@@ -85,6 +91,12 @@ struct SettingsView: View {
                         NotificationSettingsView(viewModel: viewModel)
                     } label: {
                         Label("Notifications", systemImage: "bell")
+                    }
+
+                    NavigationLink {
+                        SyncSettingsView(viewModel: viewModel)
+                    } label: {
+                        Label("iCloud Sync", systemImage: "icloud")
                     }
                 }
 
@@ -222,6 +234,13 @@ struct SettingsView: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 NotificationSettingsContent(viewModel: viewModel)
+            }
+        case .sync:
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Control whether application data syncs through your iCloud account.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                SyncSettingsContent(viewModel: viewModel)
             }
         case .about:
             VStack(alignment: .leading, spacing: 12) {
@@ -403,65 +422,287 @@ private struct SettingsInfoRow: View {
     }
 }
 
-struct NotificationSettingsView: View {
+struct SyncSettingsView: View {
     @Bindable var viewModel: SettingsViewModel
-    @Query private var applications: [JobApplication]
 
     var body: some View {
         Form {
             Section {
-                Toggle("Enable Notifications", isOn: $viewModel.notificationsEnabled)
+                Toggle("Enable iCloud Sync", isOn: $viewModel.cloudSyncEnabled)
+                    .disabled(!viewModel.cloudSyncSupported)
             } footer: {
-                Text("Get reminders for follow-up dates you set on job applications.")
+                if viewModel.cloudSyncSupported {
+                    Text("When enabled, Pipeline syncs application data using your iCloud account.")
+                } else {
+                    Text("iCloud Sync is unavailable in this build configuration.")
+                }
             }
 
-            if viewModel.notificationsEnabled {
-                Section("Reminder Timing") {
-                    Picker("When to Remind", selection: $viewModel.reminderTiming) {
-                        ForEach(ReminderTiming.allCases) { timing in
-                            Text(timing.rawValue).tag(timing)
-                        }
-                    }
-                    .pickerStyle(.inline)
-                }
+            Section {
+                Label(
+                    viewModel.cloudSyncEnabledAtLaunch
+                        ? "Current mode: iCloud sync is active."
+                        : "Current mode: local-only storage.",
+                    systemImage: viewModel.cloudSyncEnabledAtLaunch ? "checkmark.icloud.fill" : "internaldrive.fill"
+                )
+                .font(.subheadline)
+            }
 
+            if viewModel.cloudSyncNeedsRestart {
                 Section {
-                    Button("Request Permission") {
-                        Task {
-                            await NotificationService.shared.requestPermission()
-                        }
-                    }
+                    Label(
+                        "Restart Pipeline to apply this sync setting change.",
+                        systemImage: "arrow.clockwise.circle.fill"
+                    )
+                    .foregroundColor(.secondary)
                 } footer: {
-                    Text("If notifications aren't working, tap here to request permission again.")
+                    Text(
+                        viewModel.cloudSyncEnabled
+                            ? "Sync will be enabled after restart."
+                            : "Sync will be disabled after restart. Existing data is not deleted."
+                    )
                 }
             }
         }
         .formStyle(.grouped)
-        .navigationTitle("Notifications")
-        .onChange(of: viewModel.notificationsEnabled) { _, isEnabled in
-            Task {
-                @MainActor in
-                if isEnabled {
+        .navigationTitle("iCloud Sync")
+    }
+}
+
+struct SyncSettingsContent: View {
+    @Bindable var viewModel: SettingsViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Toggle("Enable iCloud Sync", isOn: $viewModel.cloudSyncEnabled)
+                .disabled(!viewModel.cloudSyncSupported)
+
+            if viewModel.cloudSyncSupported {
+                Text("When enabled, Pipeline syncs application data using your iCloud account.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                Text("iCloud Sync is unavailable in this build configuration.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Label(
+                viewModel.cloudSyncEnabledAtLaunch
+                    ? "Current mode: iCloud sync is active."
+                    : "Current mode: local-only storage.",
+                systemImage: viewModel.cloudSyncEnabledAtLaunch ? "checkmark.icloud.fill" : "internaldrive.fill"
+            )
+            .font(.subheadline)
+
+            if viewModel.cloudSyncNeedsRestart {
+                Label(
+                    "Restart Pipeline to apply this sync setting change.",
+                    systemImage: "arrow.clockwise.circle.fill"
+                )
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            }
+        }
+    }
+}
+
+struct NotificationSettingsView: View {
+    @Bindable var viewModel: SettingsViewModel
+    @Query private var applications: [JobApplication]
+    @State private var permissionStatus: UNAuthorizationStatus = .notDetermined
+    @State private var showPermissionDeniedAlert = false
+
+    var body: some View {
+        settingsForm
+            .formStyle(.grouped)
+            .navigationTitle("Notifications")
+            .task {
+                await refreshPermissionStatusAndSyncIfNeeded()
+            }
+            .onChange(of: viewModel.notificationsEnabled) { _, isEnabled in
+                Task {
+                    await handleNotificationsEnabledChange(isEnabled)
+                }
+            }
+            .onChange(of: viewModel.reminderTiming) { _, timing in
+                guard viewModel.notificationsEnabled else { return }
+                Task {
                     await NotificationService.shared.syncFollowUpReminders(
                         for: applications,
                         notificationsEnabled: true,
-                        timing: viewModel.reminderTiming
+                        timing: timing
                     )
-                } else {
-                    NotificationService.shared.removeAllNotifications()
                 }
             }
-        }
-        .onChange(of: viewModel.reminderTiming) { _, timing in
-            guard viewModel.notificationsEnabled else { return }
-            Task {
-                @MainActor in
-                await NotificationService.shared.syncFollowUpReminders(
-                    for: applications,
-                    notificationsEnabled: true,
-                    timing: timing
-                )
+            .alert("Notifications Are Disabled", isPresented: $showPermissionDeniedAlert) {
+                Button("Open System Settings") {
+                    Task { @MainActor in
+                        NotificationService.shared.openNotificationSettings()
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Allow notifications for Pipeline in system settings to receive follow-up reminders.")
             }
+    }
+
+    private var settingsForm: some View {
+        Form {
+            notificationToggleSection
+
+            if viewModel.notificationsEnabled {
+                reminderTimingSection
+                permissionSection
+            }
+        }
+    }
+
+    private var notificationToggleSection: some View {
+        Section {
+            Toggle("Enable Notifications", isOn: $viewModel.notificationsEnabled)
+        } footer: {
+            Text("Get reminders for follow-up dates you set on job applications.")
+        }
+    }
+
+    private var reminderTimingSection: some View {
+        Section("Reminder Timing") {
+            Picker("When to Remind", selection: $viewModel.reminderTiming) {
+                ForEach(ReminderTiming.allCases) { timing in
+                    Text(timing.rawValue).tag(timing)
+                }
+            }
+            .pickerStyle(.inline)
+        }
+    }
+
+    private var permissionSection: some View {
+        Section {
+            Label(permissionStatusText, systemImage: permissionStatusIcon)
+                .foregroundColor(permissionStatusColor)
+
+            if permissionStatus == .denied {
+                Button("Open System Settings") {
+                    Task { @MainActor in
+                        NotificationService.shared.openNotificationSettings()
+                    }
+                }
+            } else if permissionStatus == .notDetermined {
+                Button("Allow Notifications") {
+                    Task {
+                        await requestPermissionFromAction()
+                    }
+                }
+            }
+        } header: {
+            Text("Notification Permission")
+        } footer: {
+            Text(notificationPermissionFooterText)
+        }
+    }
+
+    private var permissionStatusText: String {
+        switch permissionStatus {
+        case .authorized, .provisional, .ephemeral:
+            return "Permission granted"
+        case .denied:
+            return "Permission denied in system settings"
+        case .notDetermined:
+            return "Permission not requested yet"
+        @unknown default:
+            return "Permission status unavailable"
+        }
+    }
+
+    private var permissionStatusIcon: String {
+        switch permissionStatus {
+        case .authorized, .provisional, .ephemeral:
+            return "checkmark.circle.fill"
+        case .denied:
+            return "xmark.circle.fill"
+        case .notDetermined:
+            return "questionmark.circle.fill"
+        @unknown default:
+            return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var permissionStatusColor: Color {
+        switch permissionStatus {
+        case .authorized, .provisional, .ephemeral:
+            return .green
+        case .denied:
+            return .red
+        case .notDetermined:
+            return .secondary
+        @unknown default:
+            return .secondary
+        }
+    }
+
+    private var notificationPermissionFooterText: String {
+        switch permissionStatus {
+        case .authorized, .provisional, .ephemeral:
+            return "Pipeline can send reminders for follow-up dates."
+        case .denied:
+            return "Notifications are blocked. Open system settings to enable them for Pipeline."
+        case .notDetermined:
+            return "Pipeline will ask for notification permission when you enable reminders."
+        @unknown default:
+            return "Check your system settings if reminders are not arriving."
+        }
+    }
+
+    @MainActor
+    private func refreshPermissionStatusAndSyncIfNeeded() async {
+        permissionStatus = await NotificationService.shared.checkPermissionStatus()
+
+        guard viewModel.notificationsEnabled else { return }
+        await NotificationService.shared.syncFollowUpReminders(
+            for: applications,
+            notificationsEnabled: true,
+            timing: viewModel.reminderTiming
+        )
+    }
+
+    @MainActor
+    private func requestPermissionFromAction() async {
+        let updatedStatus = await NotificationService.shared.authorizationStatusAfterPromptIfNeeded()
+        permissionStatus = updatedStatus
+
+        if NotificationService.shared.isPermissionGranted(updatedStatus) {
+            await NotificationService.shared.syncFollowUpReminders(
+                for: applications,
+                notificationsEnabled: true,
+                timing: viewModel.reminderTiming
+            )
+        } else {
+            showPermissionDeniedAlert = true
+        }
+    }
+
+    @MainActor
+    private func handleNotificationsEnabledChange(_ isEnabled: Bool) async {
+        if isEnabled {
+            let updatedStatus = await NotificationService.shared.authorizationStatusAfterPromptIfNeeded()
+            permissionStatus = updatedStatus
+
+            guard NotificationService.shared.isPermissionGranted(updatedStatus) else {
+                viewModel.notificationsEnabled = false
+                NotificationService.shared.removeAllNotifications()
+                showPermissionDeniedAlert = true
+                return
+            }
+
+            await NotificationService.shared.syncFollowUpReminders(
+                for: applications,
+                notificationsEnabled: true,
+                timing: viewModel.reminderTiming
+            )
+        } else {
+            NotificationService.shared.removeAllNotifications()
+            permissionStatus = await NotificationService.shared.checkPermissionStatus()
         }
     }
 }
@@ -469,61 +710,195 @@ struct NotificationSettingsView: View {
 struct NotificationSettingsContent: View {
     @Bindable var viewModel: SettingsViewModel
     @Query private var applications: [JobApplication]
+    @State private var permissionStatus: UNAuthorizationStatus = .notDetermined
+    @State private var showPermissionDeniedAlert = false
 
     var body: some View {
+        settingsContent
+            .task {
+                await refreshPermissionStatusAndSyncIfNeeded()
+            }
+            .onChange(of: viewModel.notificationsEnabled) { _, isEnabled in
+                Task {
+                    await handleNotificationsEnabledChange(isEnabled)
+                }
+            }
+            .onChange(of: viewModel.reminderTiming) { _, timing in
+                guard viewModel.notificationsEnabled else { return }
+                Task {
+                    await NotificationService.shared.syncFollowUpReminders(
+                        for: applications,
+                        notificationsEnabled: true,
+                        timing: timing
+                    )
+                }
+            }
+            .alert("Notifications Are Disabled", isPresented: $showPermissionDeniedAlert) {
+                Button("Open System Settings") {
+                    Task { @MainActor in
+                        NotificationService.shared.openNotificationSettings()
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Allow notifications for Pipeline in system settings to receive follow-up reminders.")
+            }
+    }
+
+    private var settingsContent: some View {
         VStack(alignment: .leading, spacing: 16) {
             Toggle("Enable Notifications", isOn: $viewModel.notificationsEnabled)
 
             if viewModel.notificationsEnabled {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Reminder Timing")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                reminderTimingContent
+                permissionContent
+            }
 
-                    Picker("When to Remind", selection: $viewModel.reminderTiming) {
-                        ForEach(ReminderTiming.allCases) { timing in
-                            Text(timing.rawValue).tag(timing)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+            Text(notificationPermissionFooterText)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private var reminderTimingContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Reminder Timing")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            Picker("When to Remind", selection: $viewModel.reminderTiming) {
+                ForEach(ReminderTiming.allCases) { timing in
+                    Text(timing.rawValue).tag(timing)
                 }
+            }
+            .pickerStyle(.segmented)
+        }
+    }
 
-                Button("Request Permission") {
+    private var permissionContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(permissionStatusText, systemImage: permissionStatusIcon)
+                .foregroundColor(permissionStatusColor)
+
+            if permissionStatus == .denied {
+                Button("Open System Settings") {
+                    Task { @MainActor in
+                        NotificationService.shared.openNotificationSettings()
+                    }
+                }
+                .font(.subheadline)
+            } else if permissionStatus == .notDetermined {
+                Button("Allow Notifications") {
                     Task {
-                        await NotificationService.shared.requestPermission()
+                        await requestPermissionFromAction()
                     }
                 }
                 .font(.subheadline)
             }
+        }
+    }
 
-            Text("Get reminders for follow-up dates you set on job applications.")
-                .font(.caption)
-                .foregroundColor(.secondary)
+    private var permissionStatusText: String {
+        switch permissionStatus {
+        case .authorized, .provisional, .ephemeral:
+            return "Permission granted"
+        case .denied:
+            return "Permission denied in system settings"
+        case .notDetermined:
+            return "Permission not requested yet"
+        @unknown default:
+            return "Permission status unavailable"
         }
-        .onChange(of: viewModel.notificationsEnabled) { _, isEnabled in
-            Task {
-                @MainActor in
-                if isEnabled {
-                    await NotificationService.shared.syncFollowUpReminders(
-                        for: applications,
-                        notificationsEnabled: true,
-                        timing: viewModel.reminderTiming
-                    )
-                } else {
-                    NotificationService.shared.removeAllNotifications()
-                }
-            }
+    }
+
+    private var permissionStatusIcon: String {
+        switch permissionStatus {
+        case .authorized, .provisional, .ephemeral:
+            return "checkmark.circle.fill"
+        case .denied:
+            return "xmark.circle.fill"
+        case .notDetermined:
+            return "questionmark.circle.fill"
+        @unknown default:
+            return "exclamationmark.triangle.fill"
         }
-        .onChange(of: viewModel.reminderTiming) { _, timing in
-            guard viewModel.notificationsEnabled else { return }
-            Task {
-                @MainActor in
-                await NotificationService.shared.syncFollowUpReminders(
-                    for: applications,
-                    notificationsEnabled: true,
-                    timing: timing
-                )
+    }
+
+    private var permissionStatusColor: Color {
+        switch permissionStatus {
+        case .authorized, .provisional, .ephemeral:
+            return .green
+        case .denied:
+            return .red
+        case .notDetermined:
+            return .secondary
+        @unknown default:
+            return .secondary
+        }
+    }
+
+    private var notificationPermissionFooterText: String {
+        switch permissionStatus {
+        case .authorized, .provisional, .ephemeral:
+            return "Pipeline can send reminders for follow-up dates."
+        case .denied:
+            return "Notifications are blocked. Open system settings to enable them for Pipeline."
+        case .notDetermined:
+            return "Get reminders for follow-up dates you set on job applications."
+        @unknown default:
+            return "Check your system settings if reminders are not arriving."
+        }
+    }
+
+    @MainActor
+    private func refreshPermissionStatusAndSyncIfNeeded() async {
+        permissionStatus = await NotificationService.shared.checkPermissionStatus()
+
+        guard viewModel.notificationsEnabled else { return }
+        await NotificationService.shared.syncFollowUpReminders(
+            for: applications,
+            notificationsEnabled: true,
+            timing: viewModel.reminderTiming
+        )
+    }
+
+    @MainActor
+    private func requestPermissionFromAction() async {
+        let updatedStatus = await NotificationService.shared.authorizationStatusAfterPromptIfNeeded()
+        permissionStatus = updatedStatus
+
+        if NotificationService.shared.isPermissionGranted(updatedStatus) {
+            await NotificationService.shared.syncFollowUpReminders(
+                for: applications,
+                notificationsEnabled: true,
+                timing: viewModel.reminderTiming
+            )
+        } else {
+            showPermissionDeniedAlert = true
+        }
+    }
+
+    @MainActor
+    private func handleNotificationsEnabledChange(_ isEnabled: Bool) async {
+        if isEnabled {
+            let updatedStatus = await NotificationService.shared.authorizationStatusAfterPromptIfNeeded()
+            permissionStatus = updatedStatus
+
+            guard NotificationService.shared.isPermissionGranted(updatedStatus) else {
+                viewModel.notificationsEnabled = false
+                NotificationService.shared.removeAllNotifications()
+                showPermissionDeniedAlert = true
+                return
             }
+
+            await NotificationService.shared.syncFollowUpReminders(
+                for: applications,
+                notificationsEnabled: true,
+                timing: viewModel.reminderTiming
+            )
+        } else {
+            NotificationService.shared.removeAllNotifications()
+            permissionStatus = await NotificationService.shared.checkPermissionStatus()
         }
     }
 }
