@@ -3,6 +3,7 @@ import SwiftUI
 struct InterviewHistoryView: View {
     let logs: [InterviewLog]
     let onAddLog: () -> Void
+    let onEditLog: (InterviewLog) -> Void
     let onDeleteLog: (InterviewLog) -> Void
 
     var body: some View {
@@ -30,9 +31,11 @@ struct InterviewHistoryView: View {
                 emptyState
             } else {
                 ForEach(logs) { log in
-                    InterviewLogRow(log: log, onDelete: {
-                        onDeleteLog(log)
-                    })
+                    InterviewLogRow(
+                        log: log,
+                        onEdit: { onEditLog(log) },
+                        onDelete: { onDeleteLog(log) }
+                    )
                 }
             }
         }
@@ -63,6 +66,7 @@ struct InterviewHistoryView: View {
 
 struct InterviewLogRow: View {
     let log: InterviewLog
+    let onEdit: () -> Void
     let onDelete: () -> Void
 
     @State private var showingDeleteConfirmation = false
@@ -100,6 +104,15 @@ struct InterviewLogRow: View {
 
             HStack {
                 Spacer()
+                Button {
+                    onEdit()
+                } label: {
+                    Label("Edit", systemImage: "pencil")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(DesignSystem.Colors.accent)
+
                 Button(role: .destructive) {
                     showingDeleteConfirmation = true
                 } label: {
@@ -131,6 +144,7 @@ struct InterviewLogRow: View {
     InterviewHistoryView(
         logs: InterviewLog.sampleData,
         onAddLog: {},
+        onEditLog: { _ in },
         onDeleteLog: { _ in }
     )
     .padding()

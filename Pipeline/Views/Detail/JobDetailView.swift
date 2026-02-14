@@ -9,6 +9,7 @@ struct JobDetailView: View {
     @State private var viewModel = ApplicationDetailViewModel()
     @State private var showingEditSheet = false
     @State private var showingAddInterviewLog = false
+    @State private var editingInterviewLog: InterviewLog?
     @State private var showingDeleteAlert = false
     @State private var actionErrorMessage: String?
     @Environment(\.colorScheme) private var colorScheme
@@ -71,6 +72,9 @@ struct JobDetailView: View {
                         onAddLog: {
                             showingAddInterviewLog = true
                         },
+                        onEditLog: { log in
+                            editingInterviewLog = log
+                        },
                         onDeleteLog: { log in
                             do {
                                 try viewModel.deleteInterviewLog(log, from: application, context: modelContext)
@@ -93,6 +97,9 @@ struct JobDetailView: View {
         }
         .sheet(isPresented: $showingAddInterviewLog) {
             AddInterviewLogView(application: application)
+        }
+        .sheet(item: $editingInterviewLog) { log in
+            AddInterviewLogView(application: application, logToEdit: log)
         }
         .alert("Delete Application", isPresented: $showingDeleteAlert) {
             Button("Cancel", role: .cancel) {}

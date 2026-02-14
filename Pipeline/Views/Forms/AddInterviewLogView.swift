@@ -6,6 +6,7 @@ struct AddInterviewLogView: View {
     @Environment(\.dismiss) private var dismiss
 
     let application: JobApplication
+    let logToEdit: InterviewLog?
 
     @State private var interviewType: InterviewStage = .phoneScreen
     @State private var date: Date = Date()
@@ -13,6 +14,16 @@ struct AddInterviewLogView: View {
     @State private var rating: Int = 3
     @State private var notes: String = ""
     @State private var saveErrorMessage: String?
+
+    init(application: JobApplication, logToEdit: InterviewLog? = nil) {
+        self.application = application
+        self.logToEdit = logToEdit
+        _interviewType = State(initialValue: logToEdit?.interviewType ?? .phoneScreen)
+        _date = State(initialValue: logToEdit?.date ?? Date())
+        _interviewerName = State(initialValue: logToEdit?.interviewerName ?? "")
+        _rating = State(initialValue: logToEdit?.rating ?? 3)
+        _notes = State(initialValue: logToEdit?.notes ?? "")
+    }
 
     var body: some View {
         NavigationStack {
@@ -56,7 +67,7 @@ struct AddInterviewLogView: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle("Add Interview Log")
+            .navigationTitle(isEditing ? "Edit Interview Log" : "Add Interview Log")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -65,7 +76,7 @@ struct AddInterviewLogView: View {
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    Button(isEditing ? "Update" : "Save") {
                         saveLog()
                     }
                 }
@@ -93,17 +104,32 @@ struct AddInterviewLogView: View {
         }
     }
 
-    private func saveLog() {
-        let log = InterviewLog(
-            interviewType: interviewType,
-            date: date,
-            interviewerName: interviewerName.isEmpty ? nil : interviewerName,
-            rating: rating,
-            notes: notes.isEmpty ? nil : notes,
-            application: application
-        )
+    private var isEditing: Bool {
+        logToEdit != nil
+    }
 
-        modelContext.insert(log)
+    private func saveLog() {
+        let normalizedInterviewer = interviewerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let logToEdit {
+            logToEdit.interviewType = interviewType
+            logToEdit.date = date
+            logToEdit.interviewerName = normalizedInterviewer.isEmpty ? nil : normalizedInterviewer
+            logToEdit.rating = rating
+            logToEdit.notes = normalizedNotes.isEmpty ? nil : normalizedNotes
+        } else {
+            let log = InterviewLog(
+                interviewType: interviewType,
+                date: date,
+                interviewerName: normalizedInterviewer.isEmpty ? nil : normalizedInterviewer,
+                rating: rating,
+                notes: normalizedNotes.isEmpty ? nil : normalizedNotes,
+                application: application
+            )
+            modelContext.insert(log)
+        }
+
         application.updateTimestamp()
 
         // Update interview stage if this is a later stage
