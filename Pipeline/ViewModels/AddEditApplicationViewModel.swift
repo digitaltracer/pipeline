@@ -192,8 +192,7 @@ final class AddEditApplicationViewModel {
         app.platform = platform
         app.interviewStage = interviewStage
         app.currency = currency
-        app.salaryMin = salaryMin
-        app.salaryMax = salaryMax
+        app.setSalaryRange(min: salaryMin, max: salaryMax)
         app.appliedDate = hasAppliedDate ? appliedDate : nil
         app.nextFollowUpDate = hasFollowUpDate ? nextFollowUpDate : nil
         app.updateTimestamp()

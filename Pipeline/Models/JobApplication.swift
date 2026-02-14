@@ -17,8 +17,8 @@ final class JobApplication {
     private var interviewStageRawValue: String?
     private var currencyRawValue: String = Currency.usd.rawValue
 
-    var salaryMin: Int?
-    var salaryMax: Int?
+    private(set) var salaryMin: Int?
+    private(set) var salaryMax: Int?
     var appliedDate: Date?
     var nextFollowUpDate: Date?
 
@@ -134,8 +134,7 @@ final class JobApplication {
         self.platformRawValue = platform.rawValue
         self.interviewStageRawValue = interviewStage?.rawValue
         self.currencyRawValue = currency.rawValue
-        self.salaryMin = salaryMin
-        self.salaryMax = salaryMax
+        setSalaryRange(min: salaryMin, max: salaryMax)
         self.appliedDate = appliedDate
         self.nextFollowUpDate = nextFollowUpDate
         self.interviewLogs = interviewLogs
@@ -155,6 +154,22 @@ final class JobApplication {
         }
         interviewLogs?.append(log)
         updateTimestamp()
+    }
+
+    func setSalaryRange(min: Int?, max: Int?) {
+        guard let min, let max else {
+            salaryMin = min
+            salaryMax = max
+            return
+        }
+
+        if min <= max {
+            salaryMin = min
+            salaryMax = max
+        } else {
+            salaryMin = max
+            salaryMax = min
+        }
     }
 }
 
