@@ -1,0 +1,59 @@
+{
+  "manifest_version": 3,
+  "name": "Pipeline — Job Application Tracker",
+  "version": "1.0.0",
+  "description": "Save job postings directly to Pipeline from LinkedIn, Indeed, Glassdoor, Naukri, and more.",
+
+  "permissions": [
+    "activeTab",
+    "nativeMessaging"
+  ],
+
+  "host_permissions": [
+    "https://*.linkedin.com/*",
+    "https://*.indeed.com/*",
+    "https://*.glassdoor.com/*",
+    "https://*.naukri.com/*",
+    "https://*.greenhouse.io/*",
+    "https://*.lever.co/*",
+    "https://*.workday.com/*"
+  ],
+
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.linkedin.com/jobs/*",
+        "https://*.indeed.com/*",
+        "https://*.glassdoor.com/job-listing/*",
+        "https://*.glassdoor.com/Job/*",
+        "https://*.naukri.com/job-listings-*",
+        "https://*.greenhouse.io/jobs/*",
+        "https://*.lever.co/*",
+        "https://*.workday.com/*/job/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Pipeline",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}
