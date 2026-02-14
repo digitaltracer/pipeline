@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import PipelineKit
 
 struct JobDetailView: View {
     @Environment(\.modelContext) private var modelContext
@@ -11,6 +12,8 @@ struct JobDetailView: View {
     @State private var showingAddInterviewLog = false
     @State private var editingInterviewLog: InterviewLog?
     @State private var showingDeleteAlert = false
+    @State private var showingInterviewPrep = false
+    @State private var showingFollowUpDrafter = false
     @State private var actionErrorMessage: String?
     @Environment(\.colorScheme) private var colorScheme
 
@@ -101,6 +104,22 @@ struct JobDetailView: View {
         .sheet(item: $editingInterviewLog) { log in
             AddInterviewLogView(application: application, logToEdit: log)
         }
+        .sheet(isPresented: $showingInterviewPrep) {
+            InterviewPrepView(
+                viewModel: InterviewPrepViewModel(
+                    application: application,
+                    settingsViewModel: SettingsViewModel()
+                )
+            )
+        }
+        .sheet(isPresented: $showingFollowUpDrafter) {
+            FollowUpDrafterView(
+                viewModel: FollowUpDrafterViewModel(
+                    application: application,
+                    settingsViewModel: SettingsViewModel()
+                )
+            )
+        }
         .alert("Delete Application", isPresented: $showingDeleteAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
@@ -140,6 +159,24 @@ struct JobDetailView: View {
             } label: {
                 Label("Log", systemImage: "plus")
                     .frame(width: 110)
+            }
+            .buttonStyle(.bordered)
+
+            if application.status == .interviewing {
+                Button {
+                    showingInterviewPrep = true
+                } label: {
+                    Label("Prep", systemImage: "sparkles")
+                        .frame(width: 110)
+                }
+                .buttonStyle(.bordered)
+            }
+
+            Button {
+                showingFollowUpDrafter = true
+            } label: {
+                Label("Follow Up", systemImage: "envelope.badge")
+                    .frame(width: 120)
             }
             .buttonStyle(.bordered)
 
