@@ -11,6 +11,27 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         category: "ExtensionHandler"
     )
 
+    private func resolvePlatform(rawPlatform: String?, url: String) -> Platform {
+        let detected = Platform.detect(from: url)
+        if detected != .other { return detected }
+
+        let normalized = (rawPlatform ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch normalized {
+        case "linkedin", "linkedin.com", "linkedin jobs":
+            return .linkedin
+        case "indeed", "indeed.com":
+            return .indeed
+        case "glassdoor", "glassdoor.com":
+            return .glassdoor
+        case "naukri", "naukri.com":
+            return .naukri
+        case "instahyre", "instahyre.com":
+            return .instahyre
+        default:
+            return .other
+        }
+    }
+
     func beginRequest(with context: NSExtensionContext) {
         let request = context.inputItems.first as? NSExtensionItem
 
@@ -46,27 +67,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         let company = message["company"] as? String ?? ""
         let location = message["location"] as? String ?? ""
         let description = message["description"] as? String ?? ""
-        let platform = message["platform"] as? String ?? "other"
-
-        // Get AI settings
-        let providerRaw = UserDefaults.standard.string(forKey: "selectedAIProvider") ?? "anthropic"
-        guard let provider = AIProvider.allCases.first(where: { $0.rawValue.lowercased() == providerRaw.lowercased() }) else {
-            return ["success": false, "error": "No AI provider configured"]
-        }
-
-        let apiKey: String
-        do {
-            apiKey = try KeychainService.shared.getAPIKey(for: provider)
-        } catch {
-            return ["success": false, "error": "Could not access API key"]
-        }
-
-        guard !apiKey.isEmpty else {
-            return ["success": false, "error": "API key not configured"]
-        }
-
-        let modelKey = "selectedAIModel_\(provider.rawValue)"
-        let model = UserDefaults.standard.string(forKey: modelKey) ?? provider.defaultModels.first ?? ""
+        let platform = message["platform"] as? String ?? ""
 
         // Check for duplicates first
         do {
@@ -98,7 +99,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                 jobURL: url.isEmpty ? nil : url,
                 jobDescription: description.isEmpty ? nil : description,
                 status: .saved,
-                platform: Platform(rawValue: platform) ?? .other
+                platform: resolvePlatform(rawPlatform: platform, url: url)
             )
 
             await MainActor.run {

@@ -120,6 +120,12 @@ header {
   gap: 10px;
 }
 
+.action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .field {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -182,6 +188,38 @@ header {
 .btn-icon {
   font-size: 16px;
   font-weight: 700;
+}
+
+.btn-secondary {
+  width: 100%;
+  padding: 9px 10px;
+  margin-top: 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.action-buttons .btn-secondary {
+  margin-top: 0;
+}
+
+.btn-secondary:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.debug-tools {
+  margin-top: 8px;
 }
 
 /* Empty state */

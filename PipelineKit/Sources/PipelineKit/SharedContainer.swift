@@ -15,7 +15,7 @@ public enum SharedContainer {
             InterviewLog.self
         ])
 
-        let storeURL = appGroupStoreURL() ?? defaultStoreURL()
+        let storeURL = resolvedStoreURL()
 
         let modelConfiguration = ModelConfiguration(
             schema: schema,
@@ -27,6 +27,11 @@ public enum SharedContainer {
             for: schema,
             configurations: [modelConfiguration]
         )
+    }
+
+    /// Returns the same store URL that `makeModelContainer(...)` will use.
+    public static func resolvedStoreURL() -> URL {
+        appGroupStoreURL() ?? defaultStoreURL()
     }
 
     // MARK: - Store Migration
@@ -94,12 +99,23 @@ public enum SharedContainer {
     // MARK: - URLs
 
     public static func appGroupStoreURL() -> URL? {
-        guard let containerURL = FileManager.default.containerURL(
+        if let containerURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: appGroupID
-        ) else {
-            return nil
+        ) {
+            return containerURL.appendingPathComponent("Pipeline.store")
         }
-        return containerURL.appendingPathComponent("Pipeline.store")
+
+        #if os(macOS)
+        // Fallback for development builds where system lookup fails but the
+        // group folder already exists on disk.
+        let directGroupContainer = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Group Containers/\(appGroupID)")
+        if FileManager.default.fileExists(atPath: directGroupContainer.path) {
+            return directGroupContainer.appendingPathComponent("Pipeline.store")
+        }
+        #endif
+
+        return nil
     }
 
     /// The location SwiftData used before App Groups were configured.
