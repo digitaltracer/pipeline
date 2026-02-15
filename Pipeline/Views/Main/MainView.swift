@@ -1,6 +1,9 @@
 import SwiftUI
 import SwiftData
 import PipelineKit
+#if os(macOS)
+import AppKit
+#endif
 
 struct MainView: View {
     @Environment(\.modelContext) private var modelContext
@@ -29,6 +32,10 @@ struct MainView: View {
     @State private var showingSettings = false
     @State private var showingDashboard = false
     @State private var viewMode: ViewMode = .grid
+    private let detailCloseAnimation: Animation = .easeInOut(duration: 0.22)
+#if os(macOS)
+    @State private var escapeKeyMonitor: Any?
+#endif
 
     private var filteredCount: Int {
         viewModel.filterApplications(applications).count
@@ -168,7 +175,7 @@ struct MainView: View {
                 } detail: {
                     if let application = selectedApplication {
                         JobDetailView(application: application, onClose: {
-                            selectedApplication = nil
+                            closeSelectedApplicationWithAnimation()
                         })
                         .navigationSplitViewColumnWidth(min: 360, ideal: 440)
                         .background(DesignSystem.Colors.contentBackground(colorScheme))
@@ -176,6 +183,7 @@ struct MainView: View {
                 }
             }
         }
+        .animation(detailCloseAnimation, value: selectedApplication?.id)
         .sheet(isPresented: $showingAddApplication) {
             AddApplicationView(
                 settingsViewModel: settingsViewModel,
@@ -200,6 +208,40 @@ struct MainView: View {
         .onAppear {
             viewModel.searchText = searchText
             viewModel.selectedFilter = selectedFilter
+#if os(macOS)
+            installEscapeKeyMonitor()
+#endif
+        }
+#if os(macOS)
+        .onDisappear {
+            removeEscapeKeyMonitor()
+        }
+#endif
+    }
+
+#if os(macOS)
+    private func installEscapeKeyMonitor() {
+        guard escapeKeyMonitor == nil else { return }
+        escapeKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.keyCode == 53 else { return event } // Escape
+            guard !showingAddApplication, !showingSettings else { return event }
+            guard selectedApplication != nil else { return event }
+
+            closeSelectedApplicationWithAnimation()
+            return nil
+        }
+    }
+
+    private func removeEscapeKeyMonitor() {
+        guard let escapeKeyMonitor else { return }
+        NSEvent.removeMonitor(escapeKeyMonitor)
+        self.escapeKeyMonitor = nil
+    }
+#endif
+
+    private func closeSelectedApplicationWithAnimation() {
+        withAnimation(detailCloseAnimation) {
+            selectedApplication = nil
         }
     }
 }
