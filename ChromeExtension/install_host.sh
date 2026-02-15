@@ -1,35 +1,75 @@
 #!/bin/bash
 # Pipeline — Install Chrome Native Messaging Host manifest
 #
-# Usage: ./install_host.sh [extension_id]
+# Usage: ./install_host.sh <extension_id> [--dev]
 #
-# If no extension_id is provided, the placeholder in the manifest is used as-is.
-# For local development, pass the unpacked extension ID shown in chrome://extensions.
+# Arguments:
+#   extension_id  The Chrome extension ID from chrome://extensions
+#   --dev         Use the Xcode DerivedData build path instead of /Applications
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HOST_NAME="io.github.digitaltracer.pipeline"
-MANIFEST_SOURCE="${SCRIPT_DIR}/${HOST_NAME}.json"
 TARGET_DIR="${HOME}/Library/Application Support/Google/Chrome/NativeMessagingHosts"
 
-# Create target directory if needed
+if [ $# -lt 1 ] || [ "$1" = "--help" ]; then
+    echo "Usage: ./install_host.sh <extension_id> [--dev]"
+    echo ""
+    echo "  extension_id  Your Chrome extension ID (from chrome://extensions)"
+    echo "  --dev         Use Xcode DerivedData build path (for development)"
+    echo ""
+    echo "Example:"
+    echo "  ./install_host.sh abcdefghijklmnopqrstuvwx --dev"
+    exit 1
+fi
+
+EXT_ID="$1"
+USE_DEV=false
+
+if [ $# -ge 2 ] && [ "$2" = "--dev" ]; then
+    USE_DEV=true
+fi
+
+# Determine binary path
+if [ "$USE_DEV" = true ]; then
+    # Find the binary in Xcode DerivedData
+    HOST_PATH=$(find "${HOME}/Library/Developer/Xcode/DerivedData" -path "*/Pipeline-*/Build/Products/Debug/Pipeline.app/Contents/MacOS/PipelineNativeHost" -type f 2>/dev/null | head -1)
+    if [ -z "$HOST_PATH" ]; then
+        echo "Error: Could not find PipelineNativeHost in DerivedData."
+        echo "Make sure you've built the Pipeline project in Xcode first."
+        exit 1
+    fi
+    echo "Using development build: ${HOST_PATH}"
+else
+    HOST_PATH="/Applications/Pipeline.app/Contents/MacOS/PipelineNativeHost"
+    if [ ! -f "$HOST_PATH" ]; then
+        echo "Warning: ${HOST_PATH} does not exist yet."
+        echo "Tip: Use --dev flag to use the Xcode build instead."
+    fi
+fi
+
+# Create target directory
 mkdir -p "${TARGET_DIR}"
 
 MANIFEST_DEST="${TARGET_DIR}/${HOST_NAME}.json"
 
-if [ $# -ge 1 ]; then
-    EXT_ID="$1"
-    echo "Installing host manifest with extension ID: ${EXT_ID}"
-    sed "s/PLACEHOLDER_EXTENSION_ID/${EXT_ID}/g" "${MANIFEST_SOURCE}" > "${MANIFEST_DEST}"
-else
-    echo "Installing host manifest (placeholder extension ID)"
-    cp "${MANIFEST_SOURCE}" "${MANIFEST_DEST}"
-fi
+# Write the manifest
+cat > "${MANIFEST_DEST}" << MANIFEST
+{
+  "name": "io.github.digitaltracer.pipeline",
+  "description": "Pipeline — Job Application Tracker native messaging host",
+  "path": "${HOST_PATH}",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://${EXT_ID}/"
+  ]
+}
+MANIFEST
 
+echo ""
 echo "Installed: ${MANIFEST_DEST}"
+echo "Extension ID: ${EXT_ID}"
+echo "Host binary: ${HOST_PATH}"
 echo ""
-echo "Native messaging host binary expected at:"
-echo "  /Applications/Pipeline.app/Contents/MacOS/PipelineNativeHost"
-echo ""
-echo "Done."
+echo "Restart Chrome for changes to take effect."
