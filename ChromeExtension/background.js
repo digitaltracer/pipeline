@@ -2,6 +2,7 @@
 // Routes messages between content script/popup and the native messaging host.
 
 const NATIVE_HOST_NAME = "io.github.digitaltracer.pipeline";
+const NATIVE_MESSAGE_TIMEOUT_MS = 60000;
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "saveJobToPipeline") {
@@ -21,7 +22,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 function sendNativeMessage(message) {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error("Native host timed out. Check Pipeline app permissions and host install."));
+    }, NATIVE_MESSAGE_TIMEOUT_MS);
+
     chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, message, (response) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+
       if (chrome.runtime.lastError) {
         reject(new Error(chrome.runtime.lastError.message));
       } else {

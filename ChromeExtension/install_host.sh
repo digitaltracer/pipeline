@@ -33,8 +33,13 @@ fi
 
 # Determine binary path
 if [ "$USE_DEV" = true ]; then
-    # Find the binary in Xcode DerivedData
-    HOST_PATH=$(find "${HOME}/Library/Developer/Xcode/DerivedData" -path "*/Pipeline-*/Build/Products/Debug/Pipeline.app/Contents/MacOS/PipelineNativeHost" -type f 2>/dev/null | head -1)
+    # Prefer the standalone target output. The embedded app copy can be
+    # re-signed by Xcode and fail to launch under native messaging.
+    HOST_PATH=$(find "${HOME}/Library/Developer/Xcode/DerivedData" -path "*/Pipeline-*/Build/Products/Debug/PipelineNativeHost" -type f 2>/dev/null | head -1)
+    if [ -z "$HOST_PATH" ]; then
+        # Fallback for older builds that only had the embedded copy.
+        HOST_PATH=$(find "${HOME}/Library/Developer/Xcode/DerivedData" -path "*/Pipeline-*/Build/Products/Debug/Pipeline.app/Contents/MacOS/PipelineNativeHost" -type f 2>/dev/null | head -1)
+    fi
     if [ -z "$HOST_PATH" ]; then
         echo "Error: Could not find PipelineNativeHost in DerivedData."
         echo "Make sure you've built the Pipeline project in Xcode first."

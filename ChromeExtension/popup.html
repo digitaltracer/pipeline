@@ -44,21 +44,35 @@
         <label>Location</label>
         <p id="preview-location">—</p>
       </div>
+      <div id="salary-field" class="field hidden">
+        <label>Salary</label>
+        <p id="preview-salary">—</p>
+      </div>
       <div class="field">
         <label>Description</label>
         <p id="preview-description" class="truncated">—</p>
       </div>
 
-      <button id="save-btn" class="btn-primary">
-        <span class="btn-icon">+</span>
-        Save to Pipeline
-      </button>
+      <div class="action-buttons">
+        <button id="save-btn" class="btn-primary">
+          <span class="btn-icon">+</span>
+          Save to Pipeline
+        </button>
+        <button id="copy-json-btn" class="btn-secondary">
+          Copy Parsed JSON
+        </button>
+      </div>
     </div>
 
     <!-- Empty state -->
     <div id="empty" class="empty hidden">
       <p>No job posting detected on this page.</p>
+      <p id="empty-reason" class="hint hidden"></p>
       <p class="hint">Navigate to a job posting on LinkedIn, Indeed, Glassdoor, Naukri, or another job board.</p>
+    </div>
+
+    <div class="debug-tools">
+      <button id="debug-btn" class="btn-secondary">Copy Debug Packet</button>
     </div>
   </div>
 

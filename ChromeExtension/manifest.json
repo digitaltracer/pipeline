@@ -6,6 +6,7 @@
 
   "permissions": [
     "activeTab",
+    "scripting",
     "nativeMessaging"
   ],
 
@@ -28,6 +29,7 @@
     {
       "matches": [
         "https://*.linkedin.com/jobs/*",
+        "https://*.linkedin.com/hiring/*",
         "https://*.indeed.com/*",
         "https://*.glassdoor.com/job-listing/*",
         "https://*.glassdoor.com/Job/*",
