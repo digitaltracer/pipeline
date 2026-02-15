@@ -75,16 +75,6 @@
         : "\u2014";
 
       showOnly(previewEl);
-
-      // Check for duplicates
-      const dupResult = await runtime.runtime.sendMessage({
-        action: "checkDuplicate",
-        data: extractedData,
-      });
-
-      if (dupResult?.isDuplicate) {
-        showStatus("warning", "This job may already be saved in Pipeline.");
-      }
     } catch (err) {
       console.error("Pipeline extraction error:", err);
       showOnly(emptyEl);
@@ -102,6 +92,39 @@
     saveBtn.textContent = "Saving...";
     hideStatus();
 
+    try {
+      // Check for duplicates before saving
+      const dupResult = await runtime.runtime.sendMessage({
+        action: "checkDuplicate",
+        data: extractedData,
+      });
+
+      if (dupResult?.isDuplicate) {
+        showStatus("warning", "This job may already be saved in Pipeline.");
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<span class="btn-icon">+</span> Save Anyway';
+
+        // Replace click handler to save without re-checking
+        saveBtn.onclick = () => saveForce();
+        return;
+      }
+
+      await doSave();
+    } catch (err) {
+      showStatus("error", `Error: ${err.message}`);
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = '<span class="btn-icon">+</span> Save to Pipeline';
+    }
+  }
+
+  async function saveForce() {
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving...";
+    hideStatus();
+    await doSave();
+  }
+
+  async function doSave() {
     try {
       const result = await runtime.runtime.sendMessage({
         action: "saveJobToPipeline",
