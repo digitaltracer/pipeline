@@ -51,15 +51,14 @@ public enum ResumeSchemaValidator {
         let schema: ResumeSchema
         do {
             schema = try decoder.decode(ResumeSchema.self, from: rawData)
+        } catch let decodingError as DecodingError {
+            throw ResumeSchemaValidationError.schemaMismatch(
+                "Resume JSON does not match required schema: \(formatDecodingError(decodingError))"
+            )
         } catch {
             throw ResumeSchemaValidationError.schemaMismatch(
                 "Resume JSON does not match required schema: \(error.localizedDescription)"
             )
-        }
-
-        let semanticErrors = validateSemantics(schema)
-        if !semanticErrors.isEmpty {
-            throw ResumeSchemaValidationError.schemaMismatch(semanticErrors.joined(separator: " "))
         }
 
         let unknownFieldPaths = collectUnknownFieldPaths(in: root)
@@ -67,7 +66,7 @@ public enum ResumeSchemaValidator {
         guard JSONSerialization.isValidJSONObject(root),
               let normalizedData = try? JSONSerialization.data(
                 withJSONObject: root,
-                options: [.prettyPrinted, .sortedKeys]
+                options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
               ),
               let normalizedJSON = String(data: normalizedData, encoding: .utf8)
         else {
@@ -79,36 +78,6 @@ public enum ResumeSchemaValidator {
             normalizedJSON: normalizedJSON,
             unknownFieldPaths: unknownFieldPaths
         )
-    }
-
-    private static func validateSemantics(_ schema: ResumeSchema) -> [String] {
-        var errors: [String] = []
-
-        if schema.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            errors.append("`name` cannot be empty.")
-        }
-
-        if schema.contact.email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            errors.append("`contact.email` cannot be empty.")
-        }
-
-        if schema.education.isEmpty {
-            errors.append("`education` must contain at least one entry.")
-        }
-
-        if schema.experience.isEmpty {
-            errors.append("`experience` must contain at least one entry.")
-        }
-
-        if schema.projects.isEmpty {
-            errors.append("`projects` must contain at least one entry.")
-        }
-
-        if schema.skills.isEmpty {
-            errors.append("`skills` must contain at least one category.")
-        }
-
-        return errors
     }
 
     private static func collectUnknownFieldPaths(in root: [String: Any]) -> [String] {
@@ -192,5 +161,34 @@ public enum ResumeSchemaValidator {
         default:
             return false
         }
+    }
+
+    private static func formatDecodingError(_ error: DecodingError) -> String {
+        switch error {
+        case .keyNotFound(let key, let context):
+            let path = codingPathString(context.codingPath + [key])
+            return "Missing required key at \(path)."
+        case .typeMismatch(let expectedType, let context):
+            let path = codingPathString(context.codingPath)
+            return "Expected \(expectedType) at \(path). \(context.debugDescription)"
+        case .valueNotFound(let expectedType, let context):
+            let path = codingPathString(context.codingPath)
+            return "Missing value for \(expectedType) at \(path)."
+        case .dataCorrupted(let context):
+            let path = codingPathString(context.codingPath)
+            return "Invalid value at \(path). \(context.debugDescription)"
+        @unknown default:
+            return "Invalid data format."
+        }
+    }
+
+    private static func codingPathString(_ codingPath: [CodingKey]) -> String {
+        guard !codingPath.isEmpty else { return "/" }
+        return "/" + codingPath.map { key in
+            if let index = key.intValue {
+                return String(index)
+            }
+            return key.stringValue
+        }.joined(separator: "/")
     }
 }

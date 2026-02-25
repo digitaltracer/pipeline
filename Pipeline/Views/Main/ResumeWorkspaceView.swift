@@ -3,15 +3,19 @@ import SwiftData
 import UniformTypeIdentifiers
 import WebKit
 import PipelineKit
+#if os(macOS)
+import AppKit
+#endif
 
 struct ResumeWorkspaceView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \ResumeMasterRevision.createdAt, order: .reverse)
-    private var revisions: [ResumeMasterRevision]
+    @State private var revisions: [ResumeMasterRevision] = []
 
     @State private var editorJSON: String = ""
     @State private var showingImporter = false
     @State private var showingHistory = false
+    @State private var historySheetWidth: CGFloat = 980
+    @State private var validationErrorMessage: String?
     @State private var actionError: String?
 
     @State private var exportingJSON = false
@@ -51,6 +55,9 @@ struct ResumeWorkspaceView: View {
                 .buttonStyle(.bordered)
 
                 Button("History") {
+#if os(macOS)
+                    historySheetWidth = preferredHistorySheetWidth()
+#endif
                     showingHistory = true
                 }
                 .buttonStyle(.bordered)
@@ -84,6 +91,13 @@ struct ResumeWorkspaceView: View {
                             .fill(Color.secondary.opacity(0.08))
                     )
 
+                if let validationErrorMessage {
+                    Label(validationErrorMessage, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                        .textSelection(.enabled)
+                }
+
                 if let revision = currentRevision,
                    !revision.unknownFieldPaths.isEmpty {
                     Label("Preserved in JSON, not rendered in PDF.", systemImage: "info.circle")
@@ -104,11 +118,7 @@ struct ResumeWorkspaceView: View {
             .padding(20)
         }
         .onAppear {
-            if editorJSON.isEmpty {
-                editorJSON = currentRevision?.rawJSON ?? defaultResumePlaceholder
-            }
-        }
-        .onChange(of: currentRevision?.id) { _, _ in
+            loadMasterRevisions()
             editorJSON = currentRevision?.rawJSON ?? defaultResumePlaceholder
         }
         .fileImporter(
@@ -129,13 +139,26 @@ struct ResumeWorkspaceView: View {
                 guard let text = String(data: data, encoding: .utf8) else {
                     throw ResumeSchemaValidationError.invalidJSON
                 }
-                editorJSON = text
+                try importAndSaveMasterJSON(text)
             } catch {
-                actionError = error.localizedDescription
+                handleValidationError(error)
             }
         }
         .sheet(isPresented: $showingHistory) {
-            ResumeMasterHistoryView()
+            ResumeMasterHistoryView(
+                revisions: $revisions,
+                refreshRevisions: {
+                    loadMasterRevisions()
+                }
+            )
+#if os(macOS)
+            .frame(
+                minWidth: historySheetWidth,
+                idealWidth: historySheetWidth,
+                maxWidth: historySheetWidth,
+                minHeight: 620
+            )
+#endif
         }
         .fileExporter(
             isPresented: $exportingJSON,
@@ -167,9 +190,44 @@ struct ResumeWorkspaceView: View {
                 unknownFieldPaths: validation.unknownFieldPaths,
                 in: modelContext
             )
+            validationErrorMessage = nil
+            loadMasterRevisions()
+            editorJSON = validation.normalizedJSON
+        } catch {
+            handleValidationError(error)
+        }
+    }
+
+    private func importAndSaveMasterJSON(_ jsonText: String) throws {
+        let validation = try ResumeSchemaValidator.validate(jsonText: jsonText)
+        _ = try ResumeStoreService.saveMasterRevision(
+            rawJSON: validation.normalizedJSON,
+            unknownFieldPaths: validation.unknownFieldPaths,
+            in: modelContext
+        )
+        validationErrorMessage = nil
+        loadMasterRevisions()
+        editorJSON = validation.normalizedJSON
+    }
+
+    private func loadMasterRevisions() {
+        do {
+            revisions = try ResumeStoreService.masterRevisions(in: modelContext)
         } catch {
             actionError = error.localizedDescription
+            revisions = []
         }
+    }
+
+    private func handleValidationError(_ error: Error) {
+        if let validationError = error as? ResumeSchemaValidationError {
+            validationErrorMessage = validationError.errorDescription ?? "Resume JSON failed validation."
+            actionError = nil
+            return
+        }
+
+        validationErrorMessage = nil
+        actionError = error.localizedDescription
     }
 
     private func exportCurrentJSON() {
@@ -211,73 +269,126 @@ struct ResumeWorkspaceView: View {
         }
         """
     }
+
+#if os(macOS)
+    private func preferredHistorySheetWidth() -> CGFloat {
+        let windowWidth = NSApp.keyWindow?.frame.width ?? NSApp.mainWindow?.frame.width ?? 1220
+        let targetWidth = windowWidth * 0.8
+        return max(920, min(targetWidth, 1680))
+    }
+#endif
 }
 
 struct ResumeMasterHistoryView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \ResumeMasterRevision.createdAt, order: .reverse)
-    private var revisions: [ResumeMasterRevision]
+    @Binding private var revisions: [ResumeMasterRevision]
 
     @State private var actionError: String?
+    @State private var expandedRevisionIDs: Set<UUID> = []
 
     @State private var exportingJSON = false
     @State private var jsonDocument = ResumeJSONFileDocument(text: "{}")
     @State private var exportingPDF = false
     @State private var pdfDocument = ResumePDFFileDocument(data: Data())
+    private let refreshRevisions: (() -> Void)?
+
+    init(
+        revisions: Binding<[ResumeMasterRevision]>,
+        refreshRevisions: (() -> Void)? = nil
+    ) {
+        self._revisions = revisions
+        self.refreshRevisions = refreshRevisions
+    }
 
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(revisions) { revision in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text(revision.createdAt.formatted(date: .abbreviated, time: .shortened))
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-
-                            if revision.isCurrent {
-                                Text("Current")
-                                    .font(.caption)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .background(Capsule().fill(DesignSystem.Colors.accent.opacity(0.2)))
-                            }
-
-                            Spacer()
-                        }
-
-                        if !revision.unknownFieldPaths.isEmpty {
-                            Label("\(revision.unknownFieldPaths.count) fields are preserved but not rendered in PDF", systemImage: "info.circle")
+            Group {
+                if revisions.isEmpty {
+                    ContentUnavailableView(
+                        "No Master Revisions",
+                        systemImage: "doc.text",
+                        description: Text("Import JSON or save from the editor to create your first master revision.")
+                    )
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("\(revisions.count) revision\(revisions.count == 1 ? "" : "s")")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
+
+                            ForEach(revisions, id: \.id) { revision in
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack {
+                                        Text(revision.createdAt.formatted(date: .abbreviated, time: .shortened))
+                                            .font(.headline)
+                                            .fontWeight(.semibold)
+
+                                        if revision.isCurrent {
+                                            Text("Current")
+                                                .font(.caption.weight(.semibold))
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 5)
+                                                .background(Capsule().fill(DesignSystem.Colors.accent.opacity(0.2)))
+                                        }
+
+                                        Spacer()
+
+                                        Button {
+                                            toggleDiff(for: revision)
+                                        } label: {
+                                            Label(
+                                                expandedRevisionIDs.contains(revision.id) ? "Hide Diff" : "Show Diff",
+                                                systemImage: expandedRevisionIDs.contains(revision.id) ? "chevron.up.circle.fill" : "chevron.down.circle.fill"
+                                            )
+                                            .font(.subheadline.weight(.semibold))
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                        .tint(DesignSystem.Colors.accent)
+                                        .controlSize(.large)
+                                    }
+
+                                    if !revision.unknownFieldPaths.isEmpty {
+                                        Label("\(revision.unknownFieldPaths.count) fields are preserved but not rendered in PDF", systemImage: "info.circle")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+
+                                    HStack(spacing: 12) {
+                                        Button("Restore") {
+                                            restoreRevision(revision)
+                                        }
+                                        .buttonStyle(.bordered)
+
+                                        Button("Export JSON") {
+                                            exportJSON(revision)
+                                        }
+                                        .buttonStyle(.bordered)
+
+                                        Button("Export PDF") {
+                                            Task { await exportPDF(revision) }
+                                        }
+                                        .buttonStyle(.bordered)
+
+                                        Spacer()
+
+                                        Button("Delete", role: .destructive) {
+                                            deleteRevision(revision)
+                                        }
+                                        .buttonStyle(.bordered)
+                                    }
+                                    .controlSize(.large)
+
+                                    if expandedRevisionIDs.contains(revision.id) {
+                                        diffSection(for: revision)
+                                    }
+                                }
+                                .padding(16)
+                                .appCard(cornerRadius: 12, elevated: true, shadow: false)
+                            }
                         }
-
-                        HStack(spacing: 10) {
-                            Button("Restore") {
-                                restoreRevision(revision)
-                            }
-                            .buttonStyle(.bordered)
-
-                            Button("Export JSON") {
-                                exportJSON(revision)
-                            }
-                            .buttonStyle(.bordered)
-
-                            Button("Export PDF") {
-                                Task { await exportPDF(revision) }
-                            }
-                            .buttonStyle(.bordered)
-
-                            Spacer()
-
-                            Button("Delete", role: .destructive) {
-                                deleteRevision(revision)
-                            }
-                            .buttonStyle(.bordered)
-                        }
+                        .padding(16)
                     }
-                    .padding(.vertical, 6)
                 }
             }
             .navigationTitle("Master Resume History")
@@ -286,6 +397,9 @@ struct ResumeMasterHistoryView: View {
                     Button("Close") { dismiss() }
                 }
             }
+        }
+        .onAppear {
+            refreshRevisions?()
         }
         .fileExporter(
             isPresented: $exportingJSON,
@@ -312,6 +426,7 @@ struct ResumeMasterHistoryView: View {
     private func restoreRevision(_ revision: ResumeMasterRevision) {
         do {
             try ResumeStoreService.restoreMasterRevision(revision, in: modelContext)
+            refreshRevisions?()
         } catch {
             actionError = error.localizedDescription
         }
@@ -320,6 +435,7 @@ struct ResumeMasterHistoryView: View {
     private func deleteRevision(_ revision: ResumeMasterRevision) {
         do {
             try ResumeStoreService.deleteMasterRevision(revision, in: modelContext)
+            refreshRevisions?()
         } catch {
             actionError = error.localizedDescription
         }
@@ -343,6 +459,135 @@ struct ResumeMasterHistoryView: View {
             actionError = error.localizedDescription
         }
     }
+
+    private func toggleDiff(for revision: ResumeMasterRevision) {
+        if expandedRevisionIDs.contains(revision.id) {
+            expandedRevisionIDs.remove(revision.id)
+        } else {
+            expandedRevisionIDs.insert(revision.id)
+        }
+    }
+
+    private func diffSection(for revision: ResumeMasterRevision) -> some View {
+        Group {
+            if let previous = previousRevision(for: revision) {
+                let diff = ResumeRevisionDiffService.diff(from: previous.rawJSON, to: revision.rawJSON)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Diff vs \(previous.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        Spacer()
+
+                        Text("+\(diff.addedLineCount)  -\(diff.removedLineCount)")
+                            .font(.caption.monospacedDigit())
+                            .foregroundColor(.secondary)
+                    }
+
+                    if diff.hasChanges {
+                        ForEach(Array(diff.hunks.enumerated()), id: \.offset) { _, hunk in
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(hunk.header)
+                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 6)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(Color.secondary.opacity(0.12))
+
+                                ForEach(Array(hunk.lines.enumerated()), id: \.offset) { _, line in
+                                    diffLineRow(line)
+                                }
+                            }
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                            )
+                        }
+                    } else {
+                        Text("No content changes in this revision.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.secondary.opacity(0.07))
+                )
+            } else {
+                Text("No previous revision to compare.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.secondary.opacity(0.08))
+                    )
+            }
+        }
+    }
+
+    private func diffLineRow(_ line: ResumeDiffLine) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(line.oldLineNumber.map(String.init) ?? "")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(.secondary)
+                .frame(width: 36, alignment: .trailing)
+
+            Text(line.newLineNumber.map(String.init) ?? "")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(.secondary)
+                .frame(width: 36, alignment: .trailing)
+
+            Text("\(linePrefix(line.kind))\(line.content)")
+                .font(.system(size: 11, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
+        .background(lineBackgroundColor(line.kind))
+    }
+
+    private func linePrefix(_ kind: ResumeDiffLine.Kind) -> String {
+        switch kind {
+        case .added:
+            return "+"
+        case .removed:
+            return "-"
+        case .context:
+            return " "
+        }
+    }
+
+    private func lineBackgroundColor(_ kind: ResumeDiffLine.Kind) -> Color {
+        switch kind {
+        case .added:
+            return Color.green.opacity(0.18)
+        case .removed:
+            return Color.red.opacity(0.18)
+        case .context:
+            return Color.clear
+        }
+    }
+
+    private func previousRevision(for revision: ResumeMasterRevision) -> ResumeMasterRevision? {
+        guard let index = revisions.firstIndex(where: { $0.id == revision.id }) else {
+            return nil
+        }
+
+        let previousIndex = revisions.index(after: index)
+        guard revisions.indices.contains(previousIndex) else {
+            return nil
+        }
+
+        return revisions[previousIndex]
+    }
+
 }
 
 struct ResumeTailoringView: View {

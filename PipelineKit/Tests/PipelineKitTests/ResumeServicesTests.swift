@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import PipelineKit
 
@@ -24,6 +25,8 @@ import Testing
     let result = try ResumeSchemaValidator.validate(jsonText: sample)
     #expect(result.schema.name == "A Test")
     #expect(result.unknownFieldPaths.contains("/meta"))
+    #expect(result.normalizedJSON.contains("https://example.com"))
+    #expect(!result.normalizedJSON.contains("\\/\\/example.com"))
 }
 
 @Test func resumePatchSafetyRejectsUnrelatedSkillAddWithoutEvidence() throws {
@@ -113,4 +116,128 @@ import Testing
     #expect(throws: Error.self) {
         _ = try ResumeTailoringService.parseResult(from: "not a json payload")
     }
+}
+
+@Test func resumeSchemaValidatorAllowsEmptySectionsWhenSchemaIsValid() throws {
+    let sample = """
+    {
+      "name": "",
+      "contact": {
+        "phone": "",
+        "email": "",
+        "linkedin": "",
+        "github": ""
+      },
+      "education": [],
+      "summary": "",
+      "experience": [],
+      "projects": [],
+      "skills": {}
+    }
+    """
+
+    let result = try ResumeSchemaValidator.validate(jsonText: sample)
+    #expect(result.normalizedJSON.contains("\"education\""))
+}
+
+@Test func resumeSchemaValidatorIncludesPathForMissingRequiredKey() {
+    let sample = """
+    {
+      "name": "A Test",
+      "contact": {
+        "phone": "111",
+        "linkedin": "linkedin.com/in/test",
+        "github": "github.com/test"
+      },
+      "education": [],
+      "summary": "",
+      "experience": [],
+      "projects": [],
+      "skills": {}
+    }
+    """
+
+    do {
+        _ = try ResumeSchemaValidator.validate(jsonText: sample)
+        Issue.record("Expected schema validation to fail for missing contact.email")
+    } catch let error as ResumeSchemaValidationError {
+        switch error {
+        case .schemaMismatch(let message):
+            #expect(message.contains("/contact/email"))
+        default:
+            Issue.record("Expected schemaMismatch, got \(error)")
+        }
+    } catch {
+        Issue.record("Expected ResumeSchemaValidationError, got \(error)")
+    }
+}
+
+@Test func resumeRevisionDiffServiceProducesAddedAndRemovedLines() {
+    let oldText = """
+    {
+      "name": "A Test",
+      "skills": {
+        "Languages": [
+          "Swift",
+          "Python"
+        ]
+      }
+    }
+    """
+
+    let newText = """
+    {
+      "name": "A Better Test",
+      "skills": {
+        "Languages": [
+          "Swift",
+          "Go"
+        ]
+      }
+    }
+    """
+
+    let diff = ResumeRevisionDiffService.diff(from: oldText, to: newText)
+    #expect(diff.hasChanges)
+    #expect(diff.addedLineCount > 0)
+    #expect(diff.removedLineCount > 0)
+
+    let flattened = diff.hunks.flatMap(\.lines)
+    #expect(flattened.contains(where: { $0.kind == .added && $0.content.contains("\"Go\"") }))
+    #expect(flattened.contains(where: { $0.kind == .removed && $0.content.contains("\"Python\"") }))
+}
+
+@Test func resumeStoreSaveAndFetchMasterRevisions() throws {
+    let schema = Schema([
+        JobApplication.self,
+        InterviewLog.self,
+        ResumeMasterRevision.self,
+        ResumeJobSnapshot.self
+    ])
+    let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+    let container = try ModelContainer(for: schema, configurations: [configuration])
+    let context = ModelContext(container)
+
+    let first = try ResumeStoreService.saveMasterRevision(
+        rawJSON: #"{"name":"A"}"#,
+        unknownFieldPaths: ["/meta"],
+        in: context
+    )
+
+    var revisions = try ResumeStoreService.masterRevisions(in: context)
+    #expect(revisions.count == 1)
+    #expect(revisions.first?.isCurrent == true)
+    #expect(revisions.first?.unknownFieldPaths == ["/meta"])
+    #expect(try ResumeStoreService.currentMasterRevision(in: context)?.id == first.id)
+
+    let second = try ResumeStoreService.saveMasterRevision(
+        rawJSON: #"{"name":"B"}"#,
+        unknownFieldPaths: [],
+        in: context
+    )
+
+    revisions = try ResumeStoreService.masterRevisions(in: context)
+    #expect(revisions.count == 2)
+    #expect(try ResumeStoreService.currentMasterRevision(in: context)?.id == second.id)
+    #expect(revisions.contains(where: { $0.id == first.id && $0.isCurrent == false }))
 }

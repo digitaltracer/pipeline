@@ -211,6 +211,10 @@ struct MainView: View {
         .onChange(of: selectedFilter) { _, newValue in
             viewModel.selectedFilter = newValue
         }
+        .onChange(of: showingResume) { _, isShowingResume in
+            guard isShowingResume, selectedApplication != nil else { return }
+            closeSelectedApplicationWithAnimation()
+        }
         .onAppear {
             viewModel.searchText = searchText
             viewModel.selectedFilter = selectedFilter

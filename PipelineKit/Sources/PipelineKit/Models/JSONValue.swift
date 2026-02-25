@@ -126,7 +126,7 @@ public enum JSONValue: Sendable, Equatable, Codable {
             guard JSONSerialization.isValidJSONObject(foundationObject),
                   let data = try? JSONSerialization.data(
                     withJSONObject: foundationObject,
-                    options: [.prettyPrinted, .sortedKeys]
+                    options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
                   ),
                   let text = String(data: data, encoding: .utf8)
             else {

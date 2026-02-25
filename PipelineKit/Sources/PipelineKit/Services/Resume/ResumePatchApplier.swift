@@ -19,7 +19,7 @@ public enum ResumePatchApplier {
         guard JSONSerialization.isValidJSONObject(object),
               let output = try? JSONSerialization.data(
                 withJSONObject: object,
-                options: [.prettyPrinted, .sortedKeys]
+                options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
               ),
               let text = String(data: output, encoding: .utf8)
         else {
