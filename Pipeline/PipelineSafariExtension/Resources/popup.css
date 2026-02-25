@@ -172,7 +172,6 @@ header {
   border-radius: var(--radius);
   font-size: 14px;
   font-weight: 600;
-  cursor: pointer;
   transition: background 0.15s;
 }
 
@@ -182,7 +181,6 @@ header {
 
 .btn-primary:disabled {
   opacity: 0.6;
-  cursor: not-allowed;
 }
 
 .btn-icon {
@@ -200,7 +198,6 @@ header {
   border-radius: var(--radius);
   font-size: 12px;
   font-weight: 600;
-  cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 
@@ -215,6 +212,15 @@ header {
 
 .btn-secondary:disabled {
   opacity: 0.6;
+}
+
+.btn-primary,
+.btn-secondary {
+  cursor: pointer;
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled {
   cursor: not-allowed;
 }
 

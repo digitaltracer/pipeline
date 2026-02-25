@@ -257,7 +257,14 @@ final class CursorCoordinator {
         guard monitor == nil else { return }
 
         monitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .scrollWheel]
+            matching: [
+                .mouseMoved,
+                .cursorUpdate,
+                .leftMouseDown, .leftMouseUp, .leftMouseDragged,
+                .rightMouseDown, .rightMouseUp, .rightMouseDragged,
+                .otherMouseDown, .otherMouseUp, .otherMouseDragged,
+                .scrollWheel
+            ]
         ) { [weak self] event in
             self?.updateCursor(for: event)
             return event
@@ -291,7 +298,7 @@ final class CursorCoordinator {
             return
         }
 
-        if isTextInput(hitView) {
+        if isEditableTextInput(hitView) {
             setCursorIfNeeded(.iBeam)
             return
         }
@@ -304,16 +311,14 @@ final class CursorCoordinator {
         setCursorIfNeeded(.arrow)
     }
 
-    private func isTextInput(_ view: NSView) -> Bool {
+    private func isEditableTextInput(_ view: NSView) -> Bool {
         for candidate in view.ancestry {
             if candidate is NSTextView {
                 return true
             }
 
-            if let textField = candidate as? NSTextField {
-                if textField.isEditable || textField.isSelectable {
-                    return true
-                }
+            if let textField = candidate as? NSTextField, textField.isEditable {
+                return true
             }
 
             if let comboBox = candidate as? NSComboBox, comboBox.isEditable {
@@ -321,7 +326,9 @@ final class CursorCoordinator {
             }
 
             let className = NSStringFromClass(type(of: candidate))
-            if className.contains("TextField") || className.contains("TextEditor") || className.contains("NSTextView") {
+            if className.contains("TextField")
+                || className.contains("TextEditor")
+                || className.contains("NSTextView") {
                 return true
             }
         }
@@ -349,7 +356,10 @@ final class CursorCoordinator {
                 || className.contains("Toggle")
                 || className.contains("Picker")
                 || className.contains("Segmented")
-                || className.contains("Menu") {
+                || className.contains("Menu")
+                || className.contains("ListRow")
+                || className.contains("TableRow")
+                || className.contains("OutlineRow") {
                 return true
             }
         }

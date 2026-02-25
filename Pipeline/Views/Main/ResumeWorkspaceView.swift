@@ -1149,12 +1149,13 @@ private struct JSONCodeEditorRepresentable: JSONEditorPlatformRepresentable {
       <div id="editor"></div>
       <script src="https://cdn.jsdelivr.net/npm/ace-builds@1.37.0/src-min-noconflict/ace.js"></script>
       <script src="https://cdn.jsdelivr.net/npm/ace-builds@1.37.0/src-min-noconflict/mode-json.js"></script>
-      <script src="https://cdn.jsdelivr.net/npm/ace-builds@1.37.0/src-min-noconflict/theme-chrome.js"></script>
-      <script src="https://cdn.jsdelivr.net/npm/ace-builds@1.37.0/src-min-noconflict/theme-monokai.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/ace-builds@1.37.0/src-min-noconflict/theme-github_light_default.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/ace-builds@1.37.0/src-min-noconflict/theme-github_dark.js"></script>
       <script>
         (function () {
           var bridgeName = "pipelineJSONEditorChanged";
           var editor = null;
+          var fallbackTextarea = null;
           var applyingExternalValue = false;
 
           function postValue(value) {
@@ -1171,12 +1172,14 @@ private struct JSONCodeEditorRepresentable: JSONEditorPlatformRepresentable {
             textarea.style.border = "none";
             textarea.style.outline = "none";
             textarea.style.resize = "none";
-            textarea.style.padding = "12px";
-            textarea.style.fontFamily = "Menlo, SFMono-Regular, ui-monospace, monospace";
-            textarea.style.fontSize = "13px";
-            textarea.style.background = "transparent";
+            textarea.style.padding = "14px";
+            textarea.style.fontFamily = "SF Mono, Menlo, Monaco, ui-monospace, monospace";
+            textarea.style.fontSize = "14px";
+            textarea.style.lineHeight = "1.45";
             textarea.style.boxSizing = "border-box";
+            textarea.style.tabSize = "2";
             document.body.replaceChildren(textarea);
+            fallbackTextarea = textarea;
 
             textarea.addEventListener("input", function () {
               postValue(textarea.value);
@@ -1184,7 +1187,13 @@ private struct JSONCodeEditorRepresentable: JSONEditorPlatformRepresentable {
 
             window.pipelineJSONEditor = {
               setText: function (value) { textarea.value = value || ""; },
-              setTheme: function () {}
+              setTheme: function (isDarkMode) {
+                if (!fallbackTextarea) {
+                  return;
+                }
+                fallbackTextarea.style.color = isDarkMode ? "#d4d4d8" : "#1f2937";
+                fallbackTextarea.style.background = isDarkMode ? "#111827" : "#ffffff";
+              }
             };
           }
 
@@ -1197,10 +1206,15 @@ private struct JSONCodeEditorRepresentable: JSONEditorPlatformRepresentable {
             editor.setShowFoldWidgets(true);
             editor.setOption("tabSize", 2);
             editor.setOption("useSoftTabs", true);
-            editor.setOption("fontSize", "13px");
+            editor.setOption("fontFamily", "SF Mono, Menlo, Monaco, ui-monospace, monospace");
+            editor.setOption("fontSize", "14px");
             editor.setOption("showPrintMargin", false);
             editor.setOption("highlightActiveLine", true);
+            editor.setOption("highlightGutterLine", true);
+            editor.setOption("displayIndentGuides", true);
+            editor.setOption("showLineNumbers", true);
             editor.setOption("behavioursEnabled", true);
+            editor.setOption("scrollPastEnd", 0.25);
             editor.renderer.setScrollMargin(10, 10);
 
             editor.session.on("change", function () {
@@ -1228,7 +1242,7 @@ private struct JSONCodeEditorRepresentable: JSONEditorPlatformRepresentable {
                 applyingExternalValue = false;
               },
               setTheme: function (isDarkMode) {
-                editor.setTheme(isDarkMode ? "ace/theme/monokai" : "ace/theme/chrome");
+                editor.setTheme(isDarkMode ? "ace/theme/github_dark" : "ace/theme/github_light_default");
               }
             };
           }

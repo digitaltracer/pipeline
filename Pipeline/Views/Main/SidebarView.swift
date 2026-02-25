@@ -2,6 +2,8 @@ import SwiftUI
 import PipelineKit
 
 #if os(macOS)
+import AppKit
+
 struct SidebarView: View {
     @Binding var selectedFilter: SidebarFilter
     @Binding var showingAddApplication: Bool
@@ -53,6 +55,7 @@ struct SidebarView: View {
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .sidebarHandCursor()
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 20)
@@ -71,6 +74,7 @@ struct SidebarView: View {
                 .padding(.vertical, 10)
             }
             .buttonStyle(.borderedProminent)
+            .sidebarHandCursor()
             .tint(DesignSystem.Colors.accent)
             .controlSize(.large)
             .padding(.horizontal, 16)
@@ -103,6 +107,7 @@ struct SidebarView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .sidebarHandCursor()
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
 
@@ -119,6 +124,7 @@ struct SidebarView: View {
                             )
                         }
                         .buttonStyle(.plain)
+                        .sidebarHandCursor()
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                     }
@@ -146,6 +152,7 @@ struct SidebarView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .sidebarHandCursor()
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                 }
@@ -180,6 +187,7 @@ struct SidebarView: View {
                 )
             }
             .buttonStyle(.plain)
+            .sidebarHandCursor()
             .padding(.horizontal, 16)
             .padding(.bottom, 16)
         }
@@ -194,6 +202,18 @@ struct SidebarView: View {
             settingsViewModel.appearanceMode = .dark
         case .dark:
             settingsViewModel.appearanceMode = .system
+        }
+    }
+}
+
+private extension View {
+    func sidebarHandCursor() -> some View {
+        onHover { isHovering in
+            if isHovering {
+                NSCursor.pointingHand.set()
+            } else {
+                NSCursor.arrow.set()
+            }
         }
     }
 }
