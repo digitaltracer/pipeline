@@ -1,6 +1,9 @@
 import Foundation
 import SwiftUI
 import PipelineKit
+#if os(macOS)
+import AppKit
+#endif
 
 // MARK: - Color Extensions
 
@@ -222,6 +225,151 @@ extension View {
         modifier(AppInputModifier())
     }
 }
+
+#if os(macOS)
+@MainActor
+final class CursorCoordinator {
+    static let shared = CursorCoordinator()
+
+    private var monitor: Any?
+    private var lastCursorKind: CursorKind = .arrow
+
+    private enum CursorKind {
+        case arrow
+        case iBeam
+        case pointingHand
+
+        var cursor: NSCursor {
+            switch self {
+            case .arrow:
+                return .arrow
+            case .iBeam:
+                return .iBeam
+            case .pointingHand:
+                return .pointingHand
+            }
+        }
+    }
+
+    private init() {}
+
+    func start() {
+        guard monitor == nil else { return }
+
+        monitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .scrollWheel]
+        ) { [weak self] event in
+            self?.updateCursor(for: event)
+            return event
+        }
+    }
+
+    func stop() {
+        guard let monitor else { return }
+        NSEvent.removeMonitor(monitor)
+        self.monitor = nil
+        setCursorIfNeeded(.arrow)
+    }
+
+    private func updateCursor(for event: NSEvent) {
+        let window = event.window ?? NSApp.keyWindow
+        guard let window else {
+            setCursorIfNeeded(.arrow)
+            return
+        }
+
+        window.acceptsMouseMovedEvents = true
+        guard let contentView = window.contentView else {
+            setCursorIfNeeded(.arrow)
+            return
+        }
+
+        let locationInView = contentView.convert(event.locationInWindow, from: nil)
+        guard contentView.bounds.contains(locationInView),
+              let hitView = contentView.hitTest(locationInView) else {
+            setCursorIfNeeded(.arrow)
+            return
+        }
+
+        if isTextInput(hitView) {
+            setCursorIfNeeded(.iBeam)
+            return
+        }
+
+        if isInteractive(hitView) {
+            setCursorIfNeeded(.pointingHand)
+            return
+        }
+
+        setCursorIfNeeded(.arrow)
+    }
+
+    private func isTextInput(_ view: NSView) -> Bool {
+        for candidate in view.ancestry {
+            if candidate is NSTextView {
+                return true
+            }
+
+            if let textField = candidate as? NSTextField {
+                if textField.isEditable || textField.isSelectable {
+                    return true
+                }
+            }
+
+            if let comboBox = candidate as? NSComboBox, comboBox.isEditable {
+                return true
+            }
+
+            let className = NSStringFromClass(type(of: candidate))
+            if className.contains("TextField") || className.contains("TextEditor") || className.contains("NSTextView") {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private func isInteractive(_ view: NSView) -> Bool {
+        for candidate in view.ancestry {
+            if candidate.gestureRecognizers.contains(where: { $0 is NSClickGestureRecognizer }) {
+                return true
+            }
+
+            if candidate is NSButton || candidate is NSPopUpButton || candidate is NSSegmentedControl {
+                return true
+            }
+
+            if let control = candidate as? NSControl, !(control is NSTextField) {
+                return true
+            }
+
+            let className = NSStringFromClass(type(of: candidate))
+            if className.contains("Button")
+                || className.contains("Link")
+                || className.contains("Toggle")
+                || className.contains("Picker")
+                || className.contains("Segmented")
+                || className.contains("Menu") {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private func setCursorIfNeeded(_ kind: CursorKind) {
+        guard kind != lastCursorKind else { return }
+        kind.cursor.set()
+        lastCursorKind = kind
+    }
+}
+
+private extension NSView {
+    var ancestry: AnySequence<NSView> {
+        AnySequence(sequence(first: self, next: { $0.superview }))
+    }
+}
+#endif
 
 // MARK: - Custom Values
 

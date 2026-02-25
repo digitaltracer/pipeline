@@ -1,0 +1,1119 @@
+import SwiftUI
+import SwiftData
+import UniformTypeIdentifiers
+import WebKit
+import PipelineKit
+
+struct ResumeWorkspaceView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \ResumeMasterRevision.createdAt, order: .reverse)
+    private var revisions: [ResumeMasterRevision]
+
+    @State private var editorJSON: String = ""
+    @State private var showingImporter = false
+    @State private var showingHistory = false
+    @State private var actionError: String?
+
+    @State private var exportingJSON = false
+    @State private var jsonDocument = ResumeJSONFileDocument(text: "{}")
+
+    @State private var exportingPDF = false
+    @State private var pdfDocument = ResumePDFFileDocument(data: Data())
+
+    private var currentRevision: ResumeMasterRevision? {
+        revisions.first(where: { $0.isCurrent }) ?? revisions.first
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Resume")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+
+                    if let currentRevision {
+                        Text("Current revision: \(currentRevision.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("No master resume saved yet")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                Button("Import JSON") {
+                    showingImporter = true
+                }
+                .buttonStyle(.bordered)
+
+                Button("History") {
+                    showingHistory = true
+                }
+                .buttonStyle(.bordered)
+
+                Button("Export JSON") {
+                    exportCurrentJSON()
+                }
+                .buttonStyle(.bordered)
+                .disabled(currentRevision == nil)
+
+                Button("Export PDF") {
+                    Task { await exportCurrentPDF() }
+                }
+                .buttonStyle(.bordered)
+                .disabled(currentRevision == nil)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Master Resume JSON")
+                    .font(.headline)
+
+                JSONCodeEditor(text: $editorJSON)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.secondary.opacity(0.08))
+                    )
+
+                if let revision = currentRevision,
+                   !revision.unknownFieldPaths.isEmpty {
+                    Label("Preserved in JSON, not rendered in PDF.", systemImage: "info.circle")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                HStack {
+                    Button("Save as New Master Revision") {
+                        saveCurrentEditorAsRevision()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(DesignSystem.Colors.accent)
+
+                    Spacer()
+                }
+            }
+            .padding(20)
+        }
+        .onAppear {
+            if editorJSON.isEmpty {
+                editorJSON = currentRevision?.rawJSON ?? defaultResumePlaceholder
+            }
+        }
+        .onChange(of: currentRevision?.id) { _, _ in
+            editorJSON = currentRevision?.rawJSON ?? defaultResumePlaceholder
+        }
+        .fileImporter(
+            isPresented: $showingImporter,
+            allowedContentTypes: [.json],
+            allowsMultipleSelection: false
+        ) { result in
+            do {
+                guard let url = try result.get().first else { return }
+                let access = url.startAccessingSecurityScopedResource()
+                defer {
+                    if access {
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                }
+
+                let data = try Data(contentsOf: url)
+                guard let text = String(data: data, encoding: .utf8) else {
+                    throw ResumeSchemaValidationError.invalidJSON
+                }
+                editorJSON = text
+            } catch {
+                actionError = error.localizedDescription
+            }
+        }
+        .sheet(isPresented: $showingHistory) {
+            ResumeMasterHistoryView()
+        }
+        .fileExporter(
+            isPresented: $exportingJSON,
+            document: jsonDocument,
+            contentType: .json,
+            defaultFilename: "pipeline-resume"
+        ) { _ in }
+        .fileExporter(
+            isPresented: $exportingPDF,
+            document: pdfDocument,
+            contentType: .pdf,
+            defaultFilename: "pipeline-resume"
+        ) { _ in }
+        .alert("Resume Action Failed", isPresented: Binding(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(actionError ?? "Unknown error")
+        }
+    }
+
+    private func saveCurrentEditorAsRevision() {
+        do {
+            let validation = try ResumeSchemaValidator.validate(jsonText: editorJSON)
+            _ = try ResumeStoreService.saveMasterRevision(
+                rawJSON: validation.normalizedJSON,
+                unknownFieldPaths: validation.unknownFieldPaths,
+                in: modelContext
+            )
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func exportCurrentJSON() {
+        guard let revision = currentRevision else { return }
+        do {
+            jsonDocument = try ResumeJSONExportService.makeDocument(json: revision.rawJSON)
+            exportingJSON = true
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func exportCurrentPDF() async {
+        guard let revision = currentRevision else { return }
+        do {
+            pdfDocument = try await ResumePDFExportService.makeDocument(json: revision.rawJSON)
+            exportingPDF = true
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private var defaultResumePlaceholder: String {
+        """
+        {
+          "name": "",
+          "contact": {
+            "phone": "",
+            "email": "",
+            "linkedin": "",
+            "github": ""
+          },
+          "education": [],
+          "summary": "",
+          "experience": [],
+          "projects": [],
+          "skills": {}
+        }
+        """
+    }
+}
+
+struct ResumeMasterHistoryView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \ResumeMasterRevision.createdAt, order: .reverse)
+    private var revisions: [ResumeMasterRevision]
+
+    @State private var actionError: String?
+
+    @State private var exportingJSON = false
+    @State private var jsonDocument = ResumeJSONFileDocument(text: "{}")
+    @State private var exportingPDF = false
+    @State private var pdfDocument = ResumePDFFileDocument(data: Data())
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(revisions) { revision in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text(revision.createdAt.formatted(date: .abbreviated, time: .shortened))
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+
+                            if revision.isCurrent {
+                                Text("Current")
+                                    .font(.caption)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Capsule().fill(DesignSystem.Colors.accent.opacity(0.2)))
+                            }
+
+                            Spacer()
+                        }
+
+                        if !revision.unknownFieldPaths.isEmpty {
+                            Label("\(revision.unknownFieldPaths.count) fields are preserved but not rendered in PDF", systemImage: "info.circle")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack(spacing: 10) {
+                            Button("Restore") {
+                                restoreRevision(revision)
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button("Export JSON") {
+                                exportJSON(revision)
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button("Export PDF") {
+                                Task { await exportPDF(revision) }
+                            }
+                            .buttonStyle(.bordered)
+
+                            Spacer()
+
+                            Button("Delete", role: .destructive) {
+                                deleteRevision(revision)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    .padding(.vertical, 6)
+                }
+            }
+            .navigationTitle("Master Resume History")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+        .fileExporter(
+            isPresented: $exportingJSON,
+            document: jsonDocument,
+            contentType: .json,
+            defaultFilename: "pipeline-resume"
+        ) { _ in }
+        .fileExporter(
+            isPresented: $exportingPDF,
+            document: pdfDocument,
+            contentType: .pdf,
+            defaultFilename: "pipeline-resume"
+        ) { _ in }
+        .alert("History Action Failed", isPresented: Binding(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(actionError ?? "Unknown error")
+        }
+    }
+
+    private func restoreRevision(_ revision: ResumeMasterRevision) {
+        do {
+            try ResumeStoreService.restoreMasterRevision(revision, in: modelContext)
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func deleteRevision(_ revision: ResumeMasterRevision) {
+        do {
+            try ResumeStoreService.deleteMasterRevision(revision, in: modelContext)
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func exportJSON(_ revision: ResumeMasterRevision) {
+        do {
+            jsonDocument = try ResumeJSONExportService.makeDocument(json: revision.rawJSON)
+            exportingJSON = true
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func exportPDF(_ revision: ResumeMasterRevision) async {
+        do {
+            pdfDocument = try await ResumePDFExportService.makeDocument(json: revision.rawJSON)
+            exportingPDF = true
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+}
+
+struct ResumeTailoringView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+
+    @Bindable var application: JobApplication
+
+    @State private var settingsViewModel = SettingsViewModel()
+    @State private var masterRevision: ResumeMasterRevision?
+    @State private var preflightError: String?
+
+    @State private var isGenerating = false
+    @State private var patches: [ResumePatch] = []
+    @State private var sectionGaps: [String] = []
+    @State private var safetyRejections: [ResumePatchRejection] = []
+
+    @State private var acceptedPatchIDs: Set<UUID> = []
+    @State private var rejectedPatchIDs: Set<UUID> = []
+
+    @State private var editedJSON = ""
+    @State private var actionError: String?
+
+    @State private var exportingJSON = false
+    @State private var jsonDocument = ResumeJSONFileDocument(text: "{}")
+    @State private var exportingPDF = false
+    @State private var pdfDocument = ResumePDFFileDocument(data: Data())
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let preflightError {
+                    preflightErrorView(preflightError)
+                } else {
+                    contentView
+                }
+            }
+            .navigationTitle("Tailor Resume")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+        .onAppear {
+            runPreflight()
+        }
+        .fileExporter(
+            isPresented: $exportingJSON,
+            document: jsonDocument,
+            contentType: .json,
+            defaultFilename: "tailored-resume"
+        ) { _ in }
+        .fileExporter(
+            isPresented: $exportingPDF,
+            document: pdfDocument,
+            contentType: .pdf,
+            defaultFilename: "tailored-resume"
+        ) { _ in }
+        .alert("Tailoring Failed", isPresented: Binding(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(actionError ?? "Unknown error")
+        }
+    }
+
+    private var contentView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("Target: \(application.role) at \(application.companyName)")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    Spacer()
+
+                    Button {
+                        Task { await generateSuggestions() }
+                    } label: {
+                        if isGenerating {
+                            ProgressView()
+                        } else {
+                            Label("Generate Suggestions", systemImage: "sparkles")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(DesignSystem.Colors.accent)
+                    .disabled(isGenerating)
+                }
+
+                if !sectionGaps.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Coverage Gaps")
+                            .font(.headline)
+                        ForEach(sectionGaps, id: \.self) { gap in
+                            Label(gap, systemImage: "exclamationmark.circle")
+                                .font(.caption)
+                        }
+                    }
+                    .padding(12)
+                    .appCard(cornerRadius: 10, elevated: true, shadow: false)
+                }
+
+                if !safetyRejections.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Safety Rejections")
+                            .font(.headline)
+                        ForEach(Array(safetyRejections.enumerated()), id: \.offset) { _, rejection in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(rejection.patch.path)
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                Text(rejection.reason)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .padding(12)
+                    .appCard(cornerRadius: 10, elevated: true, shadow: false)
+                }
+
+                ForEach(patches) { patch in
+                    patchCard(patch)
+                }
+
+                if !patches.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Final Resume JSON")
+                            .font(.headline)
+
+                        JSONCodeEditor(text: $editedJSON)
+                            .frame(minHeight: 220)
+                            .padding(8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(Color.secondary.opacity(0.08))
+                            )
+
+                        HStack(spacing: 10) {
+                            Button("Export JSON") {
+                                exportJSON()
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button("Export PDF") {
+                                Task { await exportPDF() }
+                            }
+                            .buttonStyle(.bordered)
+
+                            Spacer()
+
+                            Button("Save Tailored Resume") {
+                                saveSnapshot()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(DesignSystem.Colors.accent)
+                        }
+                    }
+                    .padding(12)
+                    .appCard(cornerRadius: 10, elevated: true, shadow: false)
+                }
+            }
+            .padding(16)
+        }
+    }
+
+    private func preflightErrorView(_ message: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 30))
+                .foregroundColor(.orange)
+            Text(message)
+                .font(.subheadline)
+                .multilineTextAlignment(.center)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 24)
+        }
+    }
+
+    private func patchCard(_ patch: ResumePatch) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(patch.operation.rawValue.capitalized)
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.secondary.opacity(0.18)))
+
+                Text(patch.path)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                if patch.operation == .remove {
+                    Label("Deletion", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption2)
+                        .foregroundColor(.orange)
+                }
+
+                Spacer()
+            }
+
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Before")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(patch.beforeValue?.displayText ?? "<empty>")
+                        .font(.caption)
+                        .textSelection(.enabled)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("After")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(patch.afterValue?.displayText ?? "<removed>")
+                        .font(.caption)
+                        .textSelection(.enabled)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Text(patch.reason)
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            HStack(spacing: 10) {
+                Button {
+                    acceptedPatchIDs.insert(patch.id)
+                    rejectedPatchIDs.remove(patch.id)
+                    refreshEditedJSON()
+                } label: {
+                    Label("Accept", systemImage: acceptedPatchIDs.contains(patch.id) ? "checkmark.circle.fill" : "circle")
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    rejectedPatchIDs.insert(patch.id)
+                    acceptedPatchIDs.remove(patch.id)
+                    refreshEditedJSON()
+                } label: {
+                    Label("Reject", systemImage: rejectedPatchIDs.contains(patch.id) ? "xmark.circle.fill" : "circle")
+                }
+                .buttonStyle(.bordered)
+
+                Spacer()
+            }
+        }
+        .padding(12)
+        .appCard(cornerRadius: 10, elevated: true, shadow: false)
+    }
+
+    private func runPreflight() {
+        do {
+            masterRevision = try ResumeStoreService.currentMasterRevision(in: modelContext)
+            guard masterRevision != nil else {
+                preflightError = "Save a master resume in the Resume section before tailoring."
+                return
+            }
+        } catch {
+            preflightError = error.localizedDescription
+            return
+        }
+
+        guard let jd = application.jobDescription,
+              !jd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            preflightError = "This job is missing a job description. Add one in Edit Application before tailoring."
+            return
+        }
+
+        let provider = settingsViewModel.selectedAIProvider
+        let model = settingsViewModel.preferredModel(for: provider)
+
+        if model.isEmpty {
+            preflightError = "No compatible AI model configured. Please check Settings."
+            return
+        }
+
+        do {
+            let key = try KeychainService.shared.getAPIKey(for: provider)
+            if key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                preflightError = "No API key configured for \(provider.rawValue)."
+                return
+            }
+        } catch {
+            preflightError = "Could not read API key for \(provider.rawValue)."
+            return
+        }
+
+        preflightError = nil
+        editedJSON = masterRevision?.rawJSON ?? ""
+    }
+
+    @MainActor
+    private func generateSuggestions() async {
+        guard preflightError == nil,
+              let masterRevision,
+              let jobDescription = application.jobDescription
+        else {
+            return
+        }
+
+        isGenerating = true
+        defer { isGenerating = false }
+
+        do {
+            let provider = settingsViewModel.selectedAIProvider
+            let model = settingsViewModel.preferredModel(for: provider)
+            let apiKey = try KeychainService.shared.getAPIKey(for: provider)
+
+            let result = try await ResumeTailoringService.generateSuggestions(
+                provider: provider,
+                apiKey: apiKey,
+                model: model,
+                resumeJSON: masterRevision.rawJSON,
+                company: application.companyName,
+                role: application.role,
+                jobDescription: jobDescription
+            )
+
+            let validation = try ResumePatchSafetyValidator.validate(
+                patches: result.patches,
+                originalJSON: masterRevision.rawJSON
+            )
+
+            patches = validation.accepted
+            safetyRejections = validation.rejected
+            sectionGaps = result.sectionGaps
+
+            acceptedPatchIDs = []
+            rejectedPatchIDs = []
+            refreshEditedJSON()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func refreshEditedJSON() {
+        guard let masterRevision else { return }
+
+        do {
+            editedJSON = try ResumePatchApplier.apply(
+                patches: patches,
+                acceptedPatchIDs: acceptedPatchIDs,
+                to: masterRevision.rawJSON
+            )
+        } catch {
+            editedJSON = masterRevision.rawJSON
+        }
+    }
+
+    private func saveSnapshot() {
+        do {
+            let validated = try ResumeSchemaValidator.validate(jsonText: editedJSON)
+            _ = try ResumeStoreService.createJobSnapshot(
+                for: application,
+                rawJSON: validated.normalizedJSON,
+                acceptedPatchIDs: Array(acceptedPatchIDs),
+                rejectedPatchIDs: Array(rejectedPatchIDs),
+                sectionGaps: sectionGaps,
+                sourceMasterRevisionID: masterRevision?.id,
+                in: modelContext
+            )
+            dismiss()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func exportJSON() {
+        do {
+            jsonDocument = try ResumeJSONExportService.makeDocument(json: editedJSON)
+            exportingJSON = true
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func exportPDF() async {
+        do {
+            pdfDocument = try await ResumePDFExportService.makeDocument(json: editedJSON)
+            exportingPDF = true
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+}
+
+struct JobResumePanel: View {
+    @Environment(\.modelContext) private var modelContext
+
+    @Bindable var application: JobApplication
+
+    @State private var showingTailor = false
+    @State private var actionError: String?
+
+    @State private var exportingJSON = false
+    @State private var jsonDocument = ResumeJSONFileDocument(text: "{}")
+
+    @State private var exportingPDF = false
+    @State private var pdfDocument = ResumePDFFileDocument(data: Data())
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Resume Versions", systemImage: "doc.text")
+                    .font(.headline)
+
+                Spacer()
+
+                Button {
+                    showingTailor = true
+                } label: {
+                    Label("Tailor Resume", systemImage: "sparkles")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DesignSystem.Colors.accent)
+            }
+
+            if application.sortedResumeSnapshots.isEmpty {
+                Text("No tailored resumes attached to this job yet.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(application.sortedResumeSnapshots) { snapshot in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(snapshot.createdAt.formatted(date: .abbreviated, time: .shortened))
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                Text("Accepted: \(snapshot.acceptedPatchIDs.count)  Rejected: \(snapshot.rejectedPatchIDs.count)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Spacer()
+
+                            Button("JSON") {
+                                exportJSON(snapshot)
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button("PDF") {
+                                Task { await exportPDF(snapshot) }
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button("Delete", role: .destructive) {
+                                deleteSnapshot(snapshot)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+        .sheet(isPresented: $showingTailor) {
+            ResumeTailoringView(application: application)
+        }
+        .fileExporter(
+            isPresented: $exportingJSON,
+            document: jsonDocument,
+            contentType: .json,
+            defaultFilename: "tailored-resume"
+        ) { _ in }
+        .fileExporter(
+            isPresented: $exportingPDF,
+            document: pdfDocument,
+            contentType: .pdf,
+            defaultFilename: "tailored-resume"
+        ) { _ in }
+        .alert("Resume Action Failed", isPresented: Binding(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(actionError ?? "Unknown error")
+        }
+    }
+
+    private func deleteSnapshot(_ snapshot: ResumeJobSnapshot) {
+        do {
+            try ResumeStoreService.deleteJobSnapshot(snapshot, in: modelContext)
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func exportJSON(_ snapshot: ResumeJobSnapshot) {
+        do {
+            jsonDocument = try ResumeJSONExportService.makeDocument(json: snapshot.rawJSON)
+            exportingJSON = true
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func exportPDF(_ snapshot: ResumeJobSnapshot) async {
+        do {
+            pdfDocument = try await ResumePDFExportService.makeDocument(json: snapshot.rawJSON)
+            exportingPDF = true
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+}
+
+private struct JSONCodeEditor: View {
+    @Binding var text: String
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        JSONCodeEditorRepresentable(text: $text, isDarkMode: colorScheme == .dark)
+    }
+}
+
+#if os(macOS)
+private typealias JSONEditorPlatformRepresentable = NSViewRepresentable
+#else
+private typealias JSONEditorPlatformRepresentable = UIViewRepresentable
+#endif
+
+private struct JSONCodeEditorRepresentable: JSONEditorPlatformRepresentable {
+    @Binding var text: String
+    let isDarkMode: Bool
+
+    private static let bridgeName = "pipelineJSONEditorChanged"
+
+    private static let editorHTML = """
+    <!doctype html>
+    <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+      <style>
+        html, body, #editor {
+          width: 100%;
+          height: 100%;
+          margin: 0;
+          padding: 0;
+          overflow: hidden;
+          background: transparent;
+        }
+      </style>
+    </head>
+    <body>
+      <div id="editor"></div>
+      <script src="https://cdn.jsdelivr.net/npm/ace-builds@1.37.0/src-min-noconflict/ace.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/ace-builds@1.37.0/src-min-noconflict/mode-json.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/ace-builds@1.37.0/src-min-noconflict/theme-chrome.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/ace-builds@1.37.0/src-min-noconflict/theme-monokai.js"></script>
+      <script>
+        (function () {
+          var bridgeName = "pipelineJSONEditorChanged";
+          var editor = null;
+          var applyingExternalValue = false;
+
+          function postValue(value) {
+            if (!window.webkit || !window.webkit.messageHandlers || !window.webkit.messageHandlers[bridgeName]) {
+              return;
+            }
+            window.webkit.messageHandlers[bridgeName].postMessage(value);
+          }
+
+          function setupFallbackEditor() {
+            var textarea = document.createElement("textarea");
+            textarea.style.width = "100%";
+            textarea.style.height = "100%";
+            textarea.style.border = "none";
+            textarea.style.outline = "none";
+            textarea.style.resize = "none";
+            textarea.style.padding = "12px";
+            textarea.style.fontFamily = "Menlo, SFMono-Regular, ui-monospace, monospace";
+            textarea.style.fontSize = "13px";
+            textarea.style.background = "transparent";
+            textarea.style.boxSizing = "border-box";
+            document.body.replaceChildren(textarea);
+
+            textarea.addEventListener("input", function () {
+              postValue(textarea.value);
+            });
+
+            window.pipelineJSONEditor = {
+              setText: function (value) { textarea.value = value || ""; },
+              setTheme: function () {}
+            };
+          }
+
+          function setupAceEditor() {
+            editor = ace.edit("editor");
+            editor.session.setMode("ace/mode/json");
+            editor.session.setUseWorker(false);
+            editor.session.setUseWrapMode(true);
+            editor.session.setFoldStyle("markbeginend");
+            editor.setShowFoldWidgets(true);
+            editor.setOption("tabSize", 2);
+            editor.setOption("useSoftTabs", true);
+            editor.setOption("fontSize", "13px");
+            editor.setOption("showPrintMargin", false);
+            editor.setOption("highlightActiveLine", true);
+            editor.setOption("behavioursEnabled", true);
+            editor.renderer.setScrollMargin(10, 10);
+
+            editor.session.on("change", function () {
+              if (applyingExternalValue) {
+                return;
+              }
+              postValue(editor.getValue());
+            });
+
+            window.pipelineJSONEditor = {
+              setText: function (value) {
+                var incoming = value || "";
+                if (editor.getValue() === incoming) {
+                  return;
+                }
+
+                applyingExternalValue = true;
+                var cursor = editor.getCursorPosition();
+                var scrollTop = editor.session.getScrollTop();
+                var scrollLeft = editor.session.getScrollLeft();
+                editor.setValue(incoming, -1);
+                editor.moveCursorToPosition(cursor);
+                editor.session.setScrollTop(scrollTop);
+                editor.session.setScrollLeft(scrollLeft);
+                applyingExternalValue = false;
+              },
+              setTheme: function (isDarkMode) {
+                editor.setTheme(isDarkMode ? "ace/theme/monokai" : "ace/theme/chrome");
+              }
+            };
+          }
+
+          if (typeof ace === "undefined") {
+            setupFallbackEditor();
+          } else {
+            setupAceEditor();
+          }
+        })();
+      </script>
+    </body>
+    </html>
+    """
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text, isDarkMode: isDarkMode)
+    }
+
+#if os(macOS)
+    func makeNSView(context: Context) -> WKWebView {
+        makeWebView(context: context)
+    }
+
+    func updateNSView(_ webView: WKWebView, context: Context) {
+        updateWebView(webView, context: context)
+    }
+#else
+    func makeUIView(context: Context) -> WKWebView {
+        makeWebView(context: context)
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        updateWebView(webView, context: context)
+    }
+#endif
+
+    private func makeWebView(context: Context) -> WKWebView {
+        let userContentController = WKUserContentController()
+        userContentController.add(context.coordinator, name: Self.bridgeName)
+
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController = userContentController
+
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.navigationDelegate = context.coordinator
+#if os(macOS)
+        webView.setValue(false, forKey: "drawsBackground")
+#else
+        webView.isOpaque = false
+        webView.backgroundColor = .clear
+#endif
+        context.coordinator.webView = webView
+        webView.loadHTMLString(Self.editorHTML, baseURL: URL(string: "https://localhost/"))
+        return webView
+    }
+
+    private func updateWebView(_ webView: WKWebView, context: Context) {
+        context.coordinator.update(text: text, isDarkMode: isDarkMode)
+    }
+
+    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+        @Binding private var text: String
+        private var isDarkMode: Bool
+        private var isReady = false
+        private var lastSyncedText: String
+        private var lastSyncedTheme: Bool?
+
+        weak var webView: WKWebView?
+
+        init(text: Binding<String>, isDarkMode: Bool) {
+            _text = text
+            self.isDarkMode = isDarkMode
+            self.lastSyncedText = text.wrappedValue
+            super.init()
+        }
+
+        deinit {
+            webView?.configuration.userContentController.removeScriptMessageHandler(forName: JSONCodeEditorRepresentable.bridgeName)
+        }
+
+        func update(text: String, isDarkMode: Bool) {
+            self.isDarkMode = isDarkMode
+            syncTextIfNeeded(text)
+            syncThemeIfNeeded()
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            isReady = true
+            syncTextIfNeeded(text)
+            syncThemeIfNeeded(force: true)
+        }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == JSONCodeEditorRepresentable.bridgeName,
+                  let updatedText = message.body as? String else {
+                return
+            }
+
+            lastSyncedText = updatedText
+            if updatedText != text {
+                DispatchQueue.main.async { [weak self] in
+                    self?.text = updatedText
+                }
+            }
+        }
+
+        private func syncTextIfNeeded(_ newText: String) {
+            guard isReady, newText != lastSyncedText else { return }
+            lastSyncedText = newText
+            let js = "window.pipelineJSONEditor && window.pipelineJSONEditor.setText(\(Self.quotedJSString(newText)));"
+            webView?.evaluateJavaScript(js)
+        }
+
+        private func syncThemeIfNeeded(force: Bool = false) {
+            guard isReady else { return }
+            guard force || lastSyncedTheme != isDarkMode else { return }
+            lastSyncedTheme = isDarkMode
+            let js = "window.pipelineJSONEditor && window.pipelineJSONEditor.setTheme(\(isDarkMode ? "true" : "false"));"
+            webView?.evaluateJavaScript(js)
+        }
+
+        private static func quotedJSString(_ value: String) -> String {
+            guard let encoded = try? JSONSerialization.data(withJSONObject: [value]),
+                  var arrayLiteral = String(data: encoded, encoding: .utf8) else {
+                return "\"\""
+            }
+            arrayLiteral.removeFirst()
+            arrayLiteral.removeLast()
+            return arrayLiteral
+        }
+    }
+}

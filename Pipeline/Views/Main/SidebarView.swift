@@ -7,6 +7,7 @@ struct SidebarView: View {
     @Binding var showingAddApplication: Bool
     @Binding var showingSettings: Bool
     @Binding var showingDashboard: Bool
+    @Binding var showingResume: Bool
     let statusCounts: [SidebarFilter: Int]
     @Bindable var settingsViewModel: SettingsViewModel
     @Environment(\.colorScheme) private var colorScheme
@@ -81,6 +82,7 @@ struct SidebarView: View {
                     // Dashboard item
                     Button {
                         showingDashboard = true
+                        showingResume = false
                     } label: {
                         HStack {
                             Image(systemName: "chart.bar.xaxis")
@@ -107,6 +109,7 @@ struct SidebarView: View {
                     ForEach(SidebarFilter.allCases) { filter in
                         Button {
                             showingDashboard = false
+                            showingResume = false
                             selectedFilter = filter
                         } label: {
                             SidebarFilterRow(
@@ -119,6 +122,32 @@ struct SidebarView: View {
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                     }
+
+                    Button {
+                        showingDashboard = false
+                        showingResume = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "doc.text.fill")
+                                .foregroundColor(showingResume ? .white : .teal)
+                                .frame(width: 20)
+
+                            Text("Resume")
+                                .foregroundColor(showingResume ? .white : .primary)
+
+                            Spacer()
+                        }
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(showingResume ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.85 : 1.0) : Color.clear)
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
                 }
             }
             .listStyle(.sidebar)
@@ -212,6 +241,7 @@ struct SidebarFilterRow: View {
         showingAddApplication: .constant(false),
         showingSettings: .constant(false),
         showingDashboard: .constant(false),
+        showingResume: .constant(false),
         statusCounts: [
             .all: 25,
             .saved: 5,
@@ -233,6 +263,7 @@ struct SidebarView: View {
     @Binding var showingAddApplication: Bool
     @Binding var showingSettings: Bool
     @Binding var showingDashboard: Bool
+    @Binding var showingResume: Bool
     let statusCounts: [SidebarFilter: Int]
     @Bindable var settingsViewModel: SettingsViewModel
 

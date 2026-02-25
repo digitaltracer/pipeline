@@ -25,6 +25,9 @@ public final class JobApplication {
     @Relationship(deleteRule: .cascade, inverse: \InterviewLog.application)
     public var interviewLogs: [InterviewLog]?
 
+    @Relationship(deleteRule: .cascade, inverse: \ResumeJobSnapshot.application)
+    public var resumeSnapshots: [ResumeJobSnapshot]?
+
     public var createdAt: Date = Date()
     public var updatedAt: Date = Date()
 
@@ -75,6 +78,10 @@ public final class JobApplication {
         (interviewLogs ?? []).sorted { $0.date > $1.date }
     }
 
+    public var sortedResumeSnapshots: [ResumeJobSnapshot] {
+        (resumeSnapshots ?? []).sorted { $0.createdAt > $1.createdAt }
+    }
+
     public var companyDomain: String? {
         let cleaned = companyName.lowercased()
             .replacingOccurrences(of: " ", with: "")
@@ -118,6 +125,7 @@ public final class JobApplication {
         appliedDate: Date? = nil,
         nextFollowUpDate: Date? = nil,
         interviewLogs: [InterviewLog]? = nil,
+        resumeSnapshots: [ResumeJobSnapshot]? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -137,6 +145,7 @@ public final class JobApplication {
         self.appliedDate = appliedDate
         self.nextFollowUpDate = nextFollowUpDate
         self.interviewLogs = interviewLogs
+        self.resumeSnapshots = resumeSnapshots
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

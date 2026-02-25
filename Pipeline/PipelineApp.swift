@@ -57,6 +57,9 @@ struct PipelineApp: App {
             )
 
             NotificationService.shared.registerCategories()
+            #if os(macOS)
+            CursorCoordinator.shared.start()
+            #endif
         } catch {
             fatalError("Could not initialize ModelContainer: \(error)")
         }

@@ -69,6 +69,8 @@ struct JobDetailView: View {
                         JobDescriptionView(description: description)
                     }
 
+                    JobResumePanel(application: application)
+
                     // Interview History
                     InterviewHistoryView(
                         logs: application.sortedInterviewLogs,
@@ -257,5 +259,8 @@ struct JobPostingSection: View {
             )
         )
     }
-    .modelContainer(for: [JobApplication.self, InterviewLog.self], inMemory: true)
+    .modelContainer(
+        for: [JobApplication.self, InterviewLog.self, ResumeMasterRevision.self, ResumeJobSnapshot.self],
+        inMemory: true
+    )
 }

@@ -8,6 +8,7 @@ struct ContentView: View {
     @State private var selectedFilter: SidebarFilter = .all
     @State private var selectedApplication: JobApplication?
     @State private var showingAddApplication = false
+    @State private var showingResume = false
     @State private var searchText = ""
     @Bindable var settingsViewModel: SettingsViewModel
 
@@ -28,6 +29,7 @@ struct ContentView: View {
             selectedApplication: $selectedApplication,
             showingAddApplication: $showingAddApplication,
             searchText: $searchText,
+            showingResume: $showingResume,
             settingsViewModel: settingsViewModel
         )
         .preferredColorScheme(settingsViewModel.getColorScheme())
@@ -42,10 +44,18 @@ struct ContentView: View {
             .navigationTitle("Pipeline")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showingAddApplication = true
-                    } label: {
-                        Image(systemName: "plus")
+                    HStack(spacing: 12) {
+                        Button {
+                            showingResume = true
+                        } label: {
+                            Image(systemName: "doc.text")
+                        }
+
+                        Button {
+                            showingAddApplication = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
                     }
                 }
             }
@@ -53,11 +63,32 @@ struct ContentView: View {
         .sheet(isPresented: $showingAddApplication) {
             AddApplicationView(settingsViewModel: settingsViewModel)
         }
+        .sheet(isPresented: $showingResume) {
+            NavigationStack {
+                ResumeWorkspaceView()
+                    .navigationTitle("Resume")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") {
+                                showingResume = false
+                            }
+                        }
+                    }
+            }
+        }
+        .sheet(item: $selectedApplication) { application in
+            NavigationStack {
+                JobDetailView(application: application)
+            }
+        }
         #endif
     }
 }
 
 #Preview {
     ContentView(settingsViewModel: SettingsViewModel())
-        .modelContainer(for: [JobApplication.self, InterviewLog.self], inMemory: true)
+        .modelContainer(
+            for: [JobApplication.self, InterviewLog.self, ResumeMasterRevision.self, ResumeJobSnapshot.self],
+            inMemory: true
+        )
 }

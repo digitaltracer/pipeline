@@ -14,6 +14,7 @@ struct MainView: View {
     @Binding var selectedApplication: JobApplication?
     @Binding var showingAddApplication: Bool
     @Binding var searchText: String
+    @Binding var showingResume: Bool
     @Bindable var settingsViewModel: SettingsViewModel
 
     enum ViewMode: String, CaseIterable {
@@ -49,6 +50,9 @@ struct MainView: View {
     private var contentColumn: some View {
         if showingDashboard {
             DashboardView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else if showingResume {
+            ResumeWorkspaceView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
             VStack(spacing: 0) {
@@ -111,6 +115,7 @@ struct MainView: View {
                         showingAddApplication: $showingAddApplication,
                         showingSettings: $showingSettings,
                         showingDashboard: $showingDashboard,
+                        showingResume: $showingResume,
                         statusCounts: viewModel.statusCounts(from: applications),
                         settingsViewModel: settingsViewModel
                     )
@@ -146,6 +151,7 @@ struct MainView: View {
                         showingAddApplication: $showingAddApplication,
                         showingSettings: $showingSettings,
                         showingDashboard: $showingDashboard,
+                        showingResume: $showingResume,
                         statusCounts: viewModel.statusCounts(from: applications),
                         settingsViewModel: settingsViewModel
                     )
@@ -252,7 +258,11 @@ struct MainView: View {
         selectedApplication: .constant(nil),
         showingAddApplication: .constant(false),
         searchText: .constant(""),
+        showingResume: .constant(false),
         settingsViewModel: SettingsViewModel()
     )
-    .modelContainer(for: [JobApplication.self, InterviewLog.self], inMemory: true)
+    .modelContainer(
+        for: [JobApplication.self, InterviewLog.self, ResumeMasterRevision.self, ResumeJobSnapshot.self],
+        inMemory: true
+    )
 }
