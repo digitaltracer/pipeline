@@ -38,24 +38,7 @@ struct SidebarView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-
-                Spacer()
-
-                // Theme toggle icon
-                Button {
-                    withAnimation {
-                        cycleTheme()
-                    }
-                } label: {
-                    Image(systemName: settingsViewModel.appearanceMode.icon)
-                        .font(.system(size: 16))
-                        .foregroundColor(.secondary)
-                        .frame(width: 32, height: 32)
-                        .background(DesignSystem.Colors.surfaceElevated(colorScheme))
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .sidebarHandCursor()
+                Spacer(minLength: 0)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 20)
@@ -120,7 +103,7 @@ struct SidebarView: View {
                             SidebarFilterRow(
                                 filter: filter,
                                 count: statusCounts[filter] ?? 0,
-                                isSelected: !showingDashboard && selectedFilter == filter
+                                isSelected: !showingDashboard && !showingResume && selectedFilter == filter
                             )
                         }
                         .buttonStyle(.plain)
@@ -166,19 +149,16 @@ struct SidebarView: View {
             Button {
                 showingSettings = true
             } label: {
-                ZStack {
+                HStack(spacing: 8) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.primary)
+
                     Text("Settings")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.primary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-
-                    HStack {
-                        Image(systemName: "gearshape.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.primary)
-                        Spacer()
-                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, 10)
                 .padding(.horizontal, 14)
                 .background(
@@ -192,17 +172,6 @@ struct SidebarView: View {
             .padding(.bottom, 16)
         }
         .background(DesignSystem.Colors.sidebarBackground(colorScheme))
-    }
-
-    private func cycleTheme() {
-        switch settingsViewModel.appearanceMode {
-        case .system:
-            settingsViewModel.appearanceMode = .light
-        case .light:
-            settingsViewModel.appearanceMode = .dark
-        case .dark:
-            settingsViewModel.appearanceMode = .system
-        }
     }
 }
 

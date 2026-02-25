@@ -124,24 +124,7 @@ struct MainView: View {
                     contentColumn
                         .navigationSplitViewColumnWidth(min: 520, ideal: 720)
                         .navigationTitle("")
-                        .toolbar {
-                            ToolbarItem(placement: .automatic) {
-                                Picker("View", selection: $viewMode) {
-                                    ForEach(ViewMode.allCases, id: \.self) { mode in
-                                        Label(mode.rawValue, systemImage: mode.icon).tag(mode)
-                                    }
-                                }
-                                .pickerStyle(.segmented)
-                            }
-                            ToolbarItem(placement: .automatic) {
-                                Picker("Sort", selection: $viewModel.sortOrder) {
-                                    ForEach(ApplicationListViewModel.SortOrder.allCases, id: \.self) { order in
-                                        Text(order.rawValue).tag(order)
-                                    }
-                                }
-                                .pickerStyle(.menu)
-                            }
-                        }
+                        .toolbar { mainToolbarContent }
                 }
             } else {
                 // Three-column layout when an application is selected.
@@ -160,24 +143,7 @@ struct MainView: View {
                     contentColumn
                         .navigationSplitViewColumnWidth(min: 520, ideal: 720)
                         .navigationTitle("")
-                        .toolbar {
-                            ToolbarItem(placement: .automatic) {
-                                Picker("View", selection: $viewMode) {
-                                    ForEach(ViewMode.allCases, id: \.self) { mode in
-                                        Label(mode.rawValue, systemImage: mode.icon).tag(mode)
-                                    }
-                                }
-                                .pickerStyle(.segmented)
-                            }
-                            ToolbarItem(placement: .automatic) {
-                                Picker("Sort", selection: $viewModel.sortOrder) {
-                                    ForEach(ApplicationListViewModel.SortOrder.allCases, id: \.self) { order in
-                                        Text(order.rawValue).tag(order)
-                                    }
-                                }
-                                .pickerStyle(.menu)
-                            }
-                        }
+                        .toolbar { mainToolbarContent }
                 } detail: {
                     if let application = selectedApplication {
                         JobDetailView(application: application, onClose: {
@@ -229,6 +195,45 @@ struct MainView: View {
 #endif
     }
 
+    @ToolbarContentBuilder
+    private var mainToolbarContent: some ToolbarContent {
+#if os(macOS)
+        ToolbarItem(placement: .navigation) {
+            Button {
+                withAnimation {
+                    cycleTheme()
+                }
+            } label: {
+                Image(systemName: settingsViewModel.appearanceMode.icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(minWidth: 32)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+            }
+            .buttonStyle(.plain)
+            .help("Change appearance")
+        }
+#endif
+        ToolbarItem(placement: .automatic) {
+            Picker("View", selection: $viewMode) {
+                ForEach(ViewMode.allCases, id: \.self) { mode in
+                    Label(mode.rawValue, systemImage: mode.icon).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+        ToolbarItem(placement: .automatic) {
+            Picker("Sort", selection: $viewModel.sortOrder) {
+                ForEach(ApplicationListViewModel.SortOrder.allCases, id: \.self) { order in
+                    Text(order.rawValue).tag(order)
+                }
+            }
+            .pickerStyle(.menu)
+            .padding(.horizontal, 6)
+        }
+    }
+
 #if os(macOS)
     private func installEscapeKeyMonitor() {
         guard escapeKeyMonitor == nil else { return }
@@ -248,6 +253,17 @@ struct MainView: View {
         self.escapeKeyMonitor = nil
     }
 #endif
+
+    private func cycleTheme() {
+        switch settingsViewModel.appearanceMode {
+        case .system:
+            settingsViewModel.appearanceMode = .light
+        case .light:
+            settingsViewModel.appearanceMode = .dark
+        case .dark:
+            settingsViewModel.appearanceMode = .system
+        }
+    }
 
     private func closeSelectedApplicationWithAnimation() {
         withAnimation(detailCloseAnimation) {
