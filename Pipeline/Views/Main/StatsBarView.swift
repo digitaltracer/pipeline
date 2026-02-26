@@ -3,57 +3,54 @@ import PipelineKit
 
 struct StatsBarView: View {
     let stats: ApplicationStats
+    var isDetailPanelOpen: Bool = false
     @Environment(\.colorScheme) private var colorScheme
 
+    private var allItems: [StatMetric] {
+        [
+            StatMetric(id: "response-rate", title: "Response Rate", value: stats.formattedResponseRate, icon: "chart.line.uptrend.xyaxis", color: .blue),
+            StatMetric(id: "applied", title: "Applied", value: "\(stats.applied)", icon: "paperplane", color: .blue),
+            StatMetric(id: "interviewing", title: "Interviewing", value: "\(stats.interviewing)", icon: "message", color: .orange),
+            StatMetric(id: "offers", title: "Offers", value: "\(stats.offers)", icon: "gift", color: .green),
+            StatMetric(id: "rejected", title: "Rejected", value: "\(stats.rejected)", icon: "xmark.circle", color: .red)
+        ]
+    }
+
     var body: some View {
-        HStack(spacing: 0) {
-            StatItem(
-                title: "Response Rate",
-                value: stats.formattedResponseRate,
-                icon: "chart.line.uptrend.xyaxis",
-                color: .blue
-            )
-
-            StatDivider()
-
-            StatItem(
-                title: "Applied",
-                value: "\(stats.applied)",
-                icon: "paperplane",
-                color: .blue
-            )
-
-            StatDivider()
-
-            StatItem(
-                title: "Interviewing",
-                value: "\(stats.interviewing)",
-                icon: "message",
-                color: .orange
-            )
-
-            StatDivider()
-
-            StatItem(
-                title: "Offers",
-                value: "\(stats.offers)",
-                icon: "gift",
-                color: .green
-            )
-
-            StatDivider()
-
-            StatItem(
-                title: "Rejected",
-                value: "\(stats.rejected)",
-                icon: "xmark.circle",
-                color: .red
-            )
+        Group {
+            if isDetailPanelOpen {
+                ViewThatFits(in: .horizontal) {
+                    statsRow(showRejected: true)
+                    statsRow(showRejected: false)
+                }
+            } else {
+                statsRow(showRejected: true)
+            }
         }
         .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, 14)
         .padding(.vertical, 14)
         .appCard(cornerRadius: 14, elevated: true, shadow: false)
+    }
+
+    private func statsRow(showRejected: Bool) -> some View {
+        let items = showRejected ? allItems : allItems.filter { $0.id != "rejected" }
+
+        return HStack(spacing: 0) {
+            ForEach(items.indices, id: \.self) { index in
+                let item = items[index]
+                StatItem(
+                    title: item.title,
+                    value: item.value,
+                    icon: item.icon,
+                    color: item.color
+                )
+
+                if index < items.count - 1 {
+                    StatDivider()
+                }
+            }
+        }
     }
 }
 
@@ -81,10 +78,23 @@ struct StatItem: View {
                 Text(title)
                     .font(.caption)
                     .foregroundColor(.secondary)
+                    .lineLimit(1)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minWidth: StatsBarLayout.minimumItemWidth, maxWidth: .infinity, alignment: .leading)
     }
+}
+
+private struct StatMetric: Identifiable {
+    let id: String
+    let title: String
+    let value: String
+    let icon: String
+    let color: Color
+}
+
+private enum StatsBarLayout {
+    static let minimumItemWidth: CGFloat = 120
 }
 
 struct StatDivider: View {

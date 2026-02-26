@@ -1,6 +1,9 @@
 import SwiftUI
 import SwiftData
 import PipelineKit
+#if os(macOS)
+import AppKit
+#endif
 
 struct ApplicationListView: View {
     @Environment(\.modelContext) private var modelContext
@@ -42,6 +45,7 @@ struct ApplicationListView: View {
                                 application: application,
                                 isSelected: selectedApplication?.id == application.id
                             )
+                            .applicationCardHandCursor()
                             .onTapGesture {
                                 selectedApplication = application
                             }
@@ -174,6 +178,23 @@ struct ApplicationListView: View {
             actionErrorMessage = error.localizedDescription
         }
     }
+}
+
+private extension View {
+#if os(macOS)
+    func applicationCardHandCursor() -> some View {
+        onContinuousHover { phase in
+            switch phase {
+            case .active:
+                NSCursor.pointingHand.set()
+            case .ended:
+                NSCursor.arrow.set()
+            }
+        }
+    }
+#else
+    func applicationCardHandCursor() -> some View { self }
+#endif
 }
 
 #Preview {

@@ -72,7 +72,10 @@ struct MainView: View {
                 .padding(.top, 20)
                 .padding(.bottom, 12)
 
-                StatsBarView(stats: viewModel.calculateStats(from: applications))
+                StatsBarView(
+                    stats: viewModel.calculateStats(from: applications),
+                    isDetailPanelOpen: selectedApplication != nil
+                )
                     .padding(.horizontal)
                     .padding(.bottom, 12)
 
@@ -212,6 +215,7 @@ struct MainView: View {
                     .padding(.vertical, 4)
             }
             .buttonStyle(.plain)
+            .toolbarHandCursor()
             .help("Change appearance")
         }
 #endif
@@ -222,6 +226,7 @@ struct MainView: View {
                 }
             }
             .pickerStyle(.segmented)
+            .toolbarHandCursor()
         }
         ToolbarItem(placement: .automatic) {
             Picker("Sort", selection: $viewModel.sortOrder) {
@@ -230,6 +235,7 @@ struct MainView: View {
                 }
             }
             .pickerStyle(.menu)
+            .toolbarHandCursor()
             .padding(.horizontal, 6)
         }
     }
@@ -270,6 +276,22 @@ struct MainView: View {
             selectedApplication = nil
         }
     }
+}
+
+private extension View {
+#if os(macOS)
+    func toolbarHandCursor() -> some View {
+        onHover { isHovering in
+            if isHovering {
+                NSCursor.pointingHand.set()
+            } else {
+                NSCursor.arrow.set()
+            }
+        }
+    }
+#else
+    func toolbarHandCursor() -> some View { self }
+#endif
 }
 
 #Preview {

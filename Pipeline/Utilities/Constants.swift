@@ -286,14 +286,7 @@ final class CursorCoordinator {
         }
 
         window.acceptsMouseMovedEvents = true
-        guard let contentView = window.contentView else {
-            setCursorIfNeeded(.arrow)
-            return
-        }
-
-        let locationInView = contentView.convert(event.locationInWindow, from: nil)
-        guard contentView.bounds.contains(locationInView),
-              let hitView = contentView.hitTest(locationInView) else {
+        guard let hitView = hitView(in: window, locationInWindow: event.locationInWindow) else {
             setCursorIfNeeded(.arrow)
             return
         }
@@ -309,6 +302,28 @@ final class CursorCoordinator {
         }
 
         setCursorIfNeeded(.arrow)
+    }
+
+    private func hitView(in window: NSWindow, locationInWindow: NSPoint) -> NSView? {
+        guard let contentView = window.contentView else { return nil }
+
+        if let hitView = hitTest(in: contentView, locationInWindow: locationInWindow) {
+            return hitView
+        }
+
+        // Toolbar/titlebar controls live outside the content view in the frame view.
+        if let frameView = contentView.superview,
+           let hitView = hitTest(in: frameView, locationInWindow: locationInWindow) {
+            return hitView
+        }
+
+        return nil
+    }
+
+    private func hitTest(in rootView: NSView, locationInWindow: NSPoint) -> NSView? {
+        let locationInView = rootView.convert(locationInWindow, from: nil)
+        guard rootView.bounds.contains(locationInView) else { return nil }
+        return rootView.hitTest(locationInView)
     }
 
     private func isEditableTextInput(_ view: NSView) -> Bool {
@@ -352,6 +367,9 @@ final class CursorCoordinator {
 
             let className = NSStringFromClass(type(of: candidate))
             if className.contains("Button")
+                || className.contains("ToolbarItem")
+                || className.contains("ToolbarButton")
+                || className.contains("TitlebarButton")
                 || className.contains("Link")
                 || className.contains("Toggle")
                 || className.contains("Picker")
