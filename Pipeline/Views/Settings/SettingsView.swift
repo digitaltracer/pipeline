@@ -70,7 +70,7 @@ struct SettingsView: View {
 
             settingsDetailPanel
         }
-        .frame(minWidth: 920, minHeight: 640)
+        .frame(minWidth: 980, minHeight: 700)
         .appWindowBackground()
         #else
         NavigationStack {
@@ -131,17 +131,28 @@ struct SettingsView: View {
 
     #if os(macOS)
     private var settingsNavigationRail: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Settings")
-                    .font(.title2)
-                    .fontWeight(.bold)
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 12) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(DesignSystem.Colors.accent)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        Circle()
+                            .fill(DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.26 : 0.12))
+                    )
 
-                Text("Customize Pipeline for your workflow.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Settings")
+                        .font(.title2)
+                        .fontWeight(.bold)
+
+                    Text("Personalize Pipeline for a focused workflow.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
             }
-            .padding(.bottom, 8)
+            .padding(.bottom, 6)
 
             VStack(spacing: 8) {
                 ForEach(SettingsCategory.allCases) { category in
@@ -170,8 +181,8 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .appCard(cornerRadius: 12, elevated: true, shadow: false)
         }
-        .padding(20)
-        .frame(width: 260, alignment: .topLeading)
+        .padding(22)
+        .frame(width: 280, alignment: .topLeading)
         .background(DesignSystem.Colors.sidebarBackground(colorScheme))
     }
 
@@ -179,14 +190,31 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Label(selectedCategory.title, systemImage: selectedCategory.icon)
-                            .font(.title3)
-                            .fontWeight(.semibold)
+                    HStack(spacing: 12) {
+                        Image(systemName: selectedCategory.icon)
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(DesignSystem.Colors.accent)
+                            .frame(width: 34, height: 34)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.24 : 0.12))
+                            )
 
-                        Text(selectedCategory.subtitle)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Preferences")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .textCase(.uppercase)
+                                .tracking(0.8)
+
+                            Text(selectedCategory.title)
+                                .font(.title3)
+                                .fontWeight(.semibold)
+
+                            Text(selectedCategory.subtitle)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
                     }
 
                     Spacer()
@@ -196,13 +224,18 @@ struct SettingsView: View {
                             dismiss()
                         }
                         .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
                         .tint(DesignSystem.Colors.accent)
                     }
                 }
                 .padding(20)
                 .appCard(cornerRadius: 16, elevated: true, shadow: false)
 
-                SettingsPanelCard(title: selectedCategory.title, icon: selectedCategory.icon) {
+                SettingsPanelCard(
+                    title: selectedCategory.title,
+                    subtitle: selectedCategory.subtitle,
+                    icon: selectedCategory.icon
+                ) {
                     selectedCategoryContent
                 }
             }
@@ -216,40 +249,15 @@ struct SettingsView: View {
     private var selectedCategoryContent: some View {
         switch selectedCategory {
         case .appearance:
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Choose how the app looks while you track applications.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                AppearanceSettingsContent(viewModel: viewModel)
-            }
+            AppearanceSettingsContent(viewModel: viewModel)
         case .aiProvider:
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Select your provider, model, and secure API key.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                AIProviderSettingsContent(viewModel: viewModel)
-            }
+            AIProviderSettingsContent(viewModel: viewModel)
         case .notifications:
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Control reminders for follow-ups and interviews.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                NotificationSettingsContent(viewModel: viewModel)
-            }
+            NotificationSettingsContent(viewModel: viewModel)
         case .sync:
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Control whether application data syncs through your iCloud account.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                SyncSettingsContent(viewModel: viewModel)
-            }
+            SyncSettingsContent(viewModel: viewModel)
         case .about:
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Need help or want to share feedback?")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                AboutSettingsContent()
-            }
+            AboutSettingsContent()
         }
     }
     #endif
@@ -285,21 +293,21 @@ private struct SettingsCategoryRow: View {
                 Spacer()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 10)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(
                         isSelected
-                            ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.22 : 0.14)
+                            ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.24 : 0.14)
                             : Color.clear
                     )
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(
                         isSelected
-                            ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.45 : 0.25)
+                            ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.5 : 0.24)
                             : Color.clear,
                         lineWidth: 1
                     )
@@ -312,24 +320,43 @@ private struct SettingsCategoryRow: View {
 
 private struct SettingsPanelCard<Content: View>: View {
     let title: String
+    let subtitle: String?
     let icon: String
     let content: Content
 
-    init(title: String, icon: String, @ViewBuilder content: () -> Content) {
+    init(title: String, subtitle: String? = nil, icon: String, @ViewBuilder content: () -> Content) {
         self.title = title
+        self.subtitle = subtitle
         self.icon = icon
         self.content = content()
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 10) {
                 Image(systemName: icon)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(DesignSystem.Colors.accent)
-                Text(title)
-                    .font(.headline)
+                    .frame(width: 26, height: 26)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(DesignSystem.Colors.accent.opacity(0.1))
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.headline)
+
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
             }
+
+            Divider()
+                .overlay(.secondary.opacity(0.12))
 
             content
         }
@@ -339,6 +366,58 @@ private struct SettingsPanelCard<Content: View>: View {
     }
 }
 #endif
+
+struct SettingsFormSectionCard<Content: View>: View {
+    let title: String
+    let subtitle: String?
+    let icon: String?
+    let content: Content
+
+    init(
+        title: String,
+        subtitle: String? = nil,
+        icon: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.icon = icon
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(DesignSystem.Colors.accent)
+                        .frame(width: 24, height: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(DesignSystem.Colors.accent.opacity(0.1))
+                        )
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            content
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard(cornerRadius: 14, elevated: false, shadow: false)
+    }
+}
 
 struct AboutSettingsContent: View {
     var body: some View {
@@ -474,35 +553,55 @@ struct SyncSettingsContent: View {
     @Bindable var viewModel: SettingsViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Toggle("Enable iCloud Sync", isOn: $viewModel.cloudSyncEnabled)
-                .disabled(!viewModel.cloudSyncSupported)
+        VStack(alignment: .leading, spacing: 14) {
+            SettingsFormSectionCard(
+                title: "Sync Source",
+                subtitle: "Choose where Pipeline stores and syncs your data.",
+                icon: "icloud"
+            ) {
+                Toggle("Enable iCloud Sync", isOn: $viewModel.cloudSyncEnabled)
+                    .disabled(!viewModel.cloudSyncSupported)
+                    .tint(DesignSystem.Colors.accent)
 
-            if viewModel.cloudSyncSupported {
-                Text("When enabled, Pipeline syncs application data using your iCloud account.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            } else {
-                Text("iCloud Sync is unavailable in this build configuration.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                if viewModel.cloudSyncSupported {
+                    Text("When enabled, Pipeline syncs application data using your iCloud account.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("iCloud Sync is unavailable in this build configuration.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
 
-            Label(
-                viewModel.cloudSyncEnabledAtLaunch
-                    ? "Current mode: iCloud sync is active."
-                    : "Current mode: local-only storage.",
-                systemImage: viewModel.cloudSyncEnabledAtLaunch ? "checkmark.icloud.fill" : "internaldrive.fill"
-            )
-            .font(.subheadline)
-
-            if viewModel.cloudSyncNeedsRestart {
+            SettingsFormSectionCard(
+                title: "Current Mode",
+                icon: viewModel.cloudSyncEnabledAtLaunch ? "checkmark.icloud.fill" : "internaldrive.fill"
+            ) {
                 Label(
-                    "Restart Pipeline to apply this sync setting change.",
-                    systemImage: "arrow.clockwise.circle.fill"
+                    viewModel.cloudSyncEnabledAtLaunch
+                        ? "iCloud sync is currently active."
+                        : "Local-only storage is currently active.",
+                    systemImage: viewModel.cloudSyncEnabledAtLaunch ? "checkmark.circle.fill" : "internaldrive.fill"
                 )
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+            }
+
+            if viewModel.cloudSyncNeedsRestart {
+                SettingsFormSectionCard(
+                    title: "Restart Required",
+                    subtitle: viewModel.cloudSyncEnabled
+                        ? "Sync will be enabled after restart."
+                        : "Sync will be disabled after restart. Existing data is not deleted.",
+                    icon: "arrow.clockwise.circle.fill"
+                ) {
+                    Label(
+                        "Restart Pipeline to apply this sync setting change.",
+                        systemImage: "arrow.clockwise.circle.fill"
+                    )
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                }
             }
         }
     }
@@ -747,37 +846,45 @@ struct NotificationSettingsContent: View {
     }
 
     private var settingsContent: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Toggle("Enable Notifications", isOn: $viewModel.notificationsEnabled)
+        VStack(alignment: .leading, spacing: 14) {
+            SettingsFormSectionCard(
+                title: "Notifications",
+                subtitle: "Get reminders for follow-up dates you set on job applications.",
+                icon: "bell.badge.fill"
+            ) {
+                Toggle("Enable Notifications", isOn: $viewModel.notificationsEnabled)
+                    .tint(DesignSystem.Colors.accent)
+            }
 
             if viewModel.notificationsEnabled {
                 reminderTimingContent
                 permissionContent
             }
-
-            Text(notificationPermissionFooterText)
-                .font(.caption)
-                .foregroundColor(.secondary)
         }
     }
 
     private var reminderTimingContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Reminder Timing")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-
+        SettingsFormSectionCard(
+            title: "Reminder Timing",
+            subtitle: "Choose when reminders should arrive before a follow-up date.",
+            icon: "clock.fill"
+        ) {
             Picker("When to Remind", selection: $viewModel.reminderTiming) {
                 ForEach(ReminderTiming.allCases) { timing in
                     Text(timing.rawValue).tag(timing)
                 }
             }
             .pickerStyle(.segmented)
+            .labelsHidden()
         }
     }
 
     private var permissionContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        SettingsFormSectionCard(
+            title: "Notification Permission",
+            subtitle: notificationPermissionFooterText,
+            icon: "checkmark.shield.fill"
+        ) {
             Label(permissionStatusText, systemImage: permissionStatusIcon)
                 .foregroundColor(permissionStatusColor)
 
@@ -787,14 +894,15 @@ struct NotificationSettingsContent: View {
                         NotificationService.shared.openNotificationSettings()
                     }
                 }
-                .font(.subheadline)
+                .buttonStyle(.borderedProminent)
+                .tint(DesignSystem.Colors.accent)
             } else if permissionStatus == .notDetermined {
                 Button("Allow Notifications") {
                     Task {
                         await requestPermissionFromAction()
                     }
                 }
-                .font(.subheadline)
+                .buttonStyle(.bordered)
             }
         }
     }

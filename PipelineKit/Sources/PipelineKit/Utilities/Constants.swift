@@ -19,9 +19,9 @@ public enum Constants {
     // MARK: - External URLs
 
     public enum URLs {
-        public static let privacyPolicy = "https://github.com"
+        public static let privacyPolicy = "https://github.com/digitaltracer/pipeline"
         public static let termsOfService = "https://github.com"
-        public static let support = "https://github.com"
+        public static let support = "https://github.com/digitaltracer/pipeline/issues"
 
         // API Documentation
         public static let openAIDocs = "https://platform.openai.com/docs"

@@ -149,22 +149,20 @@ struct SidebarView: View {
             Button {
                 showingSettings = true
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: 12) {
                     Image(systemName: "gearshape.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(DesignSystem.Colors.accent)
+                        .frame(width: 22, height: 22)
 
                     Text("Settings")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(.primary)
+
+                    Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.vertical, 10)
-                .padding(.horizontal, 14)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(DesignSystem.Colors.sidebarBackground(colorScheme))
-                )
+                .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                .padding(.horizontal, 16)
             }
             .buttonStyle(.plain)
             .sidebarHandCursor()

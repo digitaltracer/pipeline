@@ -209,65 +209,59 @@ struct AIProviderSettingsContent: View {
     @State private var hasAPIKey: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Provider Cards
-            HStack(spacing: 12) {
-                ForEach(AIProvider.allCases) { provider in
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            viewModel.selectedAIProvider = provider
-                            checkAPIKey(for: provider)
-                        }
-                    } label: {
-                        ProviderCard(
-                            provider: provider,
-                            isSelected: viewModel.selectedAIProvider == provider
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
-            // Warning Banner if no API Key
-            if !hasAPIKey {
-                HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.yellow)
-
-                    Text("No API key configured for \(viewModel.selectedAIProvider.rawValue)")
-                        .font(.subheadline)
-
-                    Spacer()
-                }
-                .padding(12)
-                .background(Color.yellow.opacity(0.15))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-
-            // Model Selection
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Model")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Selected Model")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    HStack(spacing: 8) {
-                        Image(systemName: "cpu")
-                            .foregroundColor(DesignSystem.Colors.accent)
-
-                        Picker("Model", selection: $viewModel.selectedAIModel) {
-                            ForEach(viewModel.availableModels(for: viewModel.selectedAIProvider), id: \.self) { model in
-                                Text(model).tag(model)
+        VStack(alignment: .leading, spacing: 14) {
+            SettingsFormSectionCard(
+                title: "Provider",
+                subtitle: "Select the model provider Pipeline uses for AI features.",
+                icon: "brain.head.profile"
+            ) {
+                HStack(spacing: 12) {
+                    ForEach(AIProvider.allCases) { provider in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                viewModel.selectedAIProvider = provider
+                                checkAPIKey(for: provider)
                             }
+                        } label: {
+                            ProviderCard(
+                                provider: provider,
+                                isSelected: viewModel.selectedAIProvider == provider
+                            )
                         }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .buttonStyle(.plain)
                     }
+                }
+            }
+
+            if !hasAPIKey {
+                SettingsFormSectionCard(
+                    title: "API Key Needed",
+                    subtitle: "Add a key to validate requests with \(viewModel.selectedAIProvider.rawValue).",
+                    icon: "exclamationmark.triangle.fill"
+                ) {
+                    Label("No API key configured for \(viewModel.selectedAIProvider.rawValue)", systemImage: "lock.slash")
+                        .font(.subheadline)
+                        .foregroundColor(.orange)
+                }
+            }
+
+            SettingsFormSectionCard(
+                title: "Model",
+                subtitle: "Choose a default model and refresh when providers add new options.",
+                icon: "cpu.fill"
+            ) {
+                HStack(spacing: 8) {
+                    Image(systemName: "cpu")
+                        .foregroundColor(DesignSystem.Colors.accent)
+
+                    Picker("Model", selection: $viewModel.selectedAIModel) {
+                        ForEach(viewModel.availableModels(for: viewModel.selectedAIProvider), id: \.self) { model in
+                            Text(model).tag(model)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .appInput()
 
@@ -305,12 +299,11 @@ struct AIProviderSettingsContent: View {
                 }
             }
 
-            // API Key Input
-            VStack(alignment: .leading, spacing: 8) {
-                Text("API Key")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-
+            SettingsFormSectionCard(
+                title: "API Key",
+                subtitle: "Stored securely in your system Keychain.",
+                icon: "key.fill"
+            ) {
                 APIKeyInputField(
                     viewModel: viewModel,
                     provider: viewModel.selectedAIProvider,
@@ -394,23 +387,36 @@ struct APIKeyInputField: View {
     @State private var successResetTask: Task<Void, Never>?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                if isVisible {
-                    TextField("Enter API key...", text: $apiKey)
-                        .textFieldStyle(.roundedBorder)
-                } else {
-                    SecureField("Enter API key...", text: $apiKey)
-                        .textFieldStyle(.roundedBorder)
+                Group {
+                    if isVisible {
+                        TextField("Enter API key...", text: $apiKey)
+                    } else {
+                        SecureField("Enter API key...", text: $apiKey)
+                    }
                 }
+                .textFieldStyle(.plain)
+                .font(.system(.body, design: .monospaced))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(.secondary.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(.secondary.opacity(0.18), lineWidth: 1)
+                )
 
                 Button {
                     isVisible.toggle()
                 } label: {
                     Image(systemName: isVisible ? "eye.slash" : "eye")
-                        .foregroundColor(.secondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bordered)
+                .foregroundStyle(.secondary)
 
                 Button {
                     saveKey()
@@ -422,14 +428,14 @@ struct APIKeyInputField: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(DesignSystem.Colors.accent)
                 .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isValidating)
             }
-            .overlay(alignment: .trailing) {
-                if showSuccess {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                        .padding(.trailing, 80)
-                }
+
+            if showSuccess {
+                Label("API key verified and saved", systemImage: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundColor(.green)
             }
 
             if let errorMessage {

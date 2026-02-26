@@ -19,19 +19,25 @@ struct AppearanceSettingsContent: View {
     @Bindable var viewModel: SettingsViewModel
 
     var body: some View {
-        HStack(spacing: 16) {
-            ForEach(AppearanceMode.allCases) { mode in
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        viewModel.appearanceMode = mode
+        SettingsFormSectionCard(
+            title: "Theme",
+            subtitle: "Pick how Pipeline should appear during your workflow.",
+            icon: "paintbrush.fill"
+        ) {
+            HStack(spacing: 16) {
+                ForEach(AppearanceMode.allCases) { mode in
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            viewModel.appearanceMode = mode
+                        }
+                    } label: {
+                        ThemeCard(
+                            mode: mode,
+                            isSelected: viewModel.appearanceMode == mode
+                        )
                     }
-                } label: {
-                    ThemeCard(
-                        mode: mode,
-                        isSelected: viewModel.appearanceMode == mode
-                    )
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
     }
@@ -90,7 +96,7 @@ struct ThemeCard: View {
             Text(mode.rawValue)
                 .font(.subheadline)
                 .fontWeight(isSelected ? .semibold : .regular)
-                .foregroundColor(isSelected ? .blue : .primary)
+                .foregroundColor(isSelected ? DesignSystem.Colors.accent : .primary)
         }
         .padding(12)
         .frame(maxWidth: .infinity)
