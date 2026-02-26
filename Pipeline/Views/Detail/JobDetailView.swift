@@ -19,29 +19,31 @@ struct JobDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            JobDetailHeaderView(
+                application: application,
+                onClose: onClose,
+                onDelete: { showingDeleteAlert = true },
+                onStatusChange: { status in
+                    do {
+                        try viewModel.updateStatus(status, for: application, context: modelContext)
+                    } catch {
+                        actionErrorMessage = error.localizedDescription
+                    }
+                },
+                onPriorityChange: { priority in
+                    do {
+                        try viewModel.updatePriority(priority, for: application, context: modelContext)
+                    } catch {
+                        actionErrorMessage = error.localizedDescription
+                    }
+                }
+            )
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 14)
+
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
-                    // Header
-                    JobDetailHeaderView(
-                        application: application,
-                        onClose: onClose,
-                        onDelete: { showingDeleteAlert = true },
-                        onStatusChange: { status in
-                            do {
-                                try viewModel.updateStatus(status, for: application, context: modelContext)
-                            } catch {
-                                actionErrorMessage = error.localizedDescription
-                            }
-                        },
-                        onPriorityChange: { priority in
-                            do {
-                                try viewModel.updatePriority(priority, for: application, context: modelContext)
-                            } catch {
-                                actionErrorMessage = error.localizedDescription
-                            }
-                        }
-                    )
-
                     // Fields Grid
                     JobDetailFieldsView(application: application)
 
@@ -89,7 +91,8 @@ struct JobDetailView: View {
                         }
                     )
                 }
-                .padding(16)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
             }
 
             // Bottom Action Bar

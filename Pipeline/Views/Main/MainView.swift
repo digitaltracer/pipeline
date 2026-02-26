@@ -33,7 +33,6 @@ struct MainView: View {
     @State private var showingSettings = false
     @State private var showingDashboard = false
     @State private var viewMode: ViewMode = .grid
-    @State private var splitViewVisibility: NavigationSplitViewVisibility = .all
     private let detailCloseAnimation: Animation = .easeInOut(duration: 0.22)
 #if os(macOS)
     @State private var escapeKeyMonitor: Any?
@@ -45,6 +44,10 @@ struct MainView: View {
 
     private var filteredApplications: [JobApplication] {
         viewModel.filterApplications(applications)
+    }
+
+    private var shouldShowDetailColumn: Bool {
+        selectedApplication != nil && !showingDashboard && !showingResume
     }
 
     @ViewBuilder
@@ -130,23 +133,33 @@ struct MainView: View {
             })
             .navigationSplitViewColumnWidth(min: 360, ideal: 440)
             .background(DesignSystem.Colors.contentBackground(colorScheme))
-        } else {
-            Color.clear
-                .navigationSplitViewColumnWidth(min: 360, ideal: 440)
-                .background(DesignSystem.Colors.contentBackground(colorScheme))
         }
     }
 
+    private var mainContentColumn: some View {
+        contentColumn
+            .navigationSplitViewColumnWidth(min: 520, ideal: 720)
+            .navigationTitle("")
+            .toolbar { mainToolbarContent }
+    }
+
     var body: some View {
-        NavigationSplitView(columnVisibility: $splitViewVisibility) {
-            sidebarColumn
-        } content: {
-            contentColumn
-                .navigationSplitViewColumnWidth(min: 520, ideal: 720)
-                .navigationTitle("")
-                .toolbar { mainToolbarContent }
-        } detail: {
-            detailColumn
+        Group {
+            if shouldShowDetailColumn {
+                NavigationSplitView {
+                    sidebarColumn
+                } content: {
+                    mainContentColumn
+                } detail: {
+                    detailColumn
+                }
+            } else {
+                NavigationSplitView {
+                    sidebarColumn
+                } detail: {
+                    mainContentColumn
+                }
+            }
         }
         .sheet(isPresented: $showingAddApplication) {
             AddApplicationView(
@@ -168,7 +181,7 @@ struct MainView: View {
         }
         .onChange(of: selectedFilter) { _, newValue in
             viewModel.selectedFilter = newValue
-            guard newValue != .all, selectedApplication != nil else { return }
+            guard selectedApplication != nil else { return }
             closeSelectedApplicationWithAnimation()
         }
         .onChange(of: showingDashboard) { _, isShowingDashboard in
@@ -177,6 +190,10 @@ struct MainView: View {
         }
         .onChange(of: showingResume) { _, isShowingResume in
             guard isShowingResume, selectedApplication != nil else { return }
+            closeSelectedApplicationWithAnimation()
+        }
+        .onChange(of: viewMode) { _, _ in
+            guard selectedApplication != nil else { return }
             closeSelectedApplicationWithAnimation()
         }
         .onAppear {
@@ -267,7 +284,9 @@ struct MainView: View {
     }
 
     private func closeSelectedApplicationWithAnimation() {
-        selectedApplication = nil
+        withAnimation(detailCloseAnimation) {
+            selectedApplication = nil
+        }
     }
 }
 
