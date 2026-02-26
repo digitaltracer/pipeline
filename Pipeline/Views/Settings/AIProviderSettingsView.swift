@@ -225,6 +225,7 @@ struct AIProviderSettingsContent: View {
                         } label: {
                             ProviderCard(
                                 provider: provider,
+                                selectedModel: viewModel.preferredModel(for: provider),
                                 isSelected: viewModel.selectedAIProvider == provider
                             )
                         }
@@ -342,11 +343,8 @@ struct AIProviderSettingsContent: View {
 
 struct ProviderCard: View {
     let provider: AIProvider
+    let selectedModel: String
     let isSelected: Bool
-
-    private var modelPreview: String {
-        provider.models.first ?? ""
-    }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -358,7 +356,7 @@ struct ProviderCard: View {
                 .font(.subheadline)
                 .fontWeight(isSelected ? .semibold : .regular)
 
-            Text(modelPreview)
+            Text(selectedModel)
                 .font(.caption2)
                 .foregroundColor(.secondary)
                 .lineLimit(1)

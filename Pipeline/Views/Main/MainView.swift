@@ -152,6 +152,8 @@ struct MainView: View {
                         JobDetailView(application: application, onClose: {
                             closeSelectedApplicationWithAnimation()
                         })
+                        .id(application.id)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
                         .navigationSplitViewColumnWidth(min: 360, ideal: 440)
                         .background(DesignSystem.Colors.contentBackground(colorScheme))
                     }
@@ -179,6 +181,12 @@ struct MainView: View {
         }
         .onChange(of: selectedFilter) { _, newValue in
             viewModel.selectedFilter = newValue
+            guard newValue != .all, selectedApplication != nil else { return }
+            closeSelectedApplicationWithAnimation()
+        }
+        .onChange(of: showingDashboard) { _, isShowingDashboard in
+            guard isShowingDashboard, selectedApplication != nil else { return }
+            closeSelectedApplicationWithAnimation()
         }
         .onChange(of: showingResume) { _, isShowingResume in
             guard isShowingResume, selectedApplication != nil else { return }
