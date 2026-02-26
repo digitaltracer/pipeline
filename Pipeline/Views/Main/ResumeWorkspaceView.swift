@@ -1122,11 +1122,17 @@ private typealias JSONEditorPlatformRepresentable = NSViewRepresentable
 private typealias JSONEditorPlatformRepresentable = UIViewRepresentable
 #endif
 
+@MainActor
+func prewarmJSONEditorIfNeeded() {
+    JSONCodeEditorRepresentable.prewarmIfNeeded()
+}
+
 private struct JSONCodeEditorRepresentable: JSONEditorPlatformRepresentable {
     @Binding var text: String
     let isDarkMode: Bool
 
     private static let bridgeName = "pipelineJSONEditorChanged"
+    private static let sharedPool = SharedWebViewPool()
 
     private static let editorHTML = """
     <!doctype html>
@@ -1258,6 +1264,11 @@ private struct JSONCodeEditorRepresentable: JSONEditorPlatformRepresentable {
     </html>
     """
 
+    @MainActor
+    static func prewarmIfNeeded() {
+        sharedPool.prewarmIfNeeded()
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(text: $text, isDarkMode: isDarkMode)
     }
@@ -1281,14 +1292,7 @@ private struct JSONCodeEditorRepresentable: JSONEditorPlatformRepresentable {
 #endif
 
     private func makeWebView(context: Context) -> WKWebView {
-        let userContentController = WKUserContentController()
-        userContentController.add(context.coordinator, name: Self.bridgeName)
-
-        let configuration = WKWebViewConfiguration()
-        configuration.userContentController = userContentController
-
-        let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.navigationDelegate = context.coordinator
+        let (webView, isReady) = Self.sharedPool.acquireWebView(for: context.coordinator)
 #if os(macOS)
         webView.setValue(false, forKey: "drawsBackground")
 #else
@@ -1296,7 +1300,9 @@ private struct JSONCodeEditorRepresentable: JSONEditorPlatformRepresentable {
         webView.backgroundColor = .clear
 #endif
         context.coordinator.webView = webView
-        webView.loadHTMLString(Self.editorHTML, baseURL: URL(string: "https://localhost/"))
+        if isReady {
+            context.coordinator.markReadyFromPrewarm()
+        }
         return webView
     }
 
@@ -1332,6 +1338,7 @@ private struct JSONCodeEditorRepresentable: JSONEditorPlatformRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             isReady = true
+            JSONCodeEditorRepresentable.sharedPool.markLoaded(webView)
             syncTextIfNeeded(text)
             syncThemeIfNeeded(force: true)
         }
@@ -1373,6 +1380,96 @@ private struct JSONCodeEditorRepresentable: JSONEditorPlatformRepresentable {
             arrayLiteral.removeFirst()
             arrayLiteral.removeLast()
             return arrayLiteral
+        }
+
+        func markReadyFromPrewarm() {
+            guard !isReady else { return }
+            isReady = true
+            syncTextIfNeeded(text)
+            syncThemeIfNeeded(force: true)
+        }
+    }
+
+    @MainActor
+    private final class SharedWebViewPool: NSObject, WKNavigationDelegate {
+        private final class NoopScriptMessageHandler: NSObject, WKScriptMessageHandler {
+            func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {}
+        }
+
+        private let noOpHandler = NoopScriptMessageHandler()
+        private var prewarmedWebView: WKWebView?
+        private var prewarmedWebViewReady = false
+
+        func prewarmIfNeeded() {
+            _ = ensurePrewarmedWebView()
+        }
+
+        func acquireWebView(for coordinator: Coordinator) -> (WKWebView, Bool) {
+            let webView: WKWebView
+            let isReady: Bool
+
+            if let cachedWebView = prewarmedWebView, cachedWebView.superview == nil {
+                webView = cachedWebView
+                isReady = prewarmedWebViewReady
+            } else {
+                webView = makeEditorWebView(messageHandler: noOpHandler, navigationDelegate: self)
+                isReady = false
+            }
+
+            let userContentController = webView.configuration.userContentController
+            userContentController.removeScriptMessageHandler(forName: JSONCodeEditorRepresentable.bridgeName)
+            userContentController.add(coordinator, name: JSONCodeEditorRepresentable.bridgeName)
+            webView.navigationDelegate = coordinator
+
+            return (webView, isReady)
+        }
+
+        func markLoaded(_ webView: WKWebView) {
+            guard webView === prewarmedWebView else { return }
+            prewarmedWebViewReady = true
+        }
+
+        private func ensurePrewarmedWebView() -> WKWebView {
+            if let existing = prewarmedWebView {
+                return existing
+            }
+
+            let webView = makeEditorWebView(messageHandler: noOpHandler, navigationDelegate: self)
+            prewarmedWebView = webView
+            return webView
+        }
+
+        private func makeEditorWebView(
+            messageHandler: WKScriptMessageHandler,
+            navigationDelegate: WKNavigationDelegate
+        ) -> WKWebView {
+            let userContentController = WKUserContentController()
+            userContentController.add(messageHandler, name: JSONCodeEditorRepresentable.bridgeName)
+
+            let configuration = WKWebViewConfiguration()
+            configuration.userContentController = userContentController
+
+            let webView = WKWebView(frame: .zero, configuration: configuration)
+            webView.navigationDelegate = navigationDelegate
+#if os(macOS)
+            webView.setValue(false, forKey: "drawsBackground")
+#else
+            webView.isOpaque = false
+            webView.backgroundColor = .clear
+#endif
+
+            let editorBaseURL = Bundle.main.resourceURL?
+                .appendingPathComponent("JSONEditor", isDirectory: true)
+            webView.loadHTMLString(
+                JSONCodeEditorRepresentable.editorHTML,
+                baseURL: editorBaseURL ?? Bundle.main.resourceURL ?? URL(string: "https://localhost/")
+            )
+            return webView
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            guard webView === prewarmedWebView else { return }
+            prewarmedWebViewReady = true
         }
     }
 }

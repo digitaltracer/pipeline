@@ -34,6 +34,9 @@ struct ContentView: View {
         )
         .preferredColorScheme(settingsViewModel.getColorScheme())
         .appWindowBackground()
+        .task {
+            prewarmJSONEditorIfNeeded()
+        }
         #else
         NavigationStack {
             ApplicationListView(
@@ -80,6 +83,9 @@ struct ContentView: View {
             NavigationStack {
                 JobDetailView(application: application)
             }
+        }
+        .task {
+            prewarmJSONEditorIfNeeded()
         }
         #endif
     }
