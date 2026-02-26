@@ -47,9 +47,7 @@ struct ApplicationListView: View {
                             )
                             .applicationCardHandCursor()
                             .onTapGesture {
-                                withAnimation(.easeInOut(duration: 0.22)) {
-                                    selectedApplication = application
-                                }
+                                selectedApplication = application
                             }
                             .contextMenu {
                                 contextMenuItems(for: application)
@@ -88,9 +86,7 @@ struct ApplicationListView: View {
     @ViewBuilder
     private func contextMenuItems(for application: JobApplication) -> some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.22)) {
-                selectedApplication = application
-            }
+            selectedApplication = application
         } label: {
             Label("View Details", systemImage: "eye")
         }

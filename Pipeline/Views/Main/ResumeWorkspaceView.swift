@@ -997,6 +997,8 @@ struct JobResumePanel: View {
     @State private var pdfDocument = ResumePDFFileDocument(data: Data())
 
     var body: some View {
+        let snapshots = application.sortedResumeSnapshots
+
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Label("Resume Versions", systemImage: "doc.text")
@@ -1013,13 +1015,13 @@ struct JobResumePanel: View {
                 .tint(DesignSystem.Colors.accent)
             }
 
-            if application.sortedResumeSnapshots.isEmpty {
+            if snapshots.isEmpty {
                 Text("No tailored resumes attached to this job yet.")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(application.sortedResumeSnapshots) { snapshot in
+                    ForEach(snapshots) { snapshot in
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(snapshot.createdAt.formatted(date: .abbreviated, time: .shortened))

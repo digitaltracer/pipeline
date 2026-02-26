@@ -20,7 +20,7 @@ struct JobDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                LazyVStack(alignment: .leading, spacing: 18) {
                     // Header
                     JobDetailHeaderView(
                         application: application,

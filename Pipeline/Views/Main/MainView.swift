@@ -33,6 +33,7 @@ struct MainView: View {
     @State private var showingSettings = false
     @State private var showingDashboard = false
     @State private var viewMode: ViewMode = .grid
+    @State private var splitViewVisibility: NavigationSplitViewVisibility = .all
     private let detailCloseAnimation: Animation = .easeInOut(duration: 0.22)
 #if os(macOS)
     @State private var escapeKeyMonitor: Any?
@@ -108,59 +109,45 @@ struct MainView: View {
         }
     }
 
-    var body: some View {
-        Group {
-            if selectedApplication == nil {
-                // Two-column layout until a card is selected (no empty preview column).
-                NavigationSplitView {
-                    SidebarView(
-                        selectedFilter: $selectedFilter,
-                        showingAddApplication: $showingAddApplication,
-                        showingSettings: $showingSettings,
-                        showingDashboard: $showingDashboard,
-                        showingResume: $showingResume,
-                        statusCounts: viewModel.statusCounts(from: applications),
-                        settingsViewModel: settingsViewModel
-                    )
-                    .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
-                } detail: {
-                    contentColumn
-                        .navigationSplitViewColumnWidth(min: 520, ideal: 720)
-                        .navigationTitle("")
-                        .toolbar { mainToolbarContent }
-                }
-            } else {
-                // Three-column layout when an application is selected.
-                NavigationSplitView {
-                    SidebarView(
-                        selectedFilter: $selectedFilter,
-                        showingAddApplication: $showingAddApplication,
-                        showingSettings: $showingSettings,
-                        showingDashboard: $showingDashboard,
-                        showingResume: $showingResume,
-                        statusCounts: viewModel.statusCounts(from: applications),
-                        settingsViewModel: settingsViewModel
-                    )
-                    .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
-                } content: {
-                    contentColumn
-                        .navigationSplitViewColumnWidth(min: 520, ideal: 720)
-                        .navigationTitle("")
-                        .toolbar { mainToolbarContent }
-                } detail: {
-                    if let application = selectedApplication {
-                        JobDetailView(application: application, onClose: {
-                            closeSelectedApplicationWithAnimation()
-                        })
-                        .id(application.id)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                        .navigationSplitViewColumnWidth(min: 360, ideal: 440)
-                        .background(DesignSystem.Colors.contentBackground(colorScheme))
-                    }
-                }
-            }
+    private var sidebarColumn: some View {
+        SidebarView(
+            selectedFilter: $selectedFilter,
+            showingAddApplication: $showingAddApplication,
+            showingSettings: $showingSettings,
+            showingDashboard: $showingDashboard,
+            showingResume: $showingResume,
+            statusCounts: viewModel.statusCounts(from: applications),
+            settingsViewModel: settingsViewModel
+        )
+        .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
+    }
+
+    @ViewBuilder
+    private var detailColumn: some View {
+        if let application = selectedApplication {
+            JobDetailView(application: application, onClose: {
+                closeSelectedApplicationWithAnimation()
+            })
+            .navigationSplitViewColumnWidth(min: 360, ideal: 440)
+            .background(DesignSystem.Colors.contentBackground(colorScheme))
+        } else {
+            Color.clear
+                .navigationSplitViewColumnWidth(min: 360, ideal: 440)
+                .background(DesignSystem.Colors.contentBackground(colorScheme))
         }
-        .animation(detailCloseAnimation, value: selectedApplication?.id)
+    }
+
+    var body: some View {
+        NavigationSplitView(columnVisibility: $splitViewVisibility) {
+            sidebarColumn
+        } content: {
+            contentColumn
+                .navigationSplitViewColumnWidth(min: 520, ideal: 720)
+                .navigationTitle("")
+                .toolbar { mainToolbarContent }
+        } detail: {
+            detailColumn
+        }
         .sheet(isPresented: $showingAddApplication) {
             AddApplicationView(
                 settingsViewModel: settingsViewModel,
@@ -280,9 +267,7 @@ struct MainView: View {
     }
 
     private func closeSelectedApplicationWithAnimation() {
-        withAnimation(detailCloseAnimation) {
-            selectedApplication = nil
-        }
+        selectedApplication = nil
     }
 }
 
