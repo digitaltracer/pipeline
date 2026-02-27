@@ -13,9 +13,10 @@ struct ContentView: View {
     @Bindable var settingsViewModel: SettingsViewModel
 
     private var filteredApplications: [JobApplication] {
-        guard !searchText.isEmpty else { return applications }
+        let visibleApplications = applications.filter(settingsViewModel.shouldIncludeInAllApplications)
+        guard !searchText.isEmpty else { return visibleApplications }
         let lowercasedSearch = searchText.lowercased()
-        return applications.filter { app in
+        return visibleApplications.filter { app in
             app.companyName.lowercased().contains(lowercasedSearch) ||
             app.role.lowercased().contains(lowercasedSearch) ||
             app.location.lowercased().contains(lowercasedSearch)

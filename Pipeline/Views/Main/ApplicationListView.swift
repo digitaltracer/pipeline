@@ -47,7 +47,7 @@ struct ApplicationListView: View {
                             )
                             .applicationCardHandCursor()
                             .onTapGesture {
-                                selectedApplication = application
+                                openDetails(for: application)
                             }
                             .contextMenu {
                                 contextMenuItems(for: application)
@@ -86,7 +86,7 @@ struct ApplicationListView: View {
     @ViewBuilder
     private func contextMenuItems(for application: JobApplication) -> some View {
         Button {
-            selectedApplication = application
+            openDetails(for: application)
         } label: {
             Label("View Details", systemImage: "eye")
         }
@@ -177,6 +177,10 @@ struct ApplicationListView: View {
             modelContext.rollback()
             actionErrorMessage = error.localizedDescription
         }
+    }
+
+    private func openDetails(for application: JobApplication) {
+        selectedApplication = application
     }
 }
 

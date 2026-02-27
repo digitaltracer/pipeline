@@ -51,7 +51,7 @@ struct KanbanColumnView: View {
                             isSelected: selectedApplication?.id == application.id
                         )
                         .onTapGesture {
-                            selectedApplication = application
+                            openDetails(for: application)
                         }
                     }
                 }
@@ -76,5 +76,9 @@ struct KanbanColumnView: View {
             }
             return true
         }
+    }
+
+    private func openDetails(for application: JobApplication) {
+        selectedApplication = application
     }
 }

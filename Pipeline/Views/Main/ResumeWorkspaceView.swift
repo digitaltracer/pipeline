@@ -872,8 +872,8 @@ struct ResumeTailoringView: View {
         }
 
         do {
-            let key = try KeychainService.shared.getAPIKey(for: provider)
-            if key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let keys = try settingsViewModel.apiKeys(for: provider)
+            if keys.isEmpty {
                 preflightError = "No API key configured for \(provider.rawValue)."
                 return
             }
@@ -901,17 +901,18 @@ struct ResumeTailoringView: View {
         do {
             let provider = settingsViewModel.selectedAIProvider
             let model = settingsViewModel.preferredModel(for: provider)
-            let apiKey = try KeychainService.shared.getAPIKey(for: provider)
 
-            let result = try await ResumeTailoringService.generateSuggestions(
-                provider: provider,
-                apiKey: apiKey,
-                model: model,
-                resumeJSON: masterRevision.rawJSON,
-                company: application.companyName,
-                role: application.role,
-                jobDescription: jobDescription
-            )
+            let result = try await settingsViewModel.withAPIKeyWaterfall(for: provider) { apiKey in
+                try await ResumeTailoringService.generateSuggestions(
+                    provider: provider,
+                    apiKey: apiKey,
+                    model: model,
+                    resumeJSON: masterRevision.rawJSON,
+                    company: application.companyName,
+                    role: application.role,
+                    jobDescription: jobDescription
+                )
+            }
 
             let validation = try ResumePatchSafetyValidator.validate(
                 patches: result.patches,
@@ -925,6 +926,8 @@ struct ResumeTailoringView: View {
             acceptedPatchIDs = []
             rejectedPatchIDs = []
             refreshEditedJSON()
+        } catch let keyError as SettingsViewModel.APIKeyValidationError {
+            actionError = keyError.localizedDescription
         } catch {
             actionError = error.localizedDescription
         }

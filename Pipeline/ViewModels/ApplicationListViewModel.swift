@@ -45,11 +45,16 @@ final class ApplicationListViewModel {
 
     // MARK: - Filtering
 
-    func filterApplications(_ applications: [JobApplication]) -> [JobApplication] {
+    func filterApplications(
+        _ applications: [JobApplication],
+        includeInAllApplications: (JobApplication) -> Bool = { _ in true }
+    ) -> [JobApplication] {
         var filtered = applications
 
         // Apply status filter
-        if let status = selectedFilter.status {
+        if selectedFilter == .all {
+            filtered = filtered.filter(includeInAllApplications)
+        } else if let status = selectedFilter.status {
             filtered = filtered.filter { $0.status == status }
         }
 
@@ -86,10 +91,13 @@ final class ApplicationListViewModel {
 
     // MARK: - Status Counts
 
-    func statusCounts(from applications: [JobApplication]) -> [SidebarFilter: Int] {
+    func statusCounts(
+        from applications: [JobApplication],
+        includeInAllApplications: (JobApplication) -> Bool = { _ in true }
+    ) -> [SidebarFilter: Int] {
         var counts: [SidebarFilter: Int] = [:]
 
-        counts[.all] = applications.count
+        counts[.all] = applications.filter(includeInAllApplications).count
 
         for filter in SidebarFilter.allCases {
             if let status = filter.status {

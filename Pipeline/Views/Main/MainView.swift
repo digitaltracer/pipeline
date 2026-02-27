@@ -33,17 +33,37 @@ struct MainView: View {
     @State private var showingSettings = false
     @State private var showingDashboard = false
     @State private var viewMode: ViewMode = .grid
-    private let detailCloseAnimation: Animation = .easeInOut(duration: 0.22)
 #if os(macOS)
     @State private var escapeKeyMonitor: Any?
 #endif
 
+    private var isKanbanAvailable: Bool {
+        selectedFilter == .all && !showingDashboard && !showingResume
+    }
+
+    private var availableViewModes: [ViewMode] {
+        isKanbanAvailable ? ViewMode.allCases : [.grid]
+    }
+
+    private var allApplicationsInclusionRule: (JobApplication) -> Bool {
+        if viewMode == .grid {
+            return settingsViewModel.shouldIncludeInAllApplications
+        }
+        return { _ in true }
+    }
+
     private var filteredCount: Int {
-        viewModel.filterApplications(applications).count
+        viewModel.filterApplications(
+            applications,
+            includeInAllApplications: allApplicationsInclusionRule
+        ).count
     }
 
     private var filteredApplications: [JobApplication] {
-        viewModel.filterApplications(applications)
+        viewModel.filterApplications(
+            applications,
+            includeInAllApplications: allApplicationsInclusionRule
+        )
     }
 
     private var shouldShowDetailColumn: Bool {
@@ -119,7 +139,10 @@ struct MainView: View {
             showingSettings: $showingSettings,
             showingDashboard: $showingDashboard,
             showingResume: $showingResume,
-            statusCounts: viewModel.statusCounts(from: applications),
+            statusCounts: viewModel.statusCounts(
+                from: applications,
+                includeInAllApplications: allApplicationsInclusionRule
+            ),
             settingsViewModel: settingsViewModel
         )
         .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
@@ -129,7 +152,7 @@ struct MainView: View {
     private var detailColumn: some View {
         if let application = selectedApplication {
             JobDetailView(application: application, onClose: {
-                closeSelectedApplicationWithAnimation()
+                closeSelectedApplication()
             })
             .navigationSplitViewColumnWidth(min: 360, ideal: 440)
             .background(DesignSystem.Colors.contentBackground(colorScheme))
@@ -181,24 +204,33 @@ struct MainView: View {
         }
         .onChange(of: selectedFilter) { _, newValue in
             viewModel.selectedFilter = newValue
+            enforceViewModeAvailability()
             guard selectedApplication != nil else { return }
-            closeSelectedApplicationWithAnimation()
+            closeSelectedApplication()
         }
         .onChange(of: showingDashboard) { _, isShowingDashboard in
+            if isShowingDashboard {
+                enforceViewModeAvailability()
+            }
             guard isShowingDashboard, selectedApplication != nil else { return }
-            closeSelectedApplicationWithAnimation()
+            closeSelectedApplication()
         }
         .onChange(of: showingResume) { _, isShowingResume in
+            if isShowingResume {
+                enforceViewModeAvailability()
+            }
             guard isShowingResume, selectedApplication != nil else { return }
-            closeSelectedApplicationWithAnimation()
+            closeSelectedApplication()
         }
         .onChange(of: viewMode) { _, _ in
+            enforceViewModeAvailability()
             guard selectedApplication != nil else { return }
-            closeSelectedApplicationWithAnimation()
+            closeSelectedApplication()
         }
         .onAppear {
             viewModel.searchText = searchText
             viewModel.selectedFilter = selectedFilter
+            enforceViewModeAvailability()
 #if os(macOS)
             installEscapeKeyMonitor()
 #endif
@@ -233,7 +265,7 @@ struct MainView: View {
 #endif
         ToolbarItem(placement: .automatic) {
             Picker("View", selection: $viewMode) {
-                ForEach(ViewMode.allCases, id: \.self) { mode in
+                ForEach(availableViewModes, id: \.self) { mode in
                     Label(mode.rawValue, systemImage: mode.icon).tag(mode)
                 }
             }
@@ -260,7 +292,7 @@ struct MainView: View {
             guard !showingAddApplication, !showingSettings else { return event }
             guard selectedApplication != nil else { return event }
 
-            closeSelectedApplicationWithAnimation()
+            closeSelectedApplication()
             return nil
         }
     }
@@ -283,9 +315,13 @@ struct MainView: View {
         }
     }
 
-    private func closeSelectedApplicationWithAnimation() {
-        withAnimation(detailCloseAnimation) {
-            selectedApplication = nil
+    private func closeSelectedApplication() {
+        selectedApplication = nil
+    }
+
+    private func enforceViewModeAvailability() {
+        if viewMode == .kanban && !isKanbanAvailable {
+            viewMode = .grid
         }
     }
 }

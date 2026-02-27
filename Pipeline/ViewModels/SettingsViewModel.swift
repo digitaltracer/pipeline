@@ -7,6 +7,7 @@ final class SettingsViewModel {
     enum APIKeyValidationError: LocalizedError {
         case emptyKey
         case noCompatibleModels
+        case noConfiguredKeys(String)
 
         var errorDescription: String? {
             switch self {
@@ -14,6 +15,8 @@ final class SettingsViewModel {
                 return "API key cannot be empty."
             case .noCompatibleModels:
                 return "No compatible models were returned for this key."
+            case .noConfiguredKeys(let providerName):
+                return "No API key configured for \(providerName)."
             }
         }
     }
@@ -23,6 +26,7 @@ final class SettingsViewModel {
         static let selectedAIProvider = "selectedAIProvider"
         static let selectedAIModel = "selectedAIModel"
         static let cloudSyncEnabled = Constants.UserDefaultsKeys.cloudSyncEnabled
+        static let hiddenStatusesInAllApplications = "hiddenStatusesInAllApplications"
 
         static let customModelsByProviderID = "customModelsByProviderID"
         static let cachedModelsByProviderID = "cachedModelsByProviderID"
@@ -58,6 +62,12 @@ final class SettingsViewModel {
     var selectedAIModel: String {
         didSet {
             UserDefaults.standard.set(selectedAIModel, forKey: StorageKeys.selectedAIModel)
+        }
+    }
+
+    private var hiddenStatusesInAllApplications: [String] {
+        didSet {
+            UserDefaults.standard.set(hiddenStatusesInAllApplications, forKey: StorageKeys.hiddenStatusesInAllApplications)
         }
     }
 
@@ -138,6 +148,9 @@ final class SettingsViewModel {
         }
 
         self.selectedAIModel = UserDefaults.standard.string(forKey: StorageKeys.selectedAIModel) ?? ""
+        self.hiddenStatusesInAllApplications = UserDefaults.standard.stringArray(
+            forKey: StorageKeys.hiddenStatusesInAllApplications
+        ) ?? []
         self.customModelsByProviderID = Self.loadStringArrayDictionary(forKey: StorageKeys.customModelsByProviderID)
         self.cachedModelsByProviderID = Self.loadStringArrayDictionary(forKey: StorageKeys.cachedModelsByProviderID)
         self.modelRefreshTimestampsByProviderID = Self.loadTimestampDictionary(
@@ -200,8 +213,60 @@ final class SettingsViewModel {
         customModelsByProviderID[provider.providerID] = models
     }
 
+    func allApplicationsStatusOptions() -> [ApplicationStatus] {
+        let defaults = ApplicationStatus.allCases.sorted { $0.sortOrder < $1.sortOrder }
+        let customs = CustomValuesStore.customStatuses()
+            .map { ApplicationStatus(rawValue: $0) }
+            .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+
+        var seen = Set<String>()
+        return (defaults + customs).filter { status in
+            let key = normalizedStatusKey(status.rawValue)
+            guard !seen.contains(key) else { return false }
+            seen.insert(key)
+            return true
+        }
+    }
+
+    func isStatusVisibleInAllApplications(_ status: ApplicationStatus) -> Bool {
+        !hiddenStatusLookup.contains(normalizedStatusKey(status.rawValue))
+    }
+
+    func setStatus(_ status: ApplicationStatus, visibleInAllApplications isVisible: Bool) {
+        let key = normalizedStatusKey(status.rawValue)
+        var hidden = hiddenStatusLookup
+
+        if isVisible {
+            hidden.remove(key)
+        } else {
+            hidden.insert(key)
+        }
+
+        hiddenStatusesInAllApplications = Array(hidden)
+    }
+
+    func resetAllApplicationsVisibilityToDefault() {
+        hiddenStatusesInAllApplications = []
+    }
+
+    func shouldIncludeInAllApplications(_ application: JobApplication) -> Bool {
+        !hiddenStatusLookup.contains(normalizedStatusKey(application.status.rawValue))
+    }
+
     func hasAPIKey(for provider: AIProvider) -> Bool {
         KeychainService.shared.hasAPIKey(for: provider)
+    }
+
+    func apiKeys(for provider: AIProvider) throws -> [String] {
+        try KeychainService.shared.getAPIKeys(for: provider)
+    }
+
+    func removeAPIKey(_ apiKey: String, for provider: AIProvider) throws {
+        try KeychainService.shared.removeAPIKey(apiKey, for: provider)
+    }
+
+    func setAPIKeys(_ apiKeys: [String], for provider: AIProvider) throws {
+        try KeychainService.shared.setAPIKeys(apiKeys, for: provider)
     }
 
     func isRefreshingModels(for provider: AIProvider) -> Bool {
@@ -230,15 +295,15 @@ final class SettingsViewModel {
         guard refreshingProviderID == nil else { return }
         guard force || shouldRefreshModels(for: provider) else { return }
 
-        let apiKey: String
+        let keys: [String]
         do {
-            apiKey = try KeychainService.shared.getAPIKey(for: provider)
+            keys = try apiKeys(for: provider)
         } catch {
             modelRefreshErrorsByProviderID[provider.providerID] = "Could not access API key."
             return
         }
 
-        guard !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !keys.isEmpty else {
             return
         }
 
@@ -250,7 +315,9 @@ final class SettingsViewModel {
         }
 
         do {
-            let models = try await ModelCatalogService.shared.fetchModels(for: provider, apiKey: apiKey)
+            let models = try await withAPIKeyWaterfall(for: provider) { apiKey in
+                try await ModelCatalogService.shared.fetchModels(for: provider, apiKey: apiKey)
+            }
             guard !models.isEmpty else {
                 modelRefreshErrorsByProviderID[provider.providerID] = "No compatible models were returned."
                 return
@@ -270,7 +337,7 @@ final class SettingsViewModel {
     }
 
     @MainActor
-    func validateAndSaveAPIKey(_ rawAPIKey: String, for provider: AIProvider) async throws {
+    func validateAPIKeyConnection(_ rawAPIKey: String, for provider: AIProvider) async throws -> [String] {
         let apiKey = rawAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !apiKey.isEmpty else {
             throw APIKeyValidationError.emptyKey
@@ -281,15 +348,70 @@ final class SettingsViewModel {
             throw APIKeyValidationError.noCompatibleModels
         }
 
-        try KeychainService.shared.saveAPIKey(apiKey, for: provider)
+        return models
+    }
 
-        cachedModelsByProviderID[provider.providerID] = models
+    @MainActor
+    func saveValidatedAPIKey(_ rawAPIKey: String, models: [String], for provider: AIProvider) throws {
+        let apiKey = rawAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !apiKey.isEmpty else {
+            throw APIKeyValidationError.emptyKey
+        }
+
+        let normalizedModels = models
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .uniquedPreservingOrder()
+        guard !normalizedModels.isEmpty else {
+            throw APIKeyValidationError.noCompatibleModels
+        }
+
+        try KeychainService.shared.addAPIKey(apiKey, for: provider)
+
+        cachedModelsByProviderID[provider.providerID] = normalizedModels
         modelRefreshTimestampsByProviderID[provider.providerID] = Date().timeIntervalSince1970
         modelRefreshErrorsByProviderID[provider.providerID] = nil
 
         if selectedAIProvider == provider {
             ensureSelectedAIModelIsValid()
         }
+    }
+
+    @MainActor
+    func validateAndSaveAPIKey(_ rawAPIKey: String, for provider: AIProvider) async throws {
+        let models = try await validateAPIKeyConnection(rawAPIKey, for: provider)
+        try saveValidatedAPIKey(rawAPIKey, models: models, for: provider)
+    }
+
+    @MainActor
+    func withAPIKeyWaterfall<T>(
+        for provider: AIProvider,
+        operation: (String) async throws -> T
+    ) async throws -> T {
+        let keys = try apiKeys(for: provider)
+        guard !keys.isEmpty else {
+            throw APIKeyValidationError.noConfiguredKeys(provider.rawValue)
+        }
+
+        var lastError: Error?
+
+        for (index, key) in keys.enumerated() {
+            do {
+                return try await operation(key)
+            } catch {
+                lastError = error
+                let hasMoreKeys = index < keys.count - 1
+                guard hasMoreKeys, shouldFallbackToNextKey(after: error) else {
+                    throw error
+                }
+            }
+        }
+
+        if let lastError {
+            throw lastError
+        }
+
+        throw APIKeyValidationError.noConfiguredKeys(provider.rawValue)
     }
 
     // MARK: - Private
@@ -370,6 +492,47 @@ final class SettingsViewModel {
         if !models.contains(trimmed) {
             selectedAIModel = models.first ?? ""
         }
+    }
+
+    private func shouldFallbackToNextKey(after error: Error) -> Bool {
+        guard let aiError = error as? AIServiceError else {
+            return false
+        }
+
+        switch aiError {
+        case .unauthorized, .rateLimited:
+            return true
+        case .apiError(let message):
+            return isLikelyAPIKeyFailure(message)
+        default:
+            return false
+        }
+    }
+
+    private func isLikelyAPIKeyFailure(_ message: String) -> Bool {
+        let lowered = message.lowercased()
+        let indicators = [
+            "invalid api key",
+            "incorrect api key",
+            "unauthorized",
+            "forbidden",
+            "quota",
+            "rate limit",
+            "insufficient",
+            "billing",
+            "credit",
+            "permission denied",
+            "authentication"
+        ]
+        return indicators.contains(where: lowered.contains)
+    }
+
+    private var hiddenStatusLookup: Set<String> {
+        Set(hiddenStatusesInAllApplications.map(normalizedStatusKey))
+    }
+
+    private func normalizedStatusKey(_ rawValue: String) -> String {
+        rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     private static func loadStringArrayDictionary(forKey key: String) -> [String: [String]] {

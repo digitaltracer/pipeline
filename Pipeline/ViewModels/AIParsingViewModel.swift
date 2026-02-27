@@ -82,9 +82,8 @@ final class AIParsingViewModel {
         defer { isLoading = false }
 
         do {
-            let apiKey = try KeychainService.shared.getAPIKey(for: parseProvider)
-
-            guard !apiKey.isEmpty else {
+            let keys = try settingsViewModel.apiKeys(for: parseProvider)
+            guard !keys.isEmpty else {
                 error = "API key not configured. Please set up your API key in Settings."
                 AIParseDebugLogger.warning(
                     "AIParsingViewModel: no API key configured for provider \(parseProvider.rawValue)."
@@ -100,12 +99,13 @@ final class AIParsingViewModel {
                 return
             }
 
-            let service = createAIService(provider: parseProvider, apiKey: apiKey)
-            AIParseDebugLogger.info(
-                "AIParsingViewModel: invoking \(parseProvider.rawValue) service with model \(model)."
-            )
-
-            let parsed = try await service.parseJobPosting(from: normalizedJobURL, model: model)
+            let parsed = try await settingsViewModel.withAPIKeyWaterfall(for: parseProvider) { apiKey in
+                let service = createAIService(provider: parseProvider, apiKey: apiKey)
+                AIParseDebugLogger.info(
+                    "AIParsingViewModel: invoking \(parseProvider.rawValue) service with model \(model)."
+                )
+                return try await service.parseJobPosting(from: normalizedJobURL, model: model)
+            }
             guard parsed.hasMeaningfulContent else {
                 AIParseDebugLogger.warning(
                     "AIParsingViewModel: parse finished but extracted fields were empty."
@@ -115,6 +115,8 @@ final class AIParsingViewModel {
             parsedData = parsed
             AIParseDebugLogger.info("AIParsingViewModel: parse completed successfully.")
 
+        } catch let keyError as SettingsViewModel.APIKeyValidationError {
+            error = keyError.localizedDescription
         } catch let aiError as AIServiceError {
             AIParseDebugLogger.error(
                 "AIParsingViewModel: parse failed with AIServiceError: \(aiError.localizedDescription)."

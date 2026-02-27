@@ -45,15 +45,15 @@ final class FollowUpDrafterViewModel {
             return
         }
 
-        let apiKey: String
+        let keys: [String]
         do {
-            apiKey = try KeychainService.shared.getAPIKey(for: provider)
+            keys = try settingsViewModel.apiKeys(for: provider)
         } catch {
             self.error = "Could not access API key. Please check Settings."
             return
         }
 
-        guard !apiKey.isEmpty else {
+        guard !keys.isEmpty else {
             error = "API key not configured for \(provider.rawValue). Please check Settings."
             return
         }
@@ -83,19 +83,23 @@ final class FollowUpDrafterViewModel {
             .joined(separator: "\n")
 
         do {
-            let emailResult = try await FollowUpDrafterService.generateFollowUp(
-                provider: provider,
-                apiKey: apiKey,
-                model: model,
-                company: application.companyName,
-                role: application.role,
-                stage: stage,
-                notes: notes,
-                daysSinceLastContact: daysSinceLastContact
-            )
+            let emailResult = try await settingsViewModel.withAPIKeyWaterfall(for: provider) { apiKey in
+                try await FollowUpDrafterService.generateFollowUp(
+                    provider: provider,
+                    apiKey: apiKey,
+                    model: model,
+                    company: application.companyName,
+                    role: application.role,
+                    stage: stage,
+                    notes: notes,
+                    daysSinceLastContact: daysSinceLastContact
+                )
+            }
             result = emailResult
             editableSubject = emailResult.subject
             editableBody = emailResult.body
+        } catch let keyError as SettingsViewModel.APIKeyValidationError {
+            error = keyError.localizedDescription
         } catch let aiError as AIServiceError {
             error = aiError.localizedDescription
         } catch {

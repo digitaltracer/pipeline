@@ -6,10 +6,30 @@ struct AIProviderSettingsView: View {
 
     @State private var apiKey: String = ""
     @State private var isAPIKeyVisible: Bool = false
+    @State private var showingConnectionSuccess: Bool = false
     @State private var showingSaveConfirmation: Bool = false
-    @State private var saveError: String?
-    @State private var isValidatingAPIKey: Bool = false
+    @State private var statusError: String?
+    @State private var isTestingConnection: Bool = false
+    @State private var isSavingAPIKey: Bool = false
+    @State private var validatedModels: [String] = []
+    @State private var validatedProviderID: String?
+    @State private var validatedKeyFingerprint: String?
     @State private var confirmationResetTask: Task<Void, Never>?
+
+    private var trimmedAPIKey: String {
+        apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var currentValidationFingerprint: String {
+        "\(viewModel.selectedAIProvider.providerID)|\(trimmedAPIKey)"
+    }
+
+    private var hasValidatedCurrentInput: Bool {
+        !trimmedAPIKey.isEmpty &&
+        validatedProviderID == viewModel.selectedAIProvider.providerID &&
+        validatedKeyFingerprint == currentValidationFingerprint &&
+        !validatedModels.isEmpty
+    }
 
     var body: some View {
         Form {
@@ -60,30 +80,48 @@ struct AIProviderSettingsView: View {
                     .buttonStyle(.plain)
                 }
 
-                Button {
-                    saveAPIKey()
-                } label: {
-                    if isValidatingAPIKey {
-                        Label("Validating...", systemImage: "hourglass")
-                    } else {
-                        Text("Save API Key")
+                HStack(spacing: 10) {
+                    Button {
+                        testConnection()
+                    } label: {
+                        if isTestingConnection {
+                            Label("Testing...", systemImage: "hourglass")
+                        } else {
+                            Text("Test Connection")
+                        }
                     }
-                }
-                .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isValidatingAPIKey)
+                    .disabled(trimmedAPIKey.isEmpty || isTestingConnection || isSavingAPIKey)
 
-                if showingSaveConfirmation {
-                    Label("API key verified and saved", systemImage: "checkmark.circle.fill")
+                    Button {
+                        saveAPIKey()
+                    } label: {
+                        if isSavingAPIKey {
+                            Label("Saving...", systemImage: "hourglass")
+                        } else {
+                            Text("Save API Key")
+                        }
+                    }
+                    .disabled(!hasValidatedCurrentInput || isTestingConnection || isSavingAPIKey)
+                }
+
+                if showingConnectionSuccess {
+                    Label("Connection successful. You can now save this key.", systemImage: "checkmark.circle.fill")
                         .foregroundColor(.green)
                 }
 
-                if let error = saveError {
+                if showingSaveConfirmation {
+                    Label("API key saved", systemImage: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                }
+
+                if let error = statusError {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
                         .foregroundColor(.red)
                 }
             } header: {
                 Text("API Key")
             } footer: {
-                Text("Your API key is stored securely in the system Keychain.")
+                Text("Test the key first. Save is enabled only after a successful connection test for the current key and provider.")
             }
 
             Section {
@@ -113,6 +151,12 @@ struct AIProviderSettingsView: View {
                 await viewModel.refreshModelsIfNeeded(for: newProvider)
             }
         }
+        .onChange(of: apiKey) { _, _ in
+            invalidateValidatedState()
+            showingSaveConfirmation = false
+            showingConnectionSuccess = false
+            statusError = nil
+        }
     }
 
     @ViewBuilder
@@ -135,23 +179,56 @@ struct AIProviderSettingsView: View {
         } catch {
             apiKey = ""
         }
+        invalidateValidatedState()
         showingSaveConfirmation = false
-        saveError = nil
+        showingConnectionSuccess = false
+        statusError = nil
     }
 
-    private func saveAPIKey() {
-        guard !isValidatingAPIKey else { return }
+    private func testConnection() {
+        guard !isTestingConnection else { return }
 
         let provider = viewModel.selectedAIProvider
         let candidateKey = apiKey
 
         Task { @MainActor in
-            isValidatingAPIKey = true
+            isTestingConnection = true
+            invalidateValidatedState()
+            showingConnectionSuccess = false
             showingSaveConfirmation = false
-            saveError = nil
+            statusError = nil
 
             do {
-                try await viewModel.validateAndSaveAPIKey(candidateKey, for: provider)
+                let models = try await viewModel.validateAPIKeyConnection(candidateKey, for: provider)
+                validatedModels = models
+                validatedProviderID = provider.providerID
+                validatedKeyFingerprint = "\(provider.providerID)|\(candidateKey.trimmingCharacters(in: .whitespacesAndNewlines))"
+                showingConnectionSuccess = true
+            } catch {
+                statusError = "Connection failed: \(error.localizedDescription)"
+                showingSaveConfirmation = false
+                showingConnectionSuccess = false
+            }
+
+            isTestingConnection = false
+        }
+    }
+
+    private func saveAPIKey() {
+        guard !isSavingAPIKey else { return }
+        guard hasValidatedCurrentInput else { return }
+
+        let provider = viewModel.selectedAIProvider
+        let candidateKey = apiKey
+        let validatedModels = validatedModels
+
+        Task { @MainActor in
+            isSavingAPIKey = true
+            statusError = nil
+            showingSaveConfirmation = false
+
+            do {
+                try viewModel.saveValidatedAPIKey(candidateKey, models: validatedModels, for: provider)
 
                 showingSaveConfirmation = true
                 confirmationResetTask?.cancel()
@@ -161,12 +238,18 @@ struct AIProviderSettingsView: View {
                     showingSaveConfirmation = false
                 }
             } catch {
-                saveError = "Failed to validate API key: \(error.localizedDescription)"
+                statusError = "Could not save API key: \(error.localizedDescription)"
                 showingSaveConfirmation = false
             }
 
-            isValidatingAPIKey = false
+            isSavingAPIKey = false
         }
+    }
+
+    private func invalidateValidatedState() {
+        validatedModels = []
+        validatedProviderID = nil
+        validatedKeyFingerprint = nil
     }
 
     @ViewBuilder
@@ -332,12 +415,7 @@ struct AIProviderSettingsContent: View {
     }
 
     private func checkAPIKey(for provider: AIProvider) {
-        do {
-            let key = try KeychainService.shared.getAPIKey(for: provider)
-            hasAPIKey = !key.isEmpty
-        } catch {
-            hasAPIKey = false
-        }
+        hasAPIKey = viewModel.hasAPIKey(for: provider)
     }
 }
 
@@ -379,10 +457,31 @@ struct APIKeyInputField: View {
 
     @State private var apiKey: String = ""
     @State private var isVisible: Bool = false
-    @State private var showSuccess: Bool = false
-    @State private var isValidating: Bool = false
+    @State private var showConnectionSuccess: Bool = false
+    @State private var showSaveSuccess: Bool = false
+    @State private var isTestingConnection: Bool = false
+    @State private var isSaving: Bool = false
     @State private var errorMessage: String?
+    @State private var validatedModels: [String] = []
+    @State private var validatedProviderID: String?
+    @State private var validatedKeyFingerprint: String?
+    @State private var savedAPIKeys: [String] = []
     @State private var successResetTask: Task<Void, Never>?
+
+    private var trimmedAPIKey: String {
+        apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var currentValidationFingerprint: String {
+        "\(provider.providerID)|\(trimmedAPIKey)"
+    }
+
+    private var hasValidatedCurrentInput: Bool {
+        !trimmedAPIKey.isEmpty &&
+        validatedProviderID == provider.providerID &&
+        validatedKeyFingerprint == currentValidationFingerprint &&
+        !validatedModels.isEmpty
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -417,21 +516,39 @@ struct APIKeyInputField: View {
                 .foregroundStyle(.secondary)
 
                 Button {
+                    testConnection()
+                } label: {
+                    if isTestingConnection {
+                        Label("Testing...", systemImage: "hourglass")
+                    } else {
+                        Text("Test Connection")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(trimmedAPIKey.isEmpty || isTestingConnection || isSaving)
+
+                Button {
                     saveKey()
                 } label: {
-                    if isValidating {
-                        Label("Validating...", systemImage: "hourglass")
+                    if isSaving {
+                        Label("Adding...", systemImage: "hourglass")
                     } else {
-                        Text("Save")
+                        Text("Add Key")
                     }
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(DesignSystem.Colors.accent)
-                .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isValidating)
+                .disabled(!hasValidatedCurrentInput || isTestingConnection || isSaving)
             }
 
-            if showSuccess {
-                Label("API key verified and saved", systemImage: "checkmark.circle.fill")
+            if showConnectionSuccess {
+                Label("Connection successful. Save is now enabled.", systemImage: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundColor(.green)
+            }
+
+            if showSaveSuccess {
+                Label("API key added", systemImage: "checkmark.circle.fill")
                     .font(.caption)
                     .foregroundColor(.green)
             }
@@ -441,58 +558,243 @@ struct APIKeyInputField: View {
                     .font(.caption)
                     .foregroundColor(.red)
             }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Saved Keys (Waterfall Priority)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Text("Top key is primary. Reorder to control fallback behavior.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+
+                if savedAPIKeys.isEmpty {
+                    Text("No keys saved yet for \(provider.rawValue).")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(Array(savedAPIKeys.enumerated()), id: \.offset) { index, key in
+                        HStack(spacing: 12) {
+                            Text("\(index + 1)")
+                                .font(.caption.monospacedDigit())
+                                .fontWeight(.semibold)
+                                .foregroundColor(index == 0 ? DesignSystem.Colors.accent : .secondary)
+                                .frame(width: 22, height: 22)
+                                .background(
+                                    Circle()
+                                        .fill(index == 0 ? DesignSystem.Colors.accent.opacity(0.18) : Color.secondary.opacity(0.12))
+                                )
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(index == 0 ? "Primary Key" : "Fallback Key")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                Text(maskedKey(key))
+                                    .font(.caption.monospaced())
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Spacer()
+
+                            if index != 0 {
+                                Button("Make Primary") {
+                                    makePrimary(at: index)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+
+                            Button {
+                                moveKey(from: index, to: index - 1)
+                            } label: {
+                                Image(systemName: "arrow.up")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(index == 0)
+
+                            Button {
+                                moveKey(from: index, to: index + 1)
+                            } label: {
+                                Image(systemName: "arrow.down")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(index == savedAPIKeys.count - 1)
+
+                            Button(role: .destructive) {
+                                removeKey(at: index)
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.secondary.opacity(0.08))
+                        )
+                    }
+                }
+            }
         }
         .onAppear {
-            loadKey()
+            loadKeys()
         }
         .onDisappear {
             successResetTask?.cancel()
             successResetTask = nil
         }
         .onChange(of: provider) { _, _ in
-            loadKey()
+            loadKeys()
+        }
+        .onChange(of: apiKey) { _, _ in
+            invalidateValidatedState()
+            showConnectionSuccess = false
+            showSaveSuccess = false
+            errorMessage = nil
         }
     }
 
-    private func loadKey() {
+    private func loadKeys() {
         do {
-            apiKey = try KeychainService.shared.getAPIKey(for: provider)
+            savedAPIKeys = try viewModel.apiKeys(for: provider)
+            apiKey = ""
             errorMessage = nil
         } catch {
             apiKey = ""
+            savedAPIKeys = []
             errorMessage = nil
         }
+        invalidateValidatedState()
+        showConnectionSuccess = false
+        showSaveSuccess = false
     }
 
-    private func saveKey() {
-        guard !isValidating else { return }
+    private func testConnection() {
+        guard !isTestingConnection else { return }
 
         let candidateKey = apiKey
         let currentProvider = provider
 
         Task { @MainActor in
-            isValidating = true
-            showSuccess = false
+            isTestingConnection = true
+            invalidateValidatedState()
+            showConnectionSuccess = false
+            showSaveSuccess = false
             errorMessage = nil
 
             do {
-                try await viewModel.validateAndSaveAPIKey(candidateKey, for: currentProvider)
-                showSuccess = true
+                let models = try await viewModel.validateAPIKeyConnection(candidateKey, for: currentProvider)
+                validatedModels = models
+                validatedProviderID = currentProvider.providerID
+                validatedKeyFingerprint = "\(currentProvider.providerID)|\(candidateKey.trimmingCharacters(in: .whitespacesAndNewlines))"
+                showConnectionSuccess = true
+            } catch {
+                errorMessage = "Connection failed: \(error.localizedDescription)"
+                showConnectionSuccess = false
+            }
+
+            isTestingConnection = false
+        }
+    }
+
+    private func saveKey() {
+        guard !isSaving else { return }
+        guard hasValidatedCurrentInput else { return }
+
+        let candidateKey = apiKey
+        let currentProvider = provider
+        let validatedModels = validatedModels
+
+        Task { @MainActor in
+            isSaving = true
+            errorMessage = nil
+            showSaveSuccess = false
+
+            do {
+                try viewModel.saveValidatedAPIKey(candidateKey, models: validatedModels, for: currentProvider)
+                showSaveSuccess = true
+                apiKey = ""
+                savedAPIKeys = try viewModel.apiKeys(for: currentProvider)
                 onSave()
 
                 successResetTask?.cancel()
                 successResetTask = Task {
                     try? await Task.sleep(for: .seconds(2))
                     guard !Task.isCancelled else { return }
-                    showSuccess = false
+                    showSaveSuccess = false
                 }
             } catch {
-                errorMessage = "Failed to validate API key: \(error.localizedDescription)"
-                showSuccess = false
+                errorMessage = "Could not save API key: \(error.localizedDescription)"
+                showSaveSuccess = false
             }
 
-            isValidating = false
+            isSaving = false
         }
+    }
+
+    private func invalidateValidatedState() {
+        validatedModels = []
+        validatedProviderID = nil
+        validatedKeyFingerprint = nil
+    }
+
+    private func removeKey(at index: Int) {
+        guard savedAPIKeys.indices.contains(index) else { return }
+
+        do {
+            var reordered = savedAPIKeys
+            reordered.remove(at: index)
+            try persistKeyOrder(reordered)
+            showConnectionSuccess = false
+            showSaveSuccess = false
+            errorMessage = nil
+        } catch {
+            errorMessage = "Could not remove API key: \(error.localizedDescription)"
+        }
+    }
+
+    private func moveKey(from source: Int, to destination: Int) {
+        guard savedAPIKeys.indices.contains(source),
+              savedAPIKeys.indices.contains(destination),
+              source != destination else {
+            return
+        }
+
+        do {
+            var reordered = savedAPIKeys
+            let moving = reordered.remove(at: source)
+            reordered.insert(moving, at: destination)
+            try persistKeyOrder(reordered)
+            errorMessage = nil
+        } catch {
+            errorMessage = "Could not reorder API keys: \(error.localizedDescription)"
+        }
+    }
+
+    private func makePrimary(at index: Int) {
+        guard savedAPIKeys.indices.contains(index), index != 0 else { return }
+        moveKey(from: index, to: 0)
+    }
+
+    private func persistKeyOrder(_ keys: [String]) throws {
+        try viewModel.setAPIKeys(keys, for: provider)
+        savedAPIKeys = try viewModel.apiKeys(for: provider)
+        onSave()
+    }
+
+    private func maskedKey(_ key: String) -> String {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "****" }
+
+        let prefixLength = min(4, trimmed.count)
+        let suffixLength = min(4, max(0, trimmed.count - prefixLength))
+        let prefix = String(trimmed.prefix(prefixLength))
+        let suffix = String(trimmed.suffix(suffixLength))
+        return "\(prefix)******\(suffix)"
     }
 }
 

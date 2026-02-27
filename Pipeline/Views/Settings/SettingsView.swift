@@ -7,6 +7,7 @@ import PipelineKit
 private enum SettingsCategory: String, CaseIterable, Identifiable {
     case appearance
     case aiProvider
+    case allApplications
     case notifications
     case sync
     case about
@@ -17,6 +18,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .appearance: return "Appearance"
         case .aiProvider: return "AI Provider"
+        case .allApplications: return "All Applications"
         case .notifications: return "Notifications"
         case .sync: return "iCloud Sync"
         case .about: return "About"
@@ -29,6 +31,8 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
             return "Theme and display preferences"
         case .aiProvider:
             return "Provider, model, and API key"
+        case .allApplications:
+            return "Choose which status types appear in All Applications"
         case .notifications:
             return "Follow-up reminder behavior"
         case .sync:
@@ -42,6 +46,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .appearance: return "paintbrush.fill"
         case .aiProvider: return "brain.head.profile"
+        case .allApplications: return "line.3.horizontal.decrease.circle.fill"
         case .notifications: return "bell.badge.fill"
         case .sync: return "icloud.fill"
         case .about: return "info.circle.fill"
@@ -86,6 +91,12 @@ struct SettingsView: View {
                         AIProviderSettingsView(viewModel: viewModel)
                     } label: {
                         Label("AI Provider", systemImage: "brain")
+                    }
+
+                    NavigationLink {
+                        AllApplicationsSettingsView(viewModel: viewModel)
+                    } label: {
+                        Label("All Applications", systemImage: "line.3.horizontal.decrease.circle")
                     }
 
                     NavigationLink {
@@ -252,6 +263,8 @@ struct SettingsView: View {
             AppearanceSettingsContent(viewModel: viewModel)
         case .aiProvider:
             AIProviderSettingsContent(viewModel: viewModel)
+        case .allApplications:
+            AllApplicationsSettingsContent(viewModel: viewModel)
         case .notifications:
             NotificationSettingsContent(viewModel: viewModel)
         case .sync:
@@ -499,6 +512,128 @@ private struct SettingsInfoRow: View {
             Text(value)
                 .font(.subheadline)
         }
+    }
+}
+
+struct AllApplicationsSettingsView: View {
+    @Bindable var viewModel: SettingsViewModel
+
+    private var statusOptions: [ApplicationStatus] {
+        viewModel.allApplicationsStatusOptions()
+    }
+
+    private var visibleStatusCount: Int {
+        statusOptions.filter { viewModel.isStatusVisibleInAllApplications($0) }.count
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(statusOptions) { status in
+                    Toggle(isOn: visibilityBinding(for: status)) {
+                        Label(status.displayName, systemImage: status.icon)
+                    }
+                }
+            } header: {
+                Text("Show Status Types")
+            } footer: {
+                Text("These settings only affect the All Applications view.")
+            }
+
+            Section {
+                Button("Show All Types") {
+                    viewModel.resetAllApplicationsVisibilityToDefault()
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("All Applications")
+    }
+
+    private func visibilityBinding(for status: ApplicationStatus) -> Binding<Bool> {
+        Binding(
+            get: {
+                viewModel.isStatusVisibleInAllApplications(status)
+            },
+            set: { isVisible in
+                let currentlyVisible = viewModel.isStatusVisibleInAllApplications(status)
+                if !isVisible && currentlyVisible && visibleStatusCount <= 1 {
+                    return
+                }
+                viewModel.setStatus(status, visibleInAllApplications: isVisible)
+            }
+        )
+    }
+}
+
+struct AllApplicationsSettingsContent: View {
+    @Bindable var viewModel: SettingsViewModel
+
+    private var statusOptions: [ApplicationStatus] {
+        viewModel.allApplicationsStatusOptions()
+    }
+
+    private var visibleStatusCount: Int {
+        statusOptions.filter { viewModel.isStatusVisibleInAllApplications($0) }.count
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SettingsFormSectionCard(
+                title: "Visible Status Types",
+                subtitle: "Choose which application status types appear when All Applications is selected.",
+                icon: "line.3.horizontal.decrease.circle.fill"
+            ) {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(statusOptions) { status in
+                        Toggle(isOn: visibilityBinding(for: status)) {
+                            HStack {
+                                Label(status.displayName, systemImage: status.icon)
+                                Spacer()
+                                if viewModel.isStatusVisibleInAllApplications(status) {
+                                    Text("Shown")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                        .tint(DesignSystem.Colors.accent)
+                    }
+                }
+
+                if visibleStatusCount <= 1 {
+                    Text("At least one status type must remain visible.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            SettingsFormSectionCard(
+                title: "Quick Action",
+                subtitle: "Restore default behavior and show all status types.",
+                icon: "arrow.counterclockwise.circle.fill"
+            ) {
+                Button("Show All Types") {
+                    viewModel.resetAllApplicationsVisibilityToDefault()
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    private func visibilityBinding(for status: ApplicationStatus) -> Binding<Bool> {
+        Binding(
+            get: {
+                viewModel.isStatusVisibleInAllApplications(status)
+            },
+            set: { isVisible in
+                let currentlyVisible = viewModel.isStatusVisibleInAllApplications(status)
+                if !isVisible && currentlyVisible && visibleStatusCount <= 1 {
+                    return
+                }
+                viewModel.setStatus(status, visibleInAllApplications: isVisible)
+            }
+        )
     }
 }
 
