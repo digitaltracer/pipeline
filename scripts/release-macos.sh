@@ -1,0 +1,467 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    cat <<'EOF'
+Build, sign, package, notarize, and staple a macOS release for Pipeline.
+
+Usage:
+  scripts/release-macos.sh \
+    --format dmg|pkg|both \
+    --team-id <TEAM_ID> \
+    --developer-id-app-cert "<Developer ID Application cert name>" \
+    [--developer-id-installer-cert "<Developer ID Installer cert name>"] \
+    [--notary-profile <keychain-profile>] \
+    [--project <path-to-xcodeproj>] \
+    [--scheme <scheme>] \
+    [--configuration Release] \
+    [--output-dir <dist-dir>] \
+    [--dmg-volume-name <name>] \
+    [--profile-main <profile-name>] \
+    [--profile-extension <profile-name>] \
+    [--skip-notarization] \
+    [--allow-provisioning-updates] \
+    [--env-file <path>]
+
+Examples:
+  scripts/release-macos.sh --env-file scripts/release-macos.env --format dmg
+  scripts/release-macos.sh --env-file scripts/release-macos.env --format both
+
+Notes:
+  - For pkg/both, --developer-id-installer-cert is required.
+  - For notarization, --notary-profile is required (unless --skip-notarization is set).
+  - Provisioning profile names are auto-detected from installed profiles when possible.
+EOF
+}
+
+info() {
+    echo "==> $*"
+}
+
+die() {
+    echo "error: $*" >&2
+    exit 1
+}
+
+require_cmd() {
+    command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
+}
+
+decode_profile_plist() {
+    local profile_path="$1"
+    openssl smime -inform der -verify -noverify -in "${profile_path}" 2>/dev/null || true
+}
+
+plist_read() {
+    local plist_content="$1"
+    local key_path="$2"
+    /usr/libexec/PlistBuddy -c "Print ${key_path}" /dev/stdin <<<"${plist_content}" 2>/dev/null || true
+}
+
+find_developer_id_profile_name() {
+    local bundle_id="$1"
+    local wanted_appid="${TEAM_ID}.${bundle_id}"
+    local wildcard_appid="${TEAM_ID}.*"
+    local profile_dirs=(
+        "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+        "$HOME/Library/MobileDevice/Provisioning Profiles"
+    )
+
+    local exact_all_devices_name=""
+    local exact_name=""
+    local wildcard_name=""
+    local dir file plist name appid appid_alt candidate_appid profile_team all_devices
+    for dir in "${profile_dirs[@]}"; do
+        [[ -d "${dir}" ]] || continue
+        for file in "${dir}"/*.provisionprofile "${dir}"/*.mobileprovision; do
+            [[ -e "${file}" ]] || continue
+            plist="$(decode_profile_plist "${file}")"
+            [[ -n "${plist}" ]] || continue
+
+            name="$(plist_read "${plist}" ':Name')"
+            profile_team="$(plist_read "${plist}" ':TeamIdentifier:0')"
+            appid="$(plist_read "${plist}" ':Entitlements:application-identifier')"
+            appid_alt="$(plist_read "${plist}" ':Entitlements:com.apple.application-identifier')"
+            all_devices="$(plist_read "${plist}" ':ProvisionsAllDevices')"
+            candidate_appid="${appid:-${appid_alt}}"
+            if [[ -z "${candidate_appid}" ]]; then
+                candidate_appid="${appid_alt}"
+            fi
+
+            [[ "${profile_team}" == "${TEAM_ID}" ]] || continue
+            [[ "${candidate_appid}" == "${wanted_appid}" || "${candidate_appid}" == "${wildcard_appid}" ]] || continue
+            [[ -n "${name}" ]] || continue
+
+            if [[ "${candidate_appid}" == "${wanted_appid}" ]]; then
+                if [[ "${all_devices}" == "true" ]]; then
+                    if [[ -z "${exact_all_devices_name}" ]]; then
+                        exact_all_devices_name="${name}"
+                    fi
+                elif [[ -z "${exact_name}" ]]; then
+                    exact_name="${name}"
+                fi
+            elif [[ "${candidate_appid}" == "${wildcard_appid}" && -z "${wildcard_name}" ]]; then
+                wildcard_name="${name}"
+            fi
+        done
+    done
+
+    [[ -n "${exact_all_devices_name}" ]] && { echo "${exact_all_devices_name}"; return 0; }
+    [[ -n "${exact_name}" ]] && { echo "${exact_name}"; return 0; }
+    [[ -n "${wildcard_name}" ]] && { echo "${wildcard_name}"; return 0; }
+
+    return 1
+}
+
+parse_bool() {
+    case "${1:-}" in
+        1|true|TRUE|yes|YES|on|ON) echo "true" ;;
+        0|false|FALSE|no|NO|off|OFF|"") echo "false" ;;
+        *) die "Invalid boolean value: $1" ;;
+    esac
+}
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+PROJECT_PATH="${PROJECT_PATH:-}"
+SCHEME="${SCHEME:-}"
+CONFIGURATION="${CONFIGURATION:-}"
+FORMAT="${FORMAT:-}"
+TEAM_ID="${TEAM_ID:-}"
+DEVELOPER_ID_APP_CERT="${DEVELOPER_ID_APP_CERT:-}"
+DEVELOPER_ID_INSTALLER_CERT="${DEVELOPER_ID_INSTALLER_CERT:-}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-}"
+OUTPUT_DIR="${OUTPUT_DIR:-}"
+DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-}"
+SKIP_NOTARIZATION="${SKIP_NOTARIZATION:-}"
+ALLOW_PROVISIONING_UPDATES="${ALLOW_PROVISIONING_UPDATES:-}"
+PROFILE_MAIN="${PROFILE_MAIN:-}"
+PROFILE_EXTENSION="${PROFILE_EXTENSION:-}"
+APP_BUNDLE_ID="${APP_BUNDLE_ID:-io.github.digitaltracer.pipeline}"
+EXT_BUNDLE_ID="${EXT_BUNDLE_ID:-io.github.digitaltracer.pipeline.safari-extension}"
+ENV_FILE=""
+DEFAULT_ENV_FILE="${SCRIPT_DIR}/release-macos.env"
+
+ARGS=("$@")
+
+# First pass: find env file so its values can be used as defaults.
+for ((i = 0; i < ${#ARGS[@]}; i++)); do
+    if [[ "${ARGS[$i]}" == "--env-file" ]]; then
+        ((i + 1 < ${#ARGS[@]})) || die "Missing value for --env-file"
+        ENV_FILE="${ARGS[$((i + 1))]}"
+        break
+    fi
+done
+
+if [[ -z "${ENV_FILE}" && -f "${DEFAULT_ENV_FILE}" ]]; then
+    ENV_FILE="${DEFAULT_ENV_FILE}"
+fi
+
+if [[ -n "${ENV_FILE}" ]]; then
+    [[ -f "${ENV_FILE}" ]] || die "Env file not found: ${ENV_FILE}"
+    # shellcheck source=/dev/null
+    source "${ENV_FILE}"
+fi
+
+# Allow env-file keys to map into script vars without requiring uppercase names.
+PROJECT_PATH="${PROJECT_PATH:-${RELEASE_PROJECT_PATH:-}}"
+SCHEME="${SCHEME:-${RELEASE_SCHEME:-}}"
+CONFIGURATION="${CONFIGURATION:-${RELEASE_CONFIGURATION:-}}"
+FORMAT="${FORMAT:-${RELEASE_FORMAT:-}}"
+TEAM_ID="${TEAM_ID:-${RELEASE_TEAM_ID:-}}"
+DEVELOPER_ID_APP_CERT="${DEVELOPER_ID_APP_CERT:-${RELEASE_DEVELOPER_ID_APP_CERT:-}}"
+DEVELOPER_ID_INSTALLER_CERT="${DEVELOPER_ID_INSTALLER_CERT:-${RELEASE_DEVELOPER_ID_INSTALLER_CERT:-}}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-${RELEASE_NOTARY_PROFILE:-}}"
+OUTPUT_DIR="${OUTPUT_DIR:-${RELEASE_OUTPUT_DIR:-}}"
+DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-${RELEASE_DMG_VOLUME_NAME:-}}"
+PROFILE_MAIN="${PROFILE_MAIN:-${RELEASE_PROFILE_MAIN:-}}"
+PROFILE_EXTENSION="${PROFILE_EXTENSION:-${RELEASE_PROFILE_EXTENSION:-}}"
+APP_BUNDLE_ID="${APP_BUNDLE_ID:-${RELEASE_APP_BUNDLE_ID:-}}"
+EXT_BUNDLE_ID="${EXT_BUNDLE_ID:-${RELEASE_EXTENSION_BUNDLE_ID:-}}"
+if [[ -z "${SKIP_NOTARIZATION:-}" ]]; then
+    SKIP_NOTARIZATION="${RELEASE_SKIP_NOTARIZATION:-false}"
+fi
+if [[ -z "${ALLOW_PROVISIONING_UPDATES:-}" ]]; then
+    ALLOW_PROVISIONING_UPDATES="${RELEASE_ALLOW_PROVISIONING_UPDATES:-false}"
+fi
+
+# Second pass: explicit args override env-file values.
+i=0
+while ((i < ${#ARGS[@]})); do
+    arg="${ARGS[$i]}"
+    case "${arg}" in
+        --format)
+            ((i + 1 < ${#ARGS[@]})) || die "Missing value for --format"
+            FORMAT="${ARGS[$((i + 1))]}"
+            i=$((i + 2))
+            ;;
+        --team-id)
+            ((i + 1 < ${#ARGS[@]})) || die "Missing value for --team-id"
+            TEAM_ID="${ARGS[$((i + 1))]}"
+            i=$((i + 2))
+            ;;
+        --developer-id-app-cert)
+            ((i + 1 < ${#ARGS[@]})) || die "Missing value for --developer-id-app-cert"
+            DEVELOPER_ID_APP_CERT="${ARGS[$((i + 1))]}"
+            i=$((i + 2))
+            ;;
+        --developer-id-installer-cert)
+            ((i + 1 < ${#ARGS[@]})) || die "Missing value for --developer-id-installer-cert"
+            DEVELOPER_ID_INSTALLER_CERT="${ARGS[$((i + 1))]}"
+            i=$((i + 2))
+            ;;
+        --notary-profile)
+            ((i + 1 < ${#ARGS[@]})) || die "Missing value for --notary-profile"
+            NOTARY_PROFILE="${ARGS[$((i + 1))]}"
+            i=$((i + 2))
+            ;;
+        --project)
+            ((i + 1 < ${#ARGS[@]})) || die "Missing value for --project"
+            PROJECT_PATH="${ARGS[$((i + 1))]}"
+            i=$((i + 2))
+            ;;
+        --scheme)
+            ((i + 1 < ${#ARGS[@]})) || die "Missing value for --scheme"
+            SCHEME="${ARGS[$((i + 1))]}"
+            i=$((i + 2))
+            ;;
+        --configuration)
+            ((i + 1 < ${#ARGS[@]})) || die "Missing value for --configuration"
+            CONFIGURATION="${ARGS[$((i + 1))]}"
+            i=$((i + 2))
+            ;;
+        --output-dir)
+            ((i + 1 < ${#ARGS[@]})) || die "Missing value for --output-dir"
+            OUTPUT_DIR="${ARGS[$((i + 1))]}"
+            i=$((i + 2))
+            ;;
+        --dmg-volume-name)
+            ((i + 1 < ${#ARGS[@]})) || die "Missing value for --dmg-volume-name"
+            DMG_VOLUME_NAME="${ARGS[$((i + 1))]}"
+            i=$((i + 2))
+            ;;
+        --profile-main)
+            ((i + 1 < ${#ARGS[@]})) || die "Missing value for --profile-main"
+            PROFILE_MAIN="${ARGS[$((i + 1))]}"
+            i=$((i + 2))
+            ;;
+        --profile-extension)
+            ((i + 1 < ${#ARGS[@]})) || die "Missing value for --profile-extension"
+            PROFILE_EXTENSION="${ARGS[$((i + 1))]}"
+            i=$((i + 2))
+            ;;
+        --skip-notarization)
+            SKIP_NOTARIZATION="true"
+            i=$((i + 1))
+            ;;
+        --allow-provisioning-updates)
+            ALLOW_PROVISIONING_UPDATES="true"
+            i=$((i + 1))
+            ;;
+        --env-file)
+            i=$((i + 2))
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        *)
+            die "Unknown argument: ${arg}"
+            ;;
+    esac
+done
+
+PROJECT_PATH="${PROJECT_PATH:-${ROOT_DIR}/Pipeline/Pipeline.xcodeproj}"
+SCHEME="${SCHEME:-Pipeline}"
+CONFIGURATION="${CONFIGURATION:-Release}"
+OUTPUT_DIR="${OUTPUT_DIR:-${ROOT_DIR}/dist}"
+DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-Pipeline}"
+SKIP_NOTARIZATION="${SKIP_NOTARIZATION:-false}"
+ALLOW_PROVISIONING_UPDATES="${ALLOW_PROVISIONING_UPDATES:-false}"
+
+SKIP_NOTARIZATION="$(parse_bool "${SKIP_NOTARIZATION}")"
+ALLOW_PROVISIONING_UPDATES="$(parse_bool "${ALLOW_PROVISIONING_UPDATES}")"
+
+case "${FORMAT}" in
+    dmg|pkg|both) ;;
+    *) die "--format is required and must be one of: dmg, pkg, both" ;;
+esac
+
+[[ -n "${TEAM_ID}" ]] || die "--team-id is required"
+[[ -n "${DEVELOPER_ID_APP_CERT}" ]] || die "--developer-id-app-cert is required"
+[[ -e "${PROJECT_PATH}" ]] || die "Project file not found: ${PROJECT_PATH}"
+
+if [[ "${FORMAT}" == "pkg" || "${FORMAT}" == "both" ]]; then
+    [[ -n "${DEVELOPER_ID_INSTALLER_CERT}" ]] || die "--developer-id-installer-cert is required for pkg/both"
+fi
+
+if [[ "${SKIP_NOTARIZATION}" == "false" ]]; then
+    [[ -n "${NOTARY_PROFILE}" ]] || die "--notary-profile is required unless --skip-notarization is set"
+fi
+
+require_cmd xcodebuild
+require_cmd xcrun
+require_cmd codesign
+require_cmd spctl
+require_cmd security
+require_cmd hdiutil
+require_cmd productbuild
+require_cmd openssl
+require_cmd /usr/libexec/PlistBuddy
+
+if ! security find-identity -v -p codesigning | grep -Fq "${DEVELOPER_ID_APP_CERT}"; then
+    die "Developer ID Application certificate not found in keychain: ${DEVELOPER_ID_APP_CERT}"
+fi
+
+if [[ "${FORMAT}" == "pkg" || "${FORMAT}" == "both" ]]; then
+    if ! security find-identity -v -p basic | grep -Fq "${DEVELOPER_ID_INSTALLER_CERT}"; then
+        die "Developer ID Installer certificate not found in keychain: ${DEVELOPER_ID_INSTALLER_CERT}"
+    fi
+fi
+
+# Developer ID exports for this app require explicit profile mapping.
+PROFILE_MAIN="${PROFILE_MAIN:-$(find_developer_id_profile_name "${APP_BUNDLE_ID}" || true)}"
+PROFILE_EXTENSION="${PROFILE_EXTENSION:-$(find_developer_id_profile_name "${EXT_BUNDLE_ID}" || true)}"
+
+[[ -n "${PROFILE_MAIN}" ]] || die "No provisioning profile found for ${APP_BUNDLE_ID}. Install a Developer ID profile in Xcode and retry."
+[[ -n "${PROFILE_EXTENSION}" ]] || die "No provisioning profile found for ${EXT_BUNDLE_ID}. Install a Developer ID profile in Xcode and retry."
+
+timestamp="$(date +%Y%m%d-%H%M%S)"
+WORK_DIR="${OUTPUT_DIR}/release-${timestamp}"
+ARCHIVE_PATH="${WORK_DIR}/${SCHEME}.xcarchive"
+EXPORT_DIR="${WORK_DIR}/export"
+ARTIFACTS_DIR="${WORK_DIR}/artifacts"
+LOGS_DIR="${WORK_DIR}/logs"
+EXPORT_OPTIONS_PLIST="${WORK_DIR}/ExportOptions.plist"
+
+mkdir -p "${WORK_DIR}" "${EXPORT_DIR}" "${ARTIFACTS_DIR}" "${LOGS_DIR}"
+
+cat > "${EXPORT_OPTIONS_PLIST}" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>method</key>
+    <string>developer-id</string>
+    <key>signingCertificate</key>
+    <string>Developer ID Application</string>
+    <key>signingStyle</key>
+    <string>manual</string>
+    <key>teamID</key>
+    <string>${TEAM_ID}</string>
+    <key>provisioningProfiles</key>
+    <dict>
+        <key>${APP_BUNDLE_ID}</key>
+        <string>${PROFILE_MAIN}</string>
+        <key>${EXT_BUNDLE_ID}</key>
+        <string>${PROFILE_EXTENSION}</string>
+    </dict>
+</dict>
+</plist>
+EOF
+
+xcode_archive_cmd=(
+    xcodebuild archive
+    -project "${PROJECT_PATH}"
+    -scheme "${SCHEME}"
+    -configuration "${CONFIGURATION}"
+    -destination "generic/platform=macOS"
+    -archivePath "${ARCHIVE_PATH}"
+    DEVELOPMENT_TEAM="${TEAM_ID}"
+    CODE_SIGN_STYLE=Automatic
+)
+
+xcode_export_cmd=(
+    xcodebuild -exportArchive
+    -archivePath "${ARCHIVE_PATH}"
+    -exportPath "${EXPORT_DIR}"
+    -exportOptionsPlist "${EXPORT_OPTIONS_PLIST}"
+)
+
+if [[ "${ALLOW_PROVISIONING_UPDATES}" == "true" ]]; then
+    xcode_archive_cmd+=(-allowProvisioningUpdates)
+    xcode_export_cmd+=(-allowProvisioningUpdates)
+fi
+
+info "Archiving app..."
+"${xcode_archive_cmd[@]}" 2>&1 | tee "${LOGS_DIR}/archive.log"
+
+info "Exporting signed app for Developer ID distribution..."
+"${xcode_export_cmd[@]}" 2>&1 | tee "${LOGS_DIR}/export.log"
+
+APP_PATH="$(find "${EXPORT_DIR}" -maxdepth 3 -type d -name "*.app" | head -n 1)"
+[[ -n "${APP_PATH}" ]] || die "Could not find exported .app in ${EXPORT_DIR}"
+
+APP_INFO_PLIST="${APP_PATH}/Contents/Info.plist"
+APP_VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "${APP_INFO_PLIST}" 2>/dev/null || echo "unknown")"
+APP_BUILD="$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "${APP_INFO_PLIST}" 2>/dev/null || echo "0")"
+ARTIFACT_BASE="${SCHEME}-${APP_VERSION}-${APP_BUILD}"
+
+info "Verifying code signature..."
+codesign --verify --deep --strict --verbose=2 "${APP_PATH}" | tee "${LOGS_DIR}/codesign-verify.log"
+spctl --assess --type execute --verbose=4 "${APP_PATH}" | tee "${LOGS_DIR}/spctl-app.log"
+
+declare -a ARTIFACT_PATHS=()
+
+if [[ "${FORMAT}" == "dmg" || "${FORMAT}" == "both" ]]; then
+    DMG_STAGING_DIR="${WORK_DIR}/dmg-staging"
+    DMG_PATH="${ARTIFACTS_DIR}/${ARTIFACT_BASE}.dmg"
+
+    rm -rf "${DMG_STAGING_DIR}"
+    mkdir -p "${DMG_STAGING_DIR}"
+    cp -R "${APP_PATH}" "${DMG_STAGING_DIR}/"
+    ln -s /Applications "${DMG_STAGING_DIR}/Applications"
+
+    info "Creating DMG package..."
+    hdiutil create \
+        -volname "${DMG_VOLUME_NAME}" \
+        -srcfolder "${DMG_STAGING_DIR}" \
+        -format UDZO \
+        -ov \
+        "${DMG_PATH}" | tee "${LOGS_DIR}/dmg-create.log"
+
+    ARTIFACT_PATHS+=("${DMG_PATH}")
+fi
+
+if [[ "${FORMAT}" == "pkg" || "${FORMAT}" == "both" ]]; then
+    PKG_PATH="${ARTIFACTS_DIR}/${ARTIFACT_BASE}.pkg"
+
+    info "Creating signed PKG package..."
+    productbuild \
+        --component "${APP_PATH}" /Applications \
+        --sign "${DEVELOPER_ID_INSTALLER_CERT}" \
+        "${PKG_PATH}" | tee "${LOGS_DIR}/pkg-create.log"
+
+    ARTIFACT_PATHS+=("${PKG_PATH}")
+fi
+
+if [[ "${SKIP_NOTARIZATION}" == "false" ]]; then
+    info "Submitting artifacts for notarization using profile: ${NOTARY_PROFILE}"
+    for artifact in "${ARTIFACT_PATHS[@]}"; do
+        artifact_name="$(basename "${artifact}")"
+        result_log="${LOGS_DIR}/notary-${artifact_name}.json"
+
+        xcrun notarytool submit \
+            "${artifact}" \
+            --keychain-profile "${NOTARY_PROFILE}" \
+            --wait \
+            --output-format json | tee "${result_log}"
+
+        info "Stapling notarization ticket: ${artifact_name}"
+        xcrun stapler staple "${artifact}" | tee "${LOGS_DIR}/staple-${artifact_name}.log"
+        xcrun stapler validate "${artifact}" | tee "${LOGS_DIR}/staple-validate-${artifact_name}.log"
+    done
+else
+    info "Skipping notarization as requested."
+fi
+
+info "Done."
+echo ""
+echo "Artifacts:"
+for artifact in "${ARTIFACT_PATHS[@]}"; do
+    echo "  - ${artifact}"
+done
+echo ""
+echo "Work directory:"
+echo "  ${WORK_DIR}"
