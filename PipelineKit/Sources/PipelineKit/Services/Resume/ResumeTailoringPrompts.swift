@@ -27,6 +27,10 @@ public enum ResumeTailoringPrompts {
     - Prefer rewriting and reordering over adding new content.
     - You may propose removals only when clearly irrelevant to the target role.
     - Keep all patches grounded in the existing resume; do not invent experience.
+    - Keep all new/edited text concise and resume-ready.
+    - Summary must be at most 80 words.
+    - Each responsibility/project bullet must be at most 32 words.
+    - Do not produce long paragraphs; prefer compact phrasing.
     - Use valid JSON pointer paths.
     - Output raw JSON only. No markdown, no prose.
     """
@@ -56,6 +60,8 @@ public enum ResumeTailoringPrompts {
     - Return minified JSON on a single line.
     - Maximum 6 patches.
     - Keep each reason under 12 words.
+    - Summary must be at most 80 words.
+    - Each responsibility/project bullet must be at most 32 words.
     - Do not copy long original text into beforeValue. Use null if original value is long (>120 chars).
     - Keep sectionGaps to at most 5 short items.
     - Output raw JSON only. No markdown, no prose.

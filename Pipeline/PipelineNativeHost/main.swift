@@ -58,8 +58,9 @@ guard let command = message["command"] as? String else {
     exit(1)
 }
 
-let semaphore = DispatchSemaphore(value: 0)
 var response: [String: Any] = [:]
+let group = DispatchGroup()
+group.enter()
 
 Task {
     switch command {
@@ -70,8 +71,11 @@ Task {
     default:
         response = ["error": "Unknown command: \(command)"]
     }
-    semaphore.signal()
+    group.leave()
 }
 
-semaphore.wait()
+while group.wait(timeout: .now()) == .timedOut {
+    RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
+}
+
 writeMessage(response)

@@ -649,10 +649,12 @@ struct ResumeTailoringView: View {
             }
             .navigationTitle("Tailor Resume")
             .toolbar {
+#if !os(macOS)
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { requestClose() }
                         .keyboardShortcut(.cancelAction)
                 }
+#endif
             }
         }
 #if os(macOS)
@@ -842,8 +844,8 @@ struct ResumeTailoringView: View {
 
     private func patchCard(_ patch: ResumePatch) -> some View {
         let isCollapsed = collapsedPatchIDs.contains(patch.id)
-        let beforeText = patch.beforeValue?.displayText ?? "<empty>"
-        let afterText = patch.afterValue?.displayText ?? "<removed>"
+        let beforeText = patch.beforeValue?.displayText ?? ""
+        let afterText = patch.afterValue?.displayText ?? ""
         let diffRows = ResumePatchSplitDiff.makeRows(before: beforeText, after: afterText)
 
         return VStack(alignment: .leading, spacing: 12) {
@@ -879,6 +881,10 @@ struct ResumeTailoringView: View {
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
 
+            if let entryState = entryStateBadge(for: patch) {
+                entryState
+            }
+
             if let status = decisionStatus(for: patch) {
                 decisionStatusBadge(status)
             }
@@ -899,6 +905,39 @@ struct ResumeTailoringView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    private func entryStateBadge(for patch: ResumePatch) -> AnyView? {
+        switch patch.operation {
+        case .add:
+            return AnyView(
+                Text("New entry")
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .foregroundStyle(Color.green.opacity(colorScheme == .dark ? 0.95 : 0.9))
+                    .background(Capsule().fill(Color.green.opacity(colorScheme == .dark ? 0.22 : 0.14)))
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.green.opacity(0.4), lineWidth: 1)
+                    )
+            )
+        case .remove:
+            return AnyView(
+                Text("Removed entry")
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .foregroundStyle(Color.red.opacity(colorScheme == .dark ? 0.95 : 0.85))
+                    .background(Capsule().fill(Color.red.opacity(colorScheme == .dark ? 0.2 : 0.12)))
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.red.opacity(0.35), lineWidth: 1)
+                    )
+            )
+        case .replace:
+            return nil
         }
     }
 
@@ -1008,11 +1047,13 @@ struct ResumeTailoringView: View {
         tokens: [ResumePatchSplitDiff.Token],
         side: SplitSide
     ) -> AttributedString {
+        guard !tokens.isEmpty else { return AttributedString() }
+
         var attributed = AttributedString()
-        let values = tokens.isEmpty ? [""] : tokens.map(\.value)
+        let values = tokens.map(\.value)
 
         for index in values.indices {
-            let token = tokens.isEmpty ? ResumePatchSplitDiff.Token(value: "", kind: .unchanged) : tokens[index]
+            let token = tokens[index]
             var segment = AttributedString(token.value)
             segment.foregroundColor = colorScheme == .dark ? Color.white.opacity(0.86) : Color.black.opacity(0.78)
 
@@ -1748,9 +1789,11 @@ struct JobResumePanel: View {
     @Bindable var application: JobApplication
 
     @State private var showingTailor = false
+    @State private var showingHistory = false
     @State private var actionError: String?
     #if os(macOS)
     @State private var tailorWindowPresenter = TailorResumeWindowPresenter()
+    @State private var historySheetWidth: CGFloat = 980
     #endif
 
     @State private var exportingJSON = false
@@ -1768,6 +1811,14 @@ struct JobResumePanel: View {
                     .font(.headline)
 
                 Spacer()
+
+                Button("History") {
+#if os(macOS)
+                    historySheetWidth = preferredHistorySheetWidth()
+#endif
+                    showingHistory = true
+                }
+                .buttonStyle(.bordered)
 
                 Button {
                     #if os(macOS)
@@ -1826,6 +1877,17 @@ struct JobResumePanel: View {
         .sheet(isPresented: $showingTailor) {
             ResumeTailoringView(application: application)
         }
+        .sheet(isPresented: $showingHistory) {
+            ResumeJobSnapshotHistoryView(application: application)
+#if os(macOS)
+                .frame(
+                    minWidth: historySheetWidth,
+                    idealWidth: historySheetWidth,
+                    maxWidth: historySheetWidth,
+                    minHeight: 620
+                )
+#endif
+        }
         .fileExporter(
             isPresented: $exportingJSON,
             document: jsonDocument,
@@ -1856,6 +1918,12 @@ struct JobResumePanel: View {
             modelContainer: modelContext.container
         )
     }
+
+    private func preferredHistorySheetWidth() -> CGFloat {
+        let windowWidth = NSApp.keyWindow?.frame.width ?? NSApp.mainWindow?.frame.width ?? 1220
+        let targetWidth = windowWidth * 0.8
+        return max(920, min(targetWidth, 1680))
+    }
 #endif
 
     private func deleteSnapshot(_ snapshot: ResumeJobSnapshot) {
@@ -1882,6 +1950,304 @@ struct JobResumePanel: View {
             exportingPDF = true
         } catch {
             actionError = error.localizedDescription
+        }
+    }
+}
+
+struct ResumeJobSnapshotHistoryView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+
+    @Bindable var application: JobApplication
+
+    @State private var actionError: String?
+    @State private var expandedSnapshotIDs: Set<UUID> = []
+    @State private var exportingJSON = false
+    @State private var jsonDocument = ResumeJSONFileDocument(text: "{}")
+    @State private var exportingPDF = false
+    @State private var pdfDocument = ResumePDFFileDocument(data: Data())
+
+    private var snapshots: [ResumeJobSnapshot] {
+        application.sortedResumeSnapshots
+    }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if snapshots.isEmpty {
+                    ContentUnavailableView(
+                        "No Resume Versions",
+                        systemImage: "clock.arrow.circlepath",
+                        description: Text("Tailor and save a resume to create version history for this job.")
+                    )
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("\(snapshots.count) snapshot\(snapshots.count == 1 ? "" : "s")")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            ForEach(snapshots) { snapshot in
+                                snapshotCard(snapshot)
+                            }
+                        }
+                        .padding(16)
+                    }
+                }
+            }
+            .navigationTitle("Resume Version History")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+        .fileExporter(
+            isPresented: $exportingJSON,
+            document: jsonDocument,
+            contentType: .json,
+            defaultFilename: "tailored-resume"
+        ) { _ in }
+        .fileExporter(
+            isPresented: $exportingPDF,
+            document: pdfDocument,
+            contentType: .pdf,
+            defaultFilename: "tailored-resume"
+        ) { _ in }
+        .alert("History Action Failed", isPresented: Binding(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(actionError ?? "Unknown error")
+        }
+    }
+
+    private func snapshotCard(_ snapshot: ResumeJobSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(snapshot.createdAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.headline)
+                    .fontWeight(.semibold)
+
+                if snapshots.first?.id == snapshot.id {
+                    Text("Latest")
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(DesignSystem.Colors.accent.opacity(0.2)))
+                }
+
+                Spacer()
+
+                Button {
+                    toggleDiff(for: snapshot)
+                } label: {
+                    Label(
+                        expandedSnapshotIDs.contains(snapshot.id) ? "Hide Diff" : "Show Diff",
+                        systemImage: expandedSnapshotIDs.contains(snapshot.id) ? "chevron.up.circle.fill" : "chevron.down.circle.fill"
+                    )
+                    .font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DesignSystem.Colors.accent)
+                .controlSize(.large)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Accepted: \(snapshot.acceptedPatchIDs.count)  Rejected: \(snapshot.rejectedPatchIDs.count)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                if !snapshot.sectionGaps.isEmpty {
+                    Text("Coverage gaps: \(snapshot.sectionGaps.count)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            HStack(spacing: 12) {
+                Button("Export JSON") {
+                    exportJSON(snapshot)
+                }
+                .buttonStyle(.bordered)
+
+                Button("Export PDF") {
+                    Task { await exportPDF(snapshot) }
+                }
+                .buttonStyle(.bordered)
+
+                Spacer()
+
+                Button("Delete", role: .destructive) {
+                    deleteSnapshot(snapshot)
+                }
+                .buttonStyle(.bordered)
+            }
+            .controlSize(.large)
+
+            if expandedSnapshotIDs.contains(snapshot.id) {
+                diffSection(for: snapshot)
+            }
+        }
+        .padding(16)
+        .appCard(cornerRadius: 12, elevated: true, shadow: false)
+    }
+
+    private func deleteSnapshot(_ snapshot: ResumeJobSnapshot) {
+        do {
+            try ResumeStoreService.deleteJobSnapshot(snapshot, in: modelContext)
+            expandedSnapshotIDs.remove(snapshot.id)
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func exportJSON(_ snapshot: ResumeJobSnapshot) {
+        do {
+            jsonDocument = try ResumeJSONExportService.makeDocument(json: snapshot.rawJSON)
+            exportingJSON = true
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func exportPDF(_ snapshot: ResumeJobSnapshot) async {
+        do {
+            pdfDocument = try await ResumePDFExportService.makeDocument(json: snapshot.rawJSON)
+            exportingPDF = true
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func toggleDiff(for snapshot: ResumeJobSnapshot) {
+        if expandedSnapshotIDs.contains(snapshot.id) {
+            expandedSnapshotIDs.remove(snapshot.id)
+        } else {
+            expandedSnapshotIDs.insert(snapshot.id)
+        }
+    }
+
+    private func diffSection(for snapshot: ResumeJobSnapshot) -> some View {
+        Group {
+            if let previous = previousSnapshot(for: snapshot) {
+                let diff = ResumeRevisionDiffService.diff(from: previous.rawJSON, to: snapshot.rawJSON)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Diff vs \(previous.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        Spacer()
+
+                        Text("+\(diff.addedLineCount)  -\(diff.removedLineCount)")
+                            .font(.caption.monospacedDigit())
+                            .foregroundColor(.secondary)
+                    }
+
+                    if diff.hasChanges {
+                        ForEach(Array(diff.hunks.enumerated()), id: \.offset) { _, hunk in
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(hunk.header)
+                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 6)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(Color.secondary.opacity(0.12))
+
+                                ForEach(Array(hunk.lines.enumerated()), id: \.offset) { _, line in
+                                    diffLineRow(line)
+                                }
+                            }
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                            )
+                        }
+                    } else {
+                        Text("No content changes in this revision.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.secondary.opacity(0.07))
+                )
+            } else {
+                Text("No previous version to compare.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.secondary.opacity(0.08))
+                    )
+            }
+        }
+    }
+
+    private func previousSnapshot(for snapshot: ResumeJobSnapshot) -> ResumeJobSnapshot? {
+        guard let index = snapshots.firstIndex(where: { $0.id == snapshot.id }) else {
+            return nil
+        }
+
+        let previousIndex = snapshots.index(after: index)
+        guard snapshots.indices.contains(previousIndex) else {
+            return nil
+        }
+
+        return snapshots[previousIndex]
+    }
+
+    private func diffLineRow(_ line: ResumeDiffLine) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(line.oldLineNumber.map(String.init) ?? "")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(.secondary)
+                .frame(width: 36, alignment: .trailing)
+
+            Text(line.newLineNumber.map(String.init) ?? "")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(.secondary)
+                .frame(width: 36, alignment: .trailing)
+
+            Text("\(linePrefix(line.kind))\(line.content)")
+                .font(.system(size: 11, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
+        .background(lineBackgroundColor(line.kind))
+    }
+
+    private func linePrefix(_ kind: ResumeDiffLine.Kind) -> String {
+        switch kind {
+        case .added:
+            return "+"
+        case .removed:
+            return "-"
+        case .context:
+            return " "
+        }
+    }
+
+    private func lineBackgroundColor(_ kind: ResumeDiffLine.Kind) -> Color {
+        switch kind {
+        case .added:
+            return Color.green.opacity(0.18)
+        case .removed:
+            return Color.red.opacity(0.18)
+        case .context:
+            return Color.clear
         }
     }
 }
@@ -2168,7 +2534,7 @@ private struct JSONCodeEditorRepresentable: JSONEditorPlatformRepresentable {
         @Binding private var text: String
         private var isDarkMode: Bool
         private var isReady = false
-        private var lastSyncedText: String
+        private var lastSyncedText: String?
         private var lastSyncedTheme: Bool?
 
         weak var webView: WKWebView?
@@ -2176,7 +2542,7 @@ private struct JSONCodeEditorRepresentable: JSONEditorPlatformRepresentable {
         init(text: Binding<String>, isDarkMode: Bool) {
             _text = text
             self.isDarkMode = isDarkMode
-            self.lastSyncedText = text.wrappedValue
+            self.lastSyncedText = nil
             super.init()
         }
 
@@ -2193,7 +2559,7 @@ private struct JSONCodeEditorRepresentable: JSONEditorPlatformRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             isReady = true
             JSONCodeEditorRepresentable.sharedPool.markLoaded(webView)
-            syncTextIfNeeded(text)
+            syncTextIfNeeded(text, force: true)
             syncThemeIfNeeded(force: true)
         }
 
@@ -2211,8 +2577,11 @@ private struct JSONCodeEditorRepresentable: JSONEditorPlatformRepresentable {
             }
         }
 
-        private func syncTextIfNeeded(_ newText: String) {
-            guard isReady, newText != lastSyncedText else { return }
+        private func syncTextIfNeeded(_ newText: String, force: Bool = false) {
+            guard isReady else { return }
+            if !force, let lastSyncedText, newText == lastSyncedText {
+                return
+            }
             lastSyncedText = newText
             let js = "window.pipelineJSONEditor && window.pipelineJSONEditor.setText(\(Self.quotedJSString(newText)));"
             webView?.evaluateJavaScript(js)
@@ -2239,7 +2608,7 @@ private struct JSONCodeEditorRepresentable: JSONEditorPlatformRepresentable {
         func markReadyFromPrewarm() {
             guard !isReady else { return }
             isReady = true
-            syncTextIfNeeded(text)
+            syncTextIfNeeded(text, force: true)
             syncThemeIfNeeded(force: true)
         }
     }

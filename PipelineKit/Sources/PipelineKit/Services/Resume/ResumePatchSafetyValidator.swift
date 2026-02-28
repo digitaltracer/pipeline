@@ -24,6 +24,11 @@ public enum ResumePatchSafetyValidator {
     private static let allowedRootKeys: Set<String> = [
         "name", "contact", "education", "summary", "experience", "projects", "skills"
     ]
+    private static let maxSummaryWordCount = 80
+    private static let maxSummaryCharacterCount = 550
+    private static let maxBulletWordCount = 32
+    private static let maxBulletCharacterCount = 260
+    private static let maxBulletArrayItemCount = 8
 
     public static func validate(
         patches: [ResumePatch],
@@ -101,7 +106,83 @@ public enum ResumePatchSafetyValidator {
             }
         }
 
+        if let lengthError = lengthConstraintViolation(for: patch, pathTokens: pathTokens) {
+            return lengthError
+        }
+
         return nil
+    }
+
+    private static func lengthConstraintViolation(for patch: ResumePatch, pathTokens: [String]) -> String? {
+        guard patch.operation == .add || patch.operation == .replace,
+              let afterValue = patch.afterValue else {
+            return nil
+        }
+
+        if isSummaryPath(pathTokens) {
+            guard case let .string(summaryText) = afterValue else {
+                return "Summary changes must be plain text."
+            }
+            let summaryWordCount = wordCount(summaryText)
+            if summaryWordCount > maxSummaryWordCount || summaryText.count > maxSummaryCharacterCount {
+                return "Summary change is too long. Keep summary under \(maxSummaryWordCount) words."
+            }
+            return nil
+        }
+
+        guard isBulletPath(pathTokens) else {
+            return nil
+        }
+
+        switch afterValue {
+        case .string(let bullet):
+            if wordCount(bullet) > maxBulletWordCount || bullet.count > maxBulletCharacterCount {
+                return "Bullet text is too long. Keep each bullet under \(maxBulletWordCount) words."
+            }
+        case .array(let bullets):
+            if bullets.count > maxBulletArrayItemCount {
+                return "Too many bullets in one patch. Keep bullet arrays to \(maxBulletArrayItemCount) items or fewer."
+            }
+
+            for item in bullets {
+                guard case let .string(text) = item else {
+                    return "Bullet entries must be plain text."
+                }
+                if wordCount(text) > maxBulletWordCount || text.count > maxBulletCharacterCount {
+                    return "Bullet text is too long. Keep each bullet under \(maxBulletWordCount) words."
+                }
+            }
+        default:
+            return "Bullet changes must be plain text."
+        }
+
+        return nil
+    }
+
+    private static func isSummaryPath(_ tokens: [String]) -> Bool {
+        tokens.count == 1 && tokens[0] == "summary"
+    }
+
+    private static func isBulletPath(_ tokens: [String]) -> Bool {
+        isExperienceResponsibilitiesPath(tokens) || isProjectDescriptionPath(tokens)
+    }
+
+    private static func isExperienceResponsibilitiesPath(_ tokens: [String]) -> Bool {
+        guard tokens.count >= 3 else { return false }
+        return tokens[0] == "experience"
+            && Int(tokens[1]) != nil
+            && tokens[2] == "responsibilities"
+    }
+
+    private static func isProjectDescriptionPath(_ tokens: [String]) -> Bool {
+        guard tokens.count >= 3 else { return false }
+        return tokens[0] == "projects"
+            && Int(tokens[1]) != nil
+            && tokens[2] == "description"
+    }
+
+    private static func wordCount(_ text: String) -> Int {
+        text.split(whereSeparator: \.isWhitespace).count
     }
 
     private static func tokens(from pointer: String) -> [String] {
