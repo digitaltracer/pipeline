@@ -7,6 +7,10 @@ struct JobCardView: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
+    private var salaryText: String {
+        application.salaryRange ?? "—"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Header: Avatar + Role/Company + Priority Flag
@@ -24,10 +28,12 @@ struct JobCardView: View {
                         .fontWeight(.semibold)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
 
                     Text(application.companyName)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
+                        .lineLimit(1)
                 }
 
                 Spacer()
@@ -58,39 +64,38 @@ struct JobCardView: View {
 
                 Spacer()
 
-                if let salaryRange = application.salaryRange {
-                    HStack(spacing: 4) {
-                        Image(systemName: "dollarsign.circle.fill")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                        Text(salaryRange)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
+                HStack(spacing: 4) {
+                    Image(systemName: "dollarsign.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                    Text(salaryText)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
+                .opacity(application.salaryRange == nil ? 0.75 : 1)
             }
 
             // Stage/Offer Tag & Follow-up Date
-            if application.interviewStage != nil || application.status == .offered || application.nextFollowUpDate != nil {
-                HStack {
-                    if application.status == .interviewing, let stage = application.interviewStage {
-                        TagBadge(text: stage.displayName, color: stage.color, size: .small)
-                    } else if application.status == .offered {
-                        TagBadge(text: "Offer Extended", color: .orange, icon: "gift.fill", size: .small)
-                    }
-
-                    Spacer()
-
-                    if let followUpDate = application.nextFollowUpDate {
-                        HStack(spacing: 4) {
-                            Image(systemName: "calendar")
-                                .font(.system(size: 11))
-                            Text(followUpDate.formatted(date: .abbreviated, time: .omitted))
-                                .font(.caption)
-                        }
-                        .foregroundColor(followUpDate < Date() ? .red : .secondary)
-                    }
+            HStack {
+                if application.status == .interviewing, let stage = application.interviewStage {
+                    TagBadge(text: stage.displayName, color: stage.color, size: .small)
+                } else if application.status == .offered {
+                    TagBadge(text: "Offer Extended", color: .orange, icon: "gift.fill", size: .small)
+                } else {
+                    TagBadge(text: "—", color: .secondary, size: .small)
+                        .opacity(0.75)
                 }
+
+                Spacer()
+
+                HStack(spacing: 4) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 11))
+                    Text(application.nextFollowUpDate?.formatted(date: .abbreviated, time: .omitted) ?? "—")
+                        .font(.caption)
+                }
+                .foregroundColor(application.nextFollowUpDate.map { $0 < Date() } == true ? .red : .secondary)
+                .opacity(application.nextFollowUpDate == nil ? 0.75 : 1)
             }
         }
         .padding()

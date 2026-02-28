@@ -593,8 +593,11 @@ struct ResumeMasterHistoryView: View {
 struct ResumeTailoringView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) private var colorScheme
 
     @Bindable var application: JobApplication
+    private let onClose: (() -> Void)?
+    private let onUnsavedChangesChanged: ((Bool) -> Void)?
 
     @State private var settingsViewModel = SettingsViewModel()
     @State private var masterRevision: ResumeMasterRevision?
@@ -604,17 +607,36 @@ struct ResumeTailoringView: View {
     @State private var patches: [ResumePatch] = []
     @State private var sectionGaps: [String] = []
     @State private var safetyRejections: [ResumePatchRejection] = []
+    @State private var collapsedPatchIDs: Set<UUID> = []
 
     @State private var acceptedPatchIDs: Set<UUID> = []
     @State private var rejectedPatchIDs: Set<UUID> = []
 
     @State private var editedJSON = ""
     @State private var actionError: String?
+    @State private var decisionToast: DecisionToast?
+    @State private var lastDecisionSnapshot: DecisionSnapshot?
+    @State private var toastDismissTask: Task<Void, Never>?
 
     @State private var exportingJSON = false
     @State private var jsonDocument = ResumeJSONFileDocument(text: "{}")
     @State private var exportingPDF = false
     @State private var pdfDocument = ResumePDFFileDocument(data: Data())
+    @State private var hasTriggeredInitialGeneration = false
+    @State private var lastPersistedJSON = ""
+    @State private var lastPersistedAcceptedPatchIDs: Set<UUID> = []
+    @State private var lastPersistedRejectedPatchIDs: Set<UUID> = []
+    @State private var showingDiscardChangesConfirmation = false
+
+    init(
+        application: JobApplication,
+        onClose: (() -> Void)? = nil,
+        onUnsavedChangesChanged: ((Bool) -> Void)? = nil
+    ) {
+        self.application = application
+        self.onClose = onClose
+        self.onUnsavedChangesChanged = onUnsavedChangesChanged
+    }
 
     var body: some View {
         NavigationStack {
@@ -628,12 +650,27 @@ struct ResumeTailoringView: View {
             .navigationTitle("Tailor Resume")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
+                    Button("Close") { requestClose() }
+                        .keyboardShortcut(.cancelAction)
                 }
             }
         }
+#if os(macOS)
+        .frame(minWidth: 1220, idealWidth: 1320, minHeight: 760, idealHeight: 880)
+#endif
         .onAppear {
             runPreflight()
+            triggerInitialGenerationIfNeeded()
+            publishUnsavedChangesState()
+        }
+        .onChange(of: editedJSON) { _, _ in
+            publishUnsavedChangesState()
+        }
+        .onChange(of: acceptedPatchIDs) { _, _ in
+            publishUnsavedChangesState()
+        }
+        .onChange(of: rejectedPatchIDs) { _, _ in
+            publishUnsavedChangesState()
         }
         .fileExporter(
             isPresented: $exportingJSON,
@@ -655,6 +692,33 @@ struct ResumeTailoringView: View {
         } message: {
             Text(actionError ?? "Unknown error")
         }
+        .alert("Discard unsaved changes?", isPresented: $showingDiscardChangesConfirmation) {
+            Button("Discard Changes", role: .destructive) {
+                closeTailoringView()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You have unsaved changes. Close without saving?")
+        }
+        .safeAreaInset(edge: .bottom) {
+            if preflightError == nil, !patches.isEmpty {
+                draftSummaryBar
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 10)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let decisionToast {
+                decisionToastView(decisionToast)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, patches.isEmpty ? 16 : 110)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .onDisappear {
+            toastDismissTask?.cancel()
+        }
     }
 
     private var contentView: some View {
@@ -666,19 +730,10 @@ struct ResumeTailoringView: View {
                         .foregroundColor(.secondary)
 
                     Spacer()
+                }
 
-                    Button {
-                        Task { await generateSuggestions() }
-                    } label: {
-                        if isGenerating {
-                            ProgressView()
-                        } else {
-                            Label("Generate Suggestions", systemImage: "sparkles")
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(DesignSystem.Colors.accent)
-                    .disabled(isGenerating)
+                if isGenerating {
+                    generationInProgressCard
                 }
 
                 if !sectionGaps.isEmpty {
@@ -729,26 +784,6 @@ struct ResumeTailoringView: View {
                                 RoundedRectangle(cornerRadius: 10)
                                     .fill(Color.secondary.opacity(0.08))
                             )
-
-                        HStack(spacing: 10) {
-                            Button("Export JSON") {
-                                exportJSON()
-                            }
-                            .buttonStyle(.bordered)
-
-                            Button("Export PDF") {
-                                Task { await exportPDF() }
-                            }
-                            .buttonStyle(.bordered)
-
-                            Spacer()
-
-                            Button("Save Tailored Resume") {
-                                saveSnapshot()
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(DesignSystem.Colors.accent)
-                        }
                     }
                     .padding(12)
                     .appCard(cornerRadius: 10, elevated: true, shadow: false)
@@ -771,78 +806,601 @@ struct ResumeTailoringView: View {
         }
     }
 
-    private func patchCard(_ patch: ResumePatch) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(patch.operation.rawValue.capitalized)
-                    .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(Color.secondary.opacity(0.18)))
-
-                Text(patch.path)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                if patch.operation == .remove {
-                    Label("Deletion", systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption2)
-                        .foregroundColor(.orange)
-                }
-
-                Spacer()
-            }
-
+    private var generationInProgressCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Before")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text(patch.beforeValue?.displayText ?? "<empty>")
-                        .font(.caption)
-                        .textSelection(.enabled)
+                ZStack {
+                    Circle()
+                        .fill(DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.22 : 0.14))
+                        .frame(width: 34, height: 34)
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(DesignSystem.Colors.accent)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("After")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text(patch.afterValue?.displayText ?? "<removed>")
-                        .font(.caption)
-                        .textSelection(.enabled)
+                    Text("Generating Tailored Suggestions")
+                        .font(.headline)
+                    Text("Analyzing the job description, mapping your experience, and producing safe resume patches.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Text(patch.reason)
-                .font(.caption)
-                .foregroundColor(.secondary)
+            ProgressView()
+                .progressViewStyle(.linear)
+                .tint(DesignSystem.Colors.accent)
 
-            HStack(spacing: 10) {
-                Button {
-                    acceptedPatchIDs.insert(patch.id)
-                    rejectedPatchIDs.remove(patch.id)
-                    refreshEditedJSON()
-                } label: {
-                    Label("Accept", systemImage: acceptedPatchIDs.contains(patch.id) ? "checkmark.circle.fill" : "circle")
-                }
-                .buttonStyle(.bordered)
-
-                Button {
-                    rejectedPatchIDs.insert(patch.id)
-                    acceptedPatchIDs.remove(patch.id)
-                    refreshEditedJSON()
-                } label: {
-                    Label("Reject", systemImage: rejectedPatchIDs.contains(patch.id) ? "xmark.circle.fill" : "circle")
-                }
-                .buttonStyle(.bordered)
-
-                Spacer()
+            HStack(spacing: 8) {
+                statusChip("Extracting role requirements")
+                statusChip("Matching resume evidence")
+                statusChip("Validating safe edits")
             }
         }
-        .padding(12)
-        .appCard(cornerRadius: 10, elevated: true, shadow: false)
+        .padding(14)
+        .appCard(cornerRadius: 12, elevated: true, shadow: false)
+    }
+
+    private func patchCard(_ patch: ResumePatch) -> some View {
+        let isCollapsed = collapsedPatchIDs.contains(patch.id)
+        let beforeText = patch.beforeValue?.displayText ?? "<empty>"
+        let afterText = patch.afterValue?.displayText ?? "<removed>"
+        let diffRows = ResumePatchSplitDiff.makeRows(before: beforeText, after: afterText)
+
+        return VStack(alignment: .leading, spacing: 12) {
+            patchHeaderRow(for: patch, isCollapsed: isCollapsed)
+
+            if !isCollapsed {
+                patchComparisonSection(rows: diffRows)
+                reasonBox(reason: patch.reason)
+                decisionRow(for: patch)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(colorScheme == .dark ? Color(red: 0.12, green: 0.15, blue: 0.21) : Color(red: 0.93, green: 0.94, blue: 0.96))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.09), lineWidth: 1)
+        )
+    }
+
+    private func patchHeaderRow(for patch: ResumePatch, isCollapsed: Bool) -> some View {
+        HStack(spacing: 10) {
+            Text(patch.operation.rawValue.uppercased())
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.26 : 0.16)))
+                .foregroundStyle(colorScheme == .dark ? Color.blue.opacity(0.92) : Color.blue.opacity(0.9))
+
+            Text(patch.path)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+
+            if let status = decisionStatus(for: patch) {
+                decisionStatusBadge(status)
+            }
+
+            Spacer()
+
+            Button {
+                if isCollapsed {
+                    collapsedPatchIDs.remove(patch.id)
+                } else {
+                    collapsedPatchIDs.insert(patch.id)
+                }
+            } label: {
+                Image(systemName: isCollapsed ? "chevron.down" : "chevron.up")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func patchComparisonSection(rows: [ResumePatchSplitDiff.Row]) -> some View {
+        VStack(spacing: 0) {
+            githubSplitHeaderRow
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                githubSplitRow(row)
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(colorScheme == .dark ? Color(red: 0.09, green: 0.11, blue: 0.16) : Color(red: 0.96, green: 0.97, blue: 0.99))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    private var githubSplitHeaderRow: some View {
+        HStack(spacing: 0) {
+            Text("Old")
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 58)
+            Divider()
+            Text("New")
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 58)
+        }
+        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .background(
+            colorScheme == .dark
+                ? Color.white.opacity(0.06)
+                : Color.black.opacity(0.04)
+        )
+    }
+
+    private func githubSplitRow(_ row: ResumePatchSplitDiff.Row) -> some View {
+        HStack(spacing: 0) {
+            githubSplitCell(
+                lineNumber: row.oldLine,
+                tokens: row.oldTokens,
+                side: .old
+            )
+
+            Divider()
+
+            githubSplitCell(
+                lineNumber: row.newLine,
+                tokens: row.newTokens,
+                side: .new
+            )
+        }
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(colorScheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.04))
+                .frame(height: 0.5)
+        }
+    }
+
+    private enum SplitSide {
+        case old
+        case new
+    }
+
+    private func githubSplitCell(
+        lineNumber: Int?,
+        tokens: [ResumePatchSplitDiff.Token],
+        side: SplitSide
+    ) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            Text(lineNumber.map(String.init) ?? "")
+                .frame(width: 48, alignment: .trailing)
+                .foregroundStyle(.secondary)
+                .padding(.trailing, 8)
+
+            Text(makeSplitDiffAttributedText(tokens: tokens, side: side))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+        }
+        .font(.system(size: 12, weight: .regular, design: .monospaced))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(splitCellBackgroundColor(tokens: tokens, side: side))
+    }
+
+    private func splitCellBackgroundColor(tokens: [ResumePatchSplitDiff.Token], side: SplitSide) -> Color {
+        switch side {
+        case .old:
+            let hasRemoved = tokens.contains { $0.kind == .removed }
+            return hasRemoved
+                ? (colorScheme == .dark ? Color.red.opacity(0.12) : Color.red.opacity(0.07))
+                : .clear
+        case .new:
+            let hasAdded = tokens.contains { $0.kind == .added }
+            return hasAdded
+                ? (colorScheme == .dark ? Color.green.opacity(0.12) : Color.green.opacity(0.07))
+                : .clear
+        }
+    }
+
+    private func makeSplitDiffAttributedText(
+        tokens: [ResumePatchSplitDiff.Token],
+        side: SplitSide
+    ) -> AttributedString {
+        var attributed = AttributedString()
+        let values = tokens.isEmpty ? [""] : tokens.map(\.value)
+
+        for index in values.indices {
+            let token = tokens.isEmpty ? ResumePatchSplitDiff.Token(value: "", kind: .unchanged) : tokens[index]
+            var segment = AttributedString(token.value)
+            segment.foregroundColor = colorScheme == .dark ? Color.white.opacity(0.86) : Color.black.opacity(0.78)
+
+            if token.kind == .removed, side == .old {
+                segment.foregroundColor = colorScheme == .dark ? Color.red.opacity(0.9) : Color.red.opacity(0.84)
+                segment.backgroundColor = colorScheme == .dark ? Color.red.opacity(0.22) : Color.red.opacity(0.18)
+                segment.strikethroughStyle = .single
+            } else if token.kind == .added, side == .new {
+                segment.foregroundColor = colorScheme == .dark ? Color.green.opacity(0.92) : Color.green.opacity(0.84)
+                segment.backgroundColor = colorScheme == .dark ? Color.green.opacity(0.2) : Color.green.opacity(0.16)
+            }
+
+            attributed += segment
+            if index < values.count - 1 {
+                attributed += AttributedString(" ")
+            }
+        }
+
+        return attributed
+    }
+
+    private func reasonBox(reason: String) -> some View {
+        HStack(alignment: .top, spacing: 4) {
+            Text("Why:")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.blue.opacity(colorScheme == .dark ? 0.9 : 0.84))
+            Text(reason)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(colorScheme == .dark ? Color.blue.opacity(0.12) : Color.blue.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(colorScheme == .dark ? Color.blue.opacity(0.25) : Color.blue.opacity(0.2), lineWidth: 1)
+        )
+    }
+
+    private func decisionRow(for patch: ResumePatch) -> some View {
+        HStack(spacing: 10) {
+            tailoringDecisionButton(
+                title: "Accept",
+                icon: "checkmark",
+                isActive: acceptedPatchIDs.contains(patch.id),
+                tint: Color.green,
+                action: {
+                    applyPatchDecision(.accept, for: patch)
+                }
+            )
+
+            tailoringDecisionButton(
+                title: "Reject",
+                icon: "xmark",
+                isActive: rejectedPatchIDs.contains(patch.id),
+                tint: Color.gray,
+                action: {
+                    applyPatchDecision(.reject, for: patch)
+                }
+            )
+
+            Spacer()
+        }
+    }
+
+    private func decisionStatusBadge(_ status: PatchDecisionStatus) -> some View {
+        Label(status.title, systemImage: status.icon)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .foregroundStyle(status.foregroundColor)
+            .background(Capsule().fill(status.fillColor.opacity(colorScheme == .dark ? 0.24 : 0.16)))
+            .overlay(
+                Capsule()
+                    .stroke(status.fillColor.opacity(0.38), lineWidth: 1)
+            )
+    }
+
+    private func tailoringDecisionButton(
+        title: String,
+        icon: String,
+        isActive: Bool,
+        tint: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(isActive ? tint.opacity(colorScheme == .dark ? 0.28 : 0.2) : Color.secondary.opacity(colorScheme == .dark ? 0.14 : 0.12))
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(isActive ? tint.opacity(0.55) : Color.secondary.opacity(0.22), lineWidth: 1)
+                )
+                .foregroundStyle(isActive ? tint : Color.secondary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private enum PatchDecisionAction {
+        case accept
+        case reject
+    }
+
+    private enum PatchDecisionStatus {
+        case accepted
+        case rejected
+
+        var title: String {
+            switch self {
+            case .accepted: return "Accepted"
+            case .rejected: return "Rejected"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .accepted: return "checkmark.circle.fill"
+            case .rejected: return "xmark.circle.fill"
+            }
+        }
+
+        var fillColor: Color {
+            switch self {
+            case .accepted: return .green
+            case .rejected: return .gray
+            }
+        }
+
+        var foregroundColor: Color {
+            switch self {
+            case .accepted: return Color.green.opacity(0.95)
+            case .rejected: return .secondary
+            }
+        }
+    }
+
+    private enum ToastStyle {
+        case success
+        case neutral
+
+        var icon: String {
+            switch self {
+            case .success: return "checkmark.circle.fill"
+            case .neutral: return "info.circle.fill"
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .success: return .green
+            case .neutral: return .blue
+            }
+        }
+    }
+
+    private struct DecisionSnapshot {
+        let acceptedPatchIDs: Set<UUID>
+        let rejectedPatchIDs: Set<UUID>
+    }
+
+    private struct DecisionToast: Identifiable {
+        let id = UUID()
+        let message: String
+        let style: ToastStyle
+        let showsUndo: Bool
+    }
+
+    private var hasDraftChanges: Bool {
+        editedJSON != lastPersistedJSON
+            || acceptedPatchIDs != lastPersistedAcceptedPatchIDs
+            || rejectedPatchIDs != lastPersistedRejectedPatchIDs
+    }
+
+    private var unresolvedPatchCount: Int {
+        max(0, patches.count - acceptedPatchIDs.count - rejectedPatchIDs.count)
+    }
+
+    private var draftSummaryBar: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 8) {
+                summaryChip(
+                    title: "Accepted \(acceptedPatchIDs.count)",
+                    icon: "checkmark.circle.fill",
+                    tint: .green
+                )
+                summaryChip(
+                    title: "Rejected \(rejectedPatchIDs.count)",
+                    icon: "xmark.circle.fill",
+                    tint: .gray
+                )
+                summaryChip(
+                    title: "Pending \(unresolvedPatchCount)",
+                    icon: "clock.fill",
+                    tint: .orange
+                )
+            }
+
+            Spacer()
+
+            Text(hasDraftChanges ? "Unsaved changes" : "No unsaved changes")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(hasDraftChanges ? Color.orange.opacity(0.9) : .secondary)
+
+            Button("Export JSON") {
+                exportJSON()
+            }
+            .buttonStyle(.bordered)
+
+            Button("Export PDF") {
+                Task { await exportPDF() }
+            }
+            .buttonStyle(.bordered)
+
+            Button("Save Tailored Resume") {
+                saveSnapshot()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(DesignSystem.Colors.accent)
+            .disabled(!hasDraftChanges)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(colorScheme == .dark ? Color(red: 0.10, green: 0.12, blue: 0.18) : Color(red: 0.93, green: 0.95, blue: 0.99))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    private func summaryChip(title: String, icon: String, tint: Color) -> some View {
+        Label(title, systemImage: icon)
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .foregroundStyle(tint.opacity(colorScheme == .dark ? 0.95 : 0.88))
+            .background(
+                Capsule()
+                    .fill(tint.opacity(colorScheme == .dark ? 0.2 : 0.14))
+            )
+            .overlay(
+                Capsule()
+                    .stroke(tint.opacity(0.34), lineWidth: 1)
+            )
+    }
+
+    private func statusChip(_ title: String) -> some View {
+        HStack(spacing: 5) {
+            ProgressView()
+                .controlSize(.small)
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(
+            Capsule()
+                .fill(Color.secondary.opacity(colorScheme == .dark ? 0.18 : 0.12))
+        )
+    }
+
+    private func decisionToastView(_ toast: DecisionToast) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: toast.style.icon)
+                .foregroundStyle(toast.style.tint)
+
+            Text(toast.message)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+
+            Spacer()
+
+            if toast.showsUndo {
+                Button("Undo") {
+                    undoLastDecision()
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(colorScheme == .dark ? Color(red: 0.11, green: 0.13, blue: 0.18) : Color.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.1), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.28 : 0.12), radius: 10, y: 3)
+    }
+
+    private func decisionStatus(for patch: ResumePatch) -> PatchDecisionStatus? {
+        if acceptedPatchIDs.contains(patch.id) {
+            return .accepted
+        }
+        if rejectedPatchIDs.contains(patch.id) {
+            return .rejected
+        }
+        return nil
+    }
+
+    private func applyPatchDecision(_ action: PatchDecisionAction, for patch: ResumePatch) {
+        let snapshot = DecisionSnapshot(
+            acceptedPatchIDs: acceptedPatchIDs,
+            rejectedPatchIDs: rejectedPatchIDs
+        )
+
+        switch action {
+        case .accept:
+            acceptedPatchIDs.insert(patch.id)
+            rejectedPatchIDs.remove(patch.id)
+            collapsedPatchIDs.insert(patch.id)
+            refreshEditedJSON()
+            publishUnsavedChangesState()
+            presentDecisionToast(
+                message: "Accepted \(patch.path). Draft JSON updated.",
+                style: .success,
+                showsUndo: true,
+                snapshot: snapshot
+            )
+        case .reject:
+            rejectedPatchIDs.insert(patch.id)
+            acceptedPatchIDs.remove(patch.id)
+            collapsedPatchIDs.insert(patch.id)
+            refreshEditedJSON()
+            publishUnsavedChangesState()
+            presentDecisionToast(
+                message: "Rejected \(patch.path). Draft JSON updated.",
+                style: .neutral,
+                showsUndo: true,
+                snapshot: snapshot
+            )
+        }
+    }
+
+    private func undoLastDecision() {
+        guard let lastDecisionSnapshot else { return }
+        acceptedPatchIDs = lastDecisionSnapshot.acceptedPatchIDs
+        rejectedPatchIDs = lastDecisionSnapshot.rejectedPatchIDs
+        refreshEditedJSON()
+        publishUnsavedChangesState()
+        presentDecisionToast(
+            message: "Undid last decision.",
+            style: .neutral,
+            showsUndo: false,
+            snapshot: nil
+        )
+    }
+
+    private func presentDecisionToast(
+        message: String,
+        style: ToastStyle,
+        showsUndo: Bool,
+        snapshot: DecisionSnapshot?
+    ) {
+        toastDismissTask?.cancel()
+        lastDecisionSnapshot = snapshot
+
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+            decisionToast = DecisionToast(
+                message: message,
+                style: style,
+                showsUndo: showsUndo
+            )
+        }
+
+        toastDismissTask = Task {
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    decisionToast = nil
+                }
+                lastDecisionSnapshot = nil
+            }
+        }
     }
 
     private func runPreflight() {
@@ -884,6 +1442,40 @@ struct ResumeTailoringView: View {
 
         preflightError = nil
         editedJSON = masterRevision?.rawJSON ?? ""
+        lastPersistedJSON = editedJSON
+        lastPersistedAcceptedPatchIDs = []
+        lastPersistedRejectedPatchIDs = []
+        collapsedPatchIDs = []
+        decisionToast = nil
+        lastDecisionSnapshot = nil
+        toastDismissTask?.cancel()
+        publishUnsavedChangesState()
+    }
+
+    private func triggerInitialGenerationIfNeeded() {
+        guard !hasTriggeredInitialGeneration, preflightError == nil else { return }
+        hasTriggeredInitialGeneration = true
+        Task { await generateSuggestions() }
+    }
+
+    private func closeTailoringView() {
+        if let onClose {
+            onClose()
+        } else {
+            dismiss()
+        }
+    }
+
+    private func requestClose() {
+        if hasDraftChanges {
+            showingDiscardChangesConfirmation = true
+            return
+        }
+        closeTailoringView()
+    }
+
+    private func publishUnsavedChangesState() {
+        onUnsavedChangesChanged?(hasDraftChanges)
     }
 
     @MainActor
@@ -914,18 +1506,7 @@ struct ResumeTailoringView: View {
                 )
             }
 
-            let validation = try ResumePatchSafetyValidator.validate(
-                patches: result.patches,
-                originalJSON: masterRevision.rawJSON
-            )
-
-            patches = validation.accepted
-            safetyRejections = validation.rejected
-            sectionGaps = result.sectionGaps
-
-            acceptedPatchIDs = []
-            rejectedPatchIDs = []
-            refreshEditedJSON()
+            try applyTailoringResult(result, originalJSON: masterRevision.rawJSON)
         } catch let keyError as SettingsViewModel.APIKeyValidationError {
             actionError = keyError.localizedDescription
         } catch {
@@ -933,17 +1514,41 @@ struct ResumeTailoringView: View {
         }
     }
 
+    private func applyTailoringResult(_ result: ResumeTailoringResult, originalJSON: String) throws {
+        let validation = try ResumePatchSafetyValidator.validate(
+            patches: result.patches,
+            originalJSON: originalJSON
+        )
+
+        patches = validation.accepted
+        safetyRejections = validation.rejected
+        sectionGaps = result.sectionGaps
+        collapsedPatchIDs = []
+
+        acceptedPatchIDs = []
+        rejectedPatchIDs = []
+        refreshEditedJSON()
+        lastPersistedJSON = editedJSON
+        lastPersistedAcceptedPatchIDs = acceptedPatchIDs
+        lastPersistedRejectedPatchIDs = rejectedPatchIDs
+        decisionToast = nil
+        lastDecisionSnapshot = nil
+        toastDismissTask?.cancel()
+        publishUnsavedChangesState()
+    }
+
     private func refreshEditedJSON() {
-        guard let masterRevision else { return }
+        let baseJSON = masterRevision?.rawJSON
+        guard let baseJSON else { return }
 
         do {
             editedJSON = try ResumePatchApplier.apply(
                 patches: patches,
                 acceptedPatchIDs: acceptedPatchIDs,
-                to: masterRevision.rawJSON
+                to: baseJSON
             )
         } catch {
-            editedJSON = masterRevision.rawJSON
+            editedJSON = baseJSON
         }
     }
 
@@ -959,7 +1564,11 @@ struct ResumeTailoringView: View {
                 sourceMasterRevisionID: masterRevision?.id,
                 in: modelContext
             )
-            dismiss()
+            lastPersistedJSON = validated.normalizedJSON
+            lastPersistedAcceptedPatchIDs = acceptedPatchIDs
+            lastPersistedRejectedPatchIDs = rejectedPatchIDs
+            publishUnsavedChangesState()
+            closeTailoringView()
         } catch {
             actionError = error.localizedDescription
         }
@@ -985,6 +1594,154 @@ struct ResumeTailoringView: View {
     }
 }
 
+private enum ResumePatchSplitDiff {
+    enum TokenKind {
+        case unchanged
+        case removed
+        case added
+    }
+
+    struct Token {
+        let value: String
+        let kind: TokenKind
+    }
+
+    struct Row {
+        let oldLine: Int?
+        let newLine: Int?
+        let oldTokens: [Token]
+        let newTokens: [Token]
+    }
+
+    static func makeRows(before: String, after: String) -> [Row] {
+        let beforeWords = tokenize(before)
+        let afterWords = tokenize(after)
+        let common = longestCommonSubsequence(beforeWords, afterWords)
+
+        var beforeTokens: [Token] = []
+        var afterTokens: [Token] = []
+        var beforeIndex = 0
+        var afterIndex = 0
+
+        for sharedWord in common {
+            while beforeIndex < beforeWords.count && beforeWords[beforeIndex] != sharedWord {
+                beforeTokens.append(Token(value: beforeWords[beforeIndex], kind: .removed))
+                beforeIndex += 1
+            }
+            while afterIndex < afterWords.count && afterWords[afterIndex] != sharedWord {
+                afterTokens.append(Token(value: afterWords[afterIndex], kind: .added))
+                afterIndex += 1
+            }
+
+            if beforeIndex < beforeWords.count {
+                beforeTokens.append(Token(value: beforeWords[beforeIndex], kind: .unchanged))
+                beforeIndex += 1
+            }
+            if afterIndex < afterWords.count {
+                afterTokens.append(Token(value: afterWords[afterIndex], kind: .unchanged))
+                afterIndex += 1
+            }
+        }
+
+        while beforeIndex < beforeWords.count {
+            beforeTokens.append(Token(value: beforeWords[beforeIndex], kind: .removed))
+            beforeIndex += 1
+        }
+        while afterIndex < afterWords.count {
+            afterTokens.append(Token(value: afterWords[afterIndex], kind: .added))
+            afterIndex += 1
+        }
+
+        let oldLines = wrap(tokens: beforeTokens)
+        let newLines = wrap(tokens: afterTokens)
+        let rowCount = max(oldLines.count, newLines.count)
+
+        var rows: [Row] = []
+        for index in 0..<rowCount {
+            let oldTokens = index < oldLines.count ? oldLines[index] : []
+            let newTokens = index < newLines.count ? newLines[index] : []
+            rows.append(
+                Row(
+                    oldLine: oldTokens.isEmpty ? nil : index + 1,
+                    newLine: newTokens.isEmpty ? nil : index + 1,
+                    oldTokens: oldTokens,
+                    newTokens: newTokens
+                )
+            )
+        }
+
+        return rows
+    }
+
+    private static func tokenize(_ text: String) -> [String] {
+        text
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+    }
+
+    private static func wrap(tokens: [Token], maxCharacters: Int = 72) -> [[Token]] {
+        guard !tokens.isEmpty else { return [] }
+
+        var lines: [[Token]] = []
+        var currentLine: [Token] = []
+        var currentCount = 0
+
+        for token in tokens {
+            let tokenWidth = token.value.count + (currentLine.isEmpty ? 0 : 1)
+            if !currentLine.isEmpty && currentCount + tokenWidth > maxCharacters {
+                lines.append(currentLine)
+                currentLine = [token]
+                currentCount = token.value.count
+            } else {
+                currentLine.append(token)
+                currentCount += tokenWidth
+            }
+        }
+
+        if !currentLine.isEmpty {
+            lines.append(currentLine)
+        }
+
+        return lines
+    }
+
+    private static func longestCommonSubsequence(_ lhs: [String], _ rhs: [String]) -> [String] {
+        guard !lhs.isEmpty, !rhs.isEmpty else { return [] }
+
+        let n = lhs.count
+        let m = rhs.count
+        var dp = Array(repeating: Array(repeating: 0, count: m + 1), count: n + 1)
+
+        for i in 1...n {
+            for j in 1...m {
+                if lhs[i - 1] == rhs[j - 1] {
+                    dp[i][j] = dp[i - 1][j - 1] + 1
+                } else {
+                    dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
+                }
+            }
+        }
+
+        var i = n
+        var j = m
+        var result: [String] = []
+
+        while i > 0, j > 0 {
+            if lhs[i - 1] == rhs[j - 1] {
+                result.append(lhs[i - 1])
+                i -= 1
+                j -= 1
+            } else if dp[i - 1][j] >= dp[i][j - 1] {
+                i -= 1
+            } else {
+                j -= 1
+            }
+        }
+
+        return result.reversed()
+    }
+}
+
 struct JobResumePanel: View {
     @Environment(\.modelContext) private var modelContext
 
@@ -992,6 +1749,9 @@ struct JobResumePanel: View {
 
     @State private var showingTailor = false
     @State private var actionError: String?
+    #if os(macOS)
+    @State private var tailorWindowPresenter = TailorResumeWindowPresenter()
+    #endif
 
     @State private var exportingJSON = false
     @State private var jsonDocument = ResumeJSONFileDocument(text: "{}")
@@ -1010,7 +1770,11 @@ struct JobResumePanel: View {
                 Spacer()
 
                 Button {
+                    #if os(macOS)
+                    presentTailorWindow()
+                    #else
                     showingTailor = true
+                    #endif
                 } label: {
                     Label("Tailor Resume", systemImage: "sparkles")
                 }
@@ -1084,6 +1848,16 @@ struct JobResumePanel: View {
         }
     }
 
+#if os(macOS)
+    @MainActor
+    private func presentTailorWindow() {
+        tailorWindowPresenter.present(
+            application: application,
+            modelContainer: modelContext.container
+        )
+    }
+#endif
+
     private func deleteSnapshot(_ snapshot: ResumeJobSnapshot) {
         do {
             try ResumeStoreService.deleteJobSnapshot(snapshot, in: modelContext)
@@ -1111,6 +1885,81 @@ struct JobResumePanel: View {
         }
     }
 }
+
+#if os(macOS)
+private final class EscapeClosableWindow: NSWindow {
+    override func sendEvent(_ event: NSEvent) {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if event.type == .keyDown, event.keyCode == 53, modifiers.isEmpty {
+            performClose(nil)
+            return
+        }
+        super.sendEvent(event)
+    }
+}
+
+@MainActor
+private final class TailorResumeWindowPresenter: NSObject, NSWindowDelegate {
+    private var window: NSWindow?
+    private var hasUnsavedChanges = false
+
+    func present(
+        application: JobApplication,
+        modelContainer: ModelContainer
+    ) {
+        hasUnsavedChanges = false
+        let rootView = ResumeTailoringView(
+            application: application,
+            onClose: { [weak self] in
+                self?.hasUnsavedChanges = false
+                self?.window?.performClose(nil)
+            },
+            onUnsavedChangesChanged: { [weak self] hasUnsavedChanges in
+                self?.hasUnsavedChanges = hasUnsavedChanges
+            }
+        )
+        .modelContainer(modelContainer)
+
+        if let window {
+            window.contentViewController = NSHostingController(rootView: rootView)
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let hostingController = NSHostingController(rootView: rootView)
+        let window = EscapeClosableWindow(contentViewController: hostingController)
+        window.title = "Tailor Resume"
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.setContentSize(NSSize(width: 1320, height: 880))
+        window.minSize = NSSize(width: 1120, height: 760)
+        window.center()
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        self.window = window
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        window = nil
+        hasUnsavedChanges = false
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard hasUnsavedChanges else { return true }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Discard unsaved changes?"
+        alert.informativeText = "You have unsaved changes in Tailor Resume. Close without saving?"
+        alert.addButton(withTitle: "Discard Changes")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+}
+#endif
 
 private struct JSONCodeEditor: View {
     @Binding var text: String

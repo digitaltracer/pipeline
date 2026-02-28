@@ -31,6 +31,36 @@ public enum ResumeTailoringPrompts {
     - Output raw JSON only. No markdown, no prose.
     """
 
+    public static let compactRetrySystemPrompt = """
+    You are a precise resume tailoring assistant.
+
+    Return exactly one JSON object with this schema:
+    {
+      "patches": [
+        {
+          "id": "UUID string",
+          "path": "JSON pointer path",
+          "operation": "add" | "replace" | "remove",
+          "beforeValue": any JSON value or null,
+          "afterValue": any JSON value or null,
+          "reason": "short explanation",
+          "evidencePaths": ["JSON pointer paths from existing resume"],
+          "risk": "low" | "medium" | "high"
+        }
+      ],
+      "sectionGaps": ["short bullet strings"]
+    }
+
+    Hard limits:
+    - Keep total response under 1800 characters.
+    - Return minified JSON on a single line.
+    - Maximum 6 patches.
+    - Keep each reason under 12 words.
+    - Do not copy long original text into beforeValue. Use null if original value is long (>120 chars).
+    - Keep sectionGaps to at most 5 short items.
+    - Output raw JSON only. No markdown, no prose.
+    """
+
     public static func userPrompt(
         resumeJSON: String,
         company: String,

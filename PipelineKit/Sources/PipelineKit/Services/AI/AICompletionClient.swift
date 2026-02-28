@@ -69,6 +69,12 @@ public enum AICompletionClient {
             throw AIServiceError.invalidResponse
         }
 
+        let finishReason = (firstChoice["finish_reason"] as? String) ?? "unknown"
+        let usage = json["usage"] as? [String: Any]
+        AIParseDebugLogger.info(
+            "AICompletionClient(OpenAI): model=\(model) finish_reason=\(finishReason) prompt_tokens=\(tokenString(usage?["prompt_tokens"])) completion_tokens=\(tokenString(usage?["completion_tokens"])) total_tokens=\(tokenString(usage?["total_tokens"]))."
+        )
+
         if let text = message["content"] as? String, !text.isEmpty {
             return text.trimmingCharacters(in: .whitespacesAndNewlines)
         }
@@ -115,6 +121,13 @@ public enum AICompletionClient {
               let contentBlocks = json["content"] as? [[String: Any]] else {
             throw AIServiceError.invalidResponse
         }
+
+        let stopReason = (json["stop_reason"] as? String) ?? "unknown"
+        let stopSequence = json["stop_sequence"] as? String
+        let usage = json["usage"] as? [String: Any]
+        AIParseDebugLogger.info(
+            "AICompletionClient(Anthropic): model=\(model) stop_reason=\(stopReason) stop_sequence=\(stopSequence ?? "<nil>") input_tokens=\(tokenString(usage?["input_tokens"])) output_tokens=\(tokenString(usage?["output_tokens"]))."
+        )
 
         let text = contentBlocks
             .compactMap { block -> String? in
@@ -163,6 +176,14 @@ public enum AICompletionClient {
             throw AIServiceError.invalidResponse
         }
 
+        let usage = json["usageMetadata"] as? [String: Any]
+        let finishReasons = candidates
+            .compactMap { $0["finishReason"] as? String }
+            .joined(separator: ",")
+        AIParseDebugLogger.info(
+            "AICompletionClient(Gemini): model=\(model) finish_reasons=[\(finishReasons)] prompt_tokens=\(tokenString(usage?["promptTokenCount"])) completion_tokens=\(tokenString(usage?["candidatesTokenCount"])) total_tokens=\(tokenString(usage?["totalTokenCount"]))."
+        )
+
         for candidate in candidates {
             guard let content = candidate["content"] as? [String: Any],
                   let parts = content["parts"] as? [[String: Any]] else { continue }
@@ -172,7 +193,13 @@ public enum AICompletionClient {
                 .joined(separator: "\n")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
 
-            if !text.isEmpty { return text }
+            if !text.isEmpty {
+                let finishReason = (candidate["finishReason"] as? String) ?? "unknown"
+                AIParseDebugLogger.info(
+                    "AICompletionClient(Gemini): selected candidate finish_reason=\(finishReason) output_chars=\(text.count)."
+                )
+                return text
+            }
         }
 
         throw AIServiceError.invalidResponse
@@ -208,6 +235,10 @@ public enum AICompletionClient {
             throw AIServiceError.invalidResponse
         }
 
+        AIParseDebugLogger.info(
+            "AICompletionClient(\(providerName)): HTTP \(httpResponse.statusCode), bytes=\(data.count)."
+        )
+
         switch httpResponse.statusCode {
         case 200:
             return data
@@ -219,9 +250,29 @@ public enum AICompletionClient {
             if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let error = errorJson["error"] as? [String: Any],
                let message = error["message"] as? String {
+                AIParseDebugLogger.error(
+                    "AICompletionClient(\(providerName)): API error status=\(httpResponse.statusCode) message=\(message)."
+                )
                 throw AIServiceError.apiError(message)
             }
+            AIParseDebugLogger.error(
+                "AICompletionClient(\(providerName)): API error status=\(httpResponse.statusCode) bodyPreview=\(AIParseDebugLogger.preview(String(decoding: data, as: UTF8.self), maxLength: 280))."
+            )
             throw AIServiceError.apiError("HTTP \(httpResponse.statusCode)")
         }
+    }
+
+    private static func tokenString(_ value: Any?) -> String {
+        guard let value else { return "n/a" }
+        if let intValue = value as? Int {
+            return String(intValue)
+        }
+        if let number = value as? NSNumber {
+            return number.stringValue
+        }
+        if let text = value as? String, !text.isEmpty {
+            return text
+        }
+        return "n/a"
     }
 }

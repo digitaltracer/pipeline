@@ -113,8 +113,92 @@ import Testing
 }
 
 @Test func resumeTailoringParserRejectsMalformedJSON() {
-    #expect(throws: Error.self) {
+    do {
         _ = try ResumeTailoringService.parseResult(from: "not a json payload")
+        Issue.record("Expected parseResult to fail for malformed JSON.")
+    } catch let error as AIServiceError {
+        switch error {
+        case .parsingError(let message):
+            #expect(message.contains("not valid JSON"))
+            #expect(message.contains("AIParse"))
+        default:
+            Issue.record("Expected parsingError, got \(error)")
+        }
+    } catch {
+        Issue.record("Expected AIServiceError, got \(error)")
+    }
+}
+
+@Test func resumeTailoringParserReturnsTruncatedErrorForCutoffJSON() {
+    let payload = """
+    {
+      "patches": [
+        {
+          "id": "a4d3e8f1-c7b2-4a1e-9d0f-5b6c7a8d9e0f",
+          "path": "/summary",
+          "operation": "replace",
+          "beforeValue": "Senior backend engineer with over 9 years
+    """
+
+    do {
+        _ = try ResumeTailoringService.parseResult(from: payload)
+        Issue.record("Expected parseResult to fail for truncated JSON.")
+    } catch let error as AIServiceError {
+        switch error {
+        case .parsingError(let message):
+            #expect(message.contains("appears truncated"))
+            #expect(message.contains("AIParse"))
+        default:
+            Issue.record("Expected parsingError, got \(error)")
+        }
+    } catch {
+        Issue.record("Expected AIServiceError, got \(error)")
+    }
+}
+
+@Test func resumeTailoringParserAcceptsMarkdownWrappedSnakeCasePayload() throws {
+    let payload = """
+    ```json
+    {
+      "patches": [
+        {
+          "path": "/summary",
+          "op": "REPLACE",
+          "before": "Old summary",
+          "after": "Tailored summary",
+          "reason": "Highlight relevant impact",
+          "evidence_paths": ["/experience/0/responsibilities/0"],
+          "risk": "HIGH"
+        }
+      ],
+      "section_gaps": ["Leadership examples"]
+    }
+    ```
+    """
+
+    let result = try ResumeTailoringService.parseResult(from: payload)
+    #expect(result.patches.count == 1)
+    #expect(result.patches[0].operation == .replace)
+    #expect(result.patches[0].risk == .high)
+    #expect(result.sectionGaps == ["Leadership examples"])
+}
+
+@Test func resumeTailoringParserReturnsSchemaMismatchForWrongJSONShape() {
+    let payload = #"{"foo":"bar"}"#
+
+    do {
+        _ = try ResumeTailoringService.parseResult(from: payload)
+        Issue.record("Expected parseResult to fail for schema mismatch.")
+    } catch let error as AIServiceError {
+        switch error {
+        case .parsingError(let message):
+            #expect(message.contains("expected schema"))
+            #expect(message.contains("AIParse"))
+        default:
+            Issue.record("Expected parsingError, got \(error)")
+        }
+    } catch {
+        Issue.record("Expected AIServiceError, got \(error)")
     }
 }
 
