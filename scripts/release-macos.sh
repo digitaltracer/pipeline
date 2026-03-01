@@ -7,7 +7,7 @@ Build, sign, package, notarize, and staple a macOS release for Pipeline.
 
 Usage:
   scripts/release-macos.sh \
-    --format dmg|pkg|both \
+    [--format zip|dmg|pkg|both|all] \
     --team-id <TEAM_ID> \
     --developer-id-app-cert "<Developer ID Application cert name>" \
     [--developer-id-installer-cert "<Developer ID Installer cert name>"] \
@@ -24,11 +24,19 @@ Usage:
     [--env-file <path>]
 
 Examples:
-  scripts/release-macos.sh --env-file scripts/release-macos.env --format dmg
-  scripts/release-macos.sh --env-file scripts/release-macos.env --format both
+  scripts/release-macos.sh
+  scripts/release-macos.sh --env-file scripts/release-macos.env --format zip
+  scripts/release-macos.sh --env-file scripts/release-macos.env --format all
 
 Notes:
-  - For pkg/both, --developer-id-installer-cert is required.
+  - If scripts/release-macos.env exists, it is loaded automatically by default.
+  - Default format is dmg if --format is omitted.
+  - A notarization ZIP is always produced (required for app stapling and direct sharing).
+  - zip: notarized/stapled app + zip artifact
+  - dmg: zip + dmg
+  - pkg: zip + pkg
+  - both/all: zip + dmg + pkg
+  - For pkg/both/all, --developer-id-installer-cert is required.
   - For notarization, --notary-profile is required (unless --skip-notarization is set).
   - Provisioning profile names are auto-detected from installed profiles when possible.
 EOF
@@ -119,6 +127,77 @@ parse_bool() {
         0|false|FALSE|no|NO|off|OFF|"") echo "false" ;;
         *) die "Invalid boolean value: $1" ;;
     esac
+}
+
+contains_runtime_flag() {
+    local binary_path="$1"
+    local codesign_output=""
+    local line=""
+    local code_directory_line=""
+
+    # Read the full output first to avoid pipefail/SIGPIPE false negatives.
+    if ! codesign_output="$(codesign -d --verbose=4 "${binary_path}" 2>&1)"; then
+        return 1
+    fi
+
+    while IFS= read -r line; do
+        if [[ "${line}" == CodeDirectory* ]]; then
+            code_directory_line="${line}"
+            break
+        fi
+    done <<< "${codesign_output}"
+
+    [[ -n "${code_directory_line}" ]] || return 1
+    [[ "${code_directory_line}" == *"(runtime)"* ]]
+}
+
+check_hardened_runtime() {
+    local binary_path="$1"
+    local label="$2"
+
+    [[ -f "${binary_path}" ]] || die "Expected executable not found for ${label}: ${binary_path}"
+    if ! contains_runtime_flag "${binary_path}"; then
+        die "${label} is not signed with Hardened Runtime: ${binary_path}"
+    fi
+}
+
+submit_for_notarization() {
+    local artifact_path="$1"
+    local result_log="$2"
+    local artifact_name
+    artifact_name="$(basename "${artifact_path}")"
+
+    info "Submitting for notarization: ${artifact_name}"
+    if ! xcrun notarytool submit \
+        "${artifact_path}" \
+        --keychain-profile "${NOTARY_PROFILE}" \
+        --wait \
+        --output-format json | tee "${result_log}"; then
+        die "Notarization submission command failed for ${artifact_name}. See ${result_log}"
+    fi
+
+    local status
+    status="$(sed -n 's/.*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${result_log}" | head -n 1)"
+    if [[ "${status}" != "Accepted" ]]; then
+        local submission_id
+        submission_id="$(sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${result_log}" | head -n 1)"
+        if [[ -n "${submission_id}" ]]; then
+            local detail_log
+            detail_log="${LOGS_DIR}/notary-detail-${artifact_name}.json"
+            info "Notarization status for ${artifact_name}: ${status:-unknown}. Fetching detailed log..."
+            xcrun notarytool log "${submission_id}" --keychain-profile "${NOTARY_PROFILE}" | tee "${detail_log}" >/dev/null
+            die "Notarization failed for ${artifact_name}. See ${result_log} and ${detail_log}"
+        fi
+        die "Notarization failed for ${artifact_name}. See ${result_log}"
+    fi
+}
+
+nonfatal_spctl_assess() {
+    local target_path="$1"
+    local log_path="$2"
+    if ! spctl -a -vv "${target_path}" | tee "${log_path}"; then
+        info "Gatekeeper assessment returned non-zero for ${target_path}. Continuing; notarization status remains authoritative."
+    fi
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -275,6 +354,7 @@ done
 PROJECT_PATH="${PROJECT_PATH:-${ROOT_DIR}/Pipeline/Pipeline.xcodeproj}"
 SCHEME="${SCHEME:-Pipeline}"
 CONFIGURATION="${CONFIGURATION:-Release}"
+FORMAT="${FORMAT:-dmg}"
 OUTPUT_DIR="${OUTPUT_DIR:-${ROOT_DIR}/dist}"
 DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-Pipeline}"
 SKIP_NOTARIZATION="${SKIP_NOTARIZATION:-false}"
@@ -284,16 +364,27 @@ SKIP_NOTARIZATION="$(parse_bool "${SKIP_NOTARIZATION}")"
 ALLOW_PROVISIONING_UPDATES="$(parse_bool "${ALLOW_PROVISIONING_UPDATES}")"
 
 case "${FORMAT}" in
-    dmg|pkg|both) ;;
-    *) die "--format is required and must be one of: dmg, pkg, both" ;;
+    zip|dmg|pkg|both|all) ;;
+    *) die "--format must be one of: zip, dmg, pkg, both, all" ;;
 esac
 
 [[ -n "${TEAM_ID}" ]] || die "--team-id is required"
 [[ -n "${DEVELOPER_ID_APP_CERT}" ]] || die "--developer-id-app-cert is required"
 [[ -e "${PROJECT_PATH}" ]] || die "Project file not found: ${PROJECT_PATH}"
 
-if [[ "${FORMAT}" == "pkg" || "${FORMAT}" == "both" ]]; then
-    [[ -n "${DEVELOPER_ID_INSTALLER_CERT}" ]] || die "--developer-id-installer-cert is required for pkg/both"
+INCLUDE_DMG="false"
+INCLUDE_PKG="false"
+case "${FORMAT}" in
+    dmg) INCLUDE_DMG="true" ;;
+    pkg) INCLUDE_PKG="true" ;;
+    both|all)
+        INCLUDE_DMG="true"
+        INCLUDE_PKG="true"
+        ;;
+esac
+
+if [[ "${INCLUDE_PKG}" == "true" ]]; then
+    [[ -n "${DEVELOPER_ID_INSTALLER_CERT}" ]] || die "--developer-id-installer-cert is required for pkg/both/all"
 fi
 
 if [[ "${SKIP_NOTARIZATION}" == "false" ]]; then
@@ -305,16 +396,23 @@ require_cmd xcrun
 require_cmd codesign
 require_cmd spctl
 require_cmd security
-require_cmd hdiutil
-require_cmd productbuild
+require_cmd ditto
 require_cmd openssl
 require_cmd /usr/libexec/PlistBuddy
+
+if [[ "${INCLUDE_DMG}" == "true" ]]; then
+    require_cmd hdiutil
+fi
+
+if [[ "${INCLUDE_PKG}" == "true" ]]; then
+    require_cmd productbuild
+fi
 
 if ! security find-identity -v -p codesigning | grep -Fq "${DEVELOPER_ID_APP_CERT}"; then
     die "Developer ID Application certificate not found in keychain: ${DEVELOPER_ID_APP_CERT}"
 fi
 
-if [[ "${FORMAT}" == "pkg" || "${FORMAT}" == "both" ]]; then
+if [[ "${INCLUDE_PKG}" == "true" ]]; then
     if ! security find-identity -v -p basic | grep -Fq "${DEVELOPER_ID_INSTALLER_CERT}"; then
         die "Developer ID Installer certificate not found in keychain: ${DEVELOPER_ID_INSTALLER_CERT}"
     fi
@@ -397,14 +495,32 @@ APP_INFO_PLIST="${APP_PATH}/Contents/Info.plist"
 APP_VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "${APP_INFO_PLIST}" 2>/dev/null || echo "unknown")"
 APP_BUILD="$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "${APP_INFO_PLIST}" 2>/dev/null || echo "0")"
 ARTIFACT_BASE="${SCHEME}-${APP_VERSION}-${APP_BUILD}"
+APP_EXECUTABLE="$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "${APP_INFO_PLIST}" 2>/dev/null || true)"
+[[ -n "${APP_EXECUTABLE}" ]] || die "Could not read CFBundleExecutable from ${APP_INFO_PLIST}"
+APP_BINARY_PATH="${APP_PATH}/Contents/MacOS/${APP_EXECUTABLE}"
+NATIVE_HOST_BINARY_PATH="${APP_PATH}/Contents/MacOS/PipelineNativeHost"
+SAFARI_EXTENSION_BINARY_PATH="${APP_PATH}/Contents/PlugIns/PipelineSafariExtension.appex/Contents/MacOS/PipelineSafariExtension"
 
 info "Verifying code signature..."
 codesign --verify --deep --strict --verbose=2 "${APP_PATH}" | tee "${LOGS_DIR}/codesign-verify.log"
-spctl --assess --type execute --verbose=4 "${APP_PATH}" | tee "${LOGS_DIR}/spctl-app.log"
+codesign -d --verbose=4 "${APP_BINARY_PATH}" 2>&1 | tee "${LOGS_DIR}/codesign-main-details.log" >/dev/null
+codesign -d --verbose=4 "${NATIVE_HOST_BINARY_PATH}" 2>&1 | tee "${LOGS_DIR}/codesign-nativehost-details.log" >/dev/null
+codesign -d --verbose=4 "${SAFARI_EXTENSION_BINARY_PATH}" 2>&1 | tee "${LOGS_DIR}/codesign-safariext-details.log" >/dev/null
+check_hardened_runtime "${APP_BINARY_PATH}" "Main app executable"
+check_hardened_runtime "${NATIVE_HOST_BINARY_PATH}" "PipelineNativeHost"
+check_hardened_runtime "${SAFARI_EXTENSION_BINARY_PATH}" "PipelineSafariExtension"
+nonfatal_spctl_assess "${APP_PATH}" "${LOGS_DIR}/spctl-pre-notary.log"
 
 declare -a ARTIFACT_PATHS=()
+declare -a STAPLE_AFTER_NOTARY_PATHS=()
+DMG_PATH=""
 
-if [[ "${FORMAT}" == "dmg" || "${FORMAT}" == "both" ]]; then
+ZIP_PATH="${ARTIFACTS_DIR}/${ARTIFACT_BASE}.zip"
+info "Creating distributable ZIP..."
+ditto -c -k --sequesterRsrc --keepParent "${APP_PATH}" "${ZIP_PATH}" | tee "${LOGS_DIR}/zip-create.log"
+ARTIFACT_PATHS+=("${ZIP_PATH}")
+
+if [[ "${INCLUDE_DMG}" == "true" ]]; then
     DMG_STAGING_DIR="${WORK_DIR}/dmg-staging"
     DMG_PATH="${ARTIFACTS_DIR}/${ARTIFACT_BASE}.dmg"
 
@@ -422,9 +538,10 @@ if [[ "${FORMAT}" == "dmg" || "${FORMAT}" == "both" ]]; then
         "${DMG_PATH}" | tee "${LOGS_DIR}/dmg-create.log"
 
     ARTIFACT_PATHS+=("${DMG_PATH}")
+    STAPLE_AFTER_NOTARY_PATHS+=("${DMG_PATH}")
 fi
 
-if [[ "${FORMAT}" == "pkg" || "${FORMAT}" == "both" ]]; then
+if [[ "${INCLUDE_PKG}" == "true" ]]; then
     PKG_PATH="${ARTIFACTS_DIR}/${ARTIFACT_BASE}.pkg"
 
     info "Creating signed PKG package..."
@@ -434,6 +551,7 @@ if [[ "${FORMAT}" == "pkg" || "${FORMAT}" == "both" ]]; then
         "${PKG_PATH}" | tee "${LOGS_DIR}/pkg-create.log"
 
     ARTIFACT_PATHS+=("${PKG_PATH}")
+    STAPLE_AFTER_NOTARY_PATHS+=("${PKG_PATH}")
 fi
 
 if [[ "${SKIP_NOTARIZATION}" == "false" ]]; then
@@ -441,19 +559,41 @@ if [[ "${SKIP_NOTARIZATION}" == "false" ]]; then
     for artifact in "${ARTIFACT_PATHS[@]}"; do
         artifact_name="$(basename "${artifact}")"
         result_log="${LOGS_DIR}/notary-${artifact_name}.json"
+        submit_for_notarization "${artifact}" "${result_log}"
+    done
 
-        xcrun notarytool submit \
-            "${artifact}" \
-            --keychain-profile "${NOTARY_PROFILE}" \
-            --wait \
-            --output-format json | tee "${result_log}"
+    info "Stapling notarization ticket to app bundle..."
+    xcrun stapler staple "${APP_PATH}" | tee "${LOGS_DIR}/staple-app.log"
+    xcrun stapler validate "${APP_PATH}" | tee "${LOGS_DIR}/staple-validate-app.log"
+    nonfatal_spctl_assess "${APP_PATH}" "${LOGS_DIR}/spctl-post-notary.log"
 
+    for artifact in "${STAPLE_AFTER_NOTARY_PATHS[@]}"; do
+        artifact_name="$(basename "${artifact}")"
         info "Stapling notarization ticket: ${artifact_name}"
         xcrun stapler staple "${artifact}" | tee "${LOGS_DIR}/staple-${artifact_name}.log"
         xcrun stapler validate "${artifact}" | tee "${LOGS_DIR}/staple-validate-${artifact_name}.log"
     done
 else
     info "Skipping notarization as requested."
+fi
+
+if [[ "${FORMAT}" == "dmg" ]]; then
+    FINAL_DMG_PATH="${OUTPUT_DIR}/${ARTIFACT_BASE}.dmg"
+    [[ -n "${DMG_PATH}" && -f "${DMG_PATH}" ]] || die "Expected DMG not found: ${DMG_PATH}"
+
+    info "Saving final artifact..."
+    rm -f "${FINAL_DMG_PATH}"
+    cp "${DMG_PATH}" "${FINAL_DMG_PATH}"
+
+    info "Cleaning up intermediate release files..."
+    rm -rf "${WORK_DIR}"
+
+    info "Done."
+    echo ""
+    echo "Artifact:"
+    echo "  - ${FINAL_DMG_PATH}"
+    echo ""
+    exit 0
 fi
 
 info "Done."
