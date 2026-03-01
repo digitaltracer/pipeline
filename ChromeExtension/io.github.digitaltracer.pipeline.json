@@ -1,0 +1,9 @@
+{
+  "name": "io.github.digitaltracer.pipeline",
+  "description": "Pipeline — Job Application Tracker native messaging host",
+  "path": "/Applications/Pipeline.app/Contents/MacOS/PipelineNativeHost",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://PLACEHOLDER_EXTENSION_ID/"
+  ]
+}

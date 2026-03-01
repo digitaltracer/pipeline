@@ -1,0 +1,28 @@
+{
+  "patches": [
+    {
+      "id": "2cd9f8c3-7902-41a2-88f3-f1b90f0ef392",
+      "path": "/summary",
+      "operation": "replace",
+      "beforeValue": "Senior backend engineer with over 9 years of experience building and scaling distributed systems in fast-paced, cross-country environments. Known for taking end-to-end ownership of complex projects, from architectural design to deployment and maintenance. Specialized in event-driven and message-queueing systems, asynchronous processing, and creating robust observability tooling.",
+      "afterValue": "Senior backend engineer with over 9 years of experience designing, building, and scaling complex distributed systems and platforms from the ground up in high-growth environments. Proven ability to take end-to-end ownership, from architectural design to deployment and maintenance, with a strong focus on reducing production risk through robust validation and automation. Specialized in event-driven and message-queueing systems.",
+      "reason": "Tailored summary to emphasize platform ownership, reliability, and production impact.",
+      "evidencePaths": ["/summary"],
+      "risk": "medium"
+    },
+    {
+      "id": "8f73f32c-f42f-4b50-bbca-3f51314ceef4",
+      "path": "/experience/0/responsibilities/0",
+      "operation": "replace",
+      "beforeValue": "Architected and developed a robust AI pipeline processing 10,000+ monthly sales calls using LLMs, Vector Databases, and RAG for advanced data extraction, indexing, and analysis. Integrated with 8+ third-party platforms to enhance cross-system data ingestion, increasing sync reliability by 40%.",
+      "afterValue": "Architected and redesigned the core platform to an event-driven microservices pattern, significantly improving scalability and reducing latency by 30% to accommodate growing customer demand. Integrated with 8+ third-party platforms, enhancing ingestion and increasing sync reliability by 40%, crucial for maintaining cross-platform consistency.",
+      "reason": "Reframed responsibility to align with event-driven and scalability requirements.",
+      "evidencePaths": ["/experience/0/responsibilities/0"],
+      "risk": "medium"
+    }
+  ],
+  "sectionGaps": [
+    "Quantified incidents prevented by validation or monitoring controls.",
+    "Any examples of cross-platform consistency governance."
+  ]
+}

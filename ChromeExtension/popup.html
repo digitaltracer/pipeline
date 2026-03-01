@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pipeline</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <rect width="24" height="24" rx="6" fill="#3B82F6"/>
+          <path d="M7 8h10M7 12h10M7 16h6" stroke="white" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <h1>Pipeline</h1>
+      </div>
+    </header>
+
+    <!-- Status messages -->
+    <div id="status" class="status hidden">
+      <span id="status-icon"></span>
+      <span id="status-text"></span>
+    </div>
+
+    <!-- Loading state -->
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <p>Extracting job data...</p>
+    </div>
+
+    <!-- Extracted data preview -->
+    <div id="preview" class="preview hidden">
+      <div class="field">
+        <label>Title</label>
+        <p id="preview-title">—</p>
+      </div>
+      <div class="field">
+        <label>Company</label>
+        <p id="preview-company">—</p>
+      </div>
+      <div class="field">
+        <label>Location</label>
+        <p id="preview-location">—</p>
+      </div>
+      <div id="salary-field" class="field hidden">
+        <label>Salary</label>
+        <p id="preview-salary">—</p>
+      </div>
+      <div class="field">
+        <label>Description</label>
+        <p id="preview-description" class="truncated">—</p>
+      </div>
+
+      <div class="action-buttons">
+        <button id="save-btn" class="btn-primary">
+          <span class="btn-icon">+</span>
+          Save to Pipeline
+        </button>
+        <button id="copy-json-btn" class="btn-secondary">
+          Copy Parsed JSON
+        </button>
+      </div>
+    </div>
+
+    <!-- Empty state -->
+    <div id="empty" class="empty hidden">
+      <p>No job posting detected on this page.</p>
+      <p id="empty-reason" class="hint hidden"></p>
+      <p class="hint">Navigate to a job posting on LinkedIn, Indeed, Glassdoor, Naukri, or another job board.</p>
+    </div>
+
+    <div class="debug-tools">
+      <button id="debug-btn" class="btn-secondary">Copy Debug Packet</button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

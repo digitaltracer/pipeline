@@ -1,0 +1,251 @@
+/* Pipeline — Extension Popup Styles */
+
+:root {
+  --accent: #3B82F6;
+  --accent-hover: #2563EB;
+  --bg: #FFFFFF;
+  --surface: #F8FAFC;
+  --border: #E2E8F0;
+  --text: #1E293B;
+  --text-secondary: #64748B;
+  --success: #22C55E;
+  --warning: #F59E0B;
+  --error: #EF4444;
+  --radius: 10px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1E1E2E;
+    --surface: #2A2A3C;
+    --border: #3B3B4F;
+    --text: #E2E8F0;
+    --text-secondary: #94A3B8;
+  }
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  width: 340px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.container {
+  padding: 16px;
+}
+
+/* Header */
+header {
+  margin-bottom: 14px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo h1 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* Status */
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.status.success {
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  color: var(--success);
+}
+
+.status.warning {
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  color: var(--warning);
+}
+
+.status.error {
+  background: color-mix(in srgb, var(--error) 15%, transparent);
+  color: var(--error);
+}
+
+/* Loading */
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 0;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading p {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* Preview */
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+
+.field label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 3px;
+}
+
+.field p {
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.field p.truncated {
+  max-height: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+/* Button */
+.btn-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px;
+  margin-top: 4px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+}
+
+.btn-icon {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.btn-secondary {
+  width: 100%;
+  padding: 9px 10px;
+  margin-top: 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 0.15s, color 0.15s;
+}
+
+.action-buttons .btn-secondary {
+  margin-top: 0;
+}
+
+.btn-secondary:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.6;
+}
+
+.btn-primary,
+.btn-secondary {
+  cursor: pointer;
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled {
+  cursor: not-allowed;
+}
+
+.debug-tools {
+  margin-top: 8px;
+}
+
+/* Empty state */
+.empty {
+  text-align: center;
+  padding: 28px 12px;
+}
+
+.empty p {
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.empty .hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+/* Utility */
+.hidden {
+  display: none !important;
+}

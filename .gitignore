@@ -1,0 +1,96 @@
+# Xcode
+build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+**/*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+**/*.xcworkspace/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+*.xcodeproj/project.xcworkspace/xcuserdata/
+**/*.xcodeproj/project.xcworkspace/
+**/*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# CocoaPods
+Pods/
+Podfile.lock
+
+# Carthage
+Carthage/Build/
+Carthage/Checkouts/
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Code Injection
+iOSInjectionProject/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Thumbnails
+Thumbs.db
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+
+# Logs
+*.log
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# App packaging
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Provisioning profiles
+*.mobileprovision
+*.provisionprofile
+
+# Secrets and API keys
+.env
+.env.*
+secrets.json
+**/secrets/
+*.pem
+*.p12
+*.key
+
+# IDEs
+.idea/
+*.swp
+*.swo
+*~
+.vscode/
+
+# Test artifacts
+xcresult/
+*.xcresult
+
+# Core Data
+*.mom
+*.momd
