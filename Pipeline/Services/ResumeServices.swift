@@ -326,6 +326,9 @@ enum ResumeHTMLRenderer {
 }
 
 enum ResumePDFExportService {
+    private static let pdfPageWidth: CGFloat = 816
+    private static let minimumPDFPageHeight: CGFloat = 1056
+
     @MainActor
     static func makeDocument(json: String) async throws -> ResumePDFFileDocument {
         let html = try ResumeHTMLRenderer.renderHTML(from: json)
@@ -335,20 +338,62 @@ enum ResumePDFExportService {
 
     @MainActor
     private static func renderPDFData(html: String) async throws -> Data {
-        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 816, height: 1056))
+        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: pdfPageWidth, height: minimumPDFPageHeight))
         let delegate = WebViewLoadDelegate()
         webView.navigationDelegate = delegate
         webView.loadHTMLString(html, baseURL: Bundle.main.resourceURL)
 
         try await delegate.awaitLoad()
+        let documentHeight = try await measuredDocumentHeight(for: webView)
+        let exportHeight = max(documentHeight, minimumPDFPageHeight)
 
         return try await withCheckedThrowingContinuation { continuation in
             let config = WKPDFConfiguration()
-            config.rect = CGRect(x: 0, y: 0, width: 816, height: 1056)
+            // Use full rendered content height so long resumes are not clipped to one page.
+            config.rect = CGRect(x: 0, y: 0, width: pdfPageWidth, height: exportHeight)
             webView.createPDF(configuration: config) { result in
                 continuation.resume(with: result)
             }
         }
+    }
+
+    @MainActor
+    private static func measuredDocumentHeight(for webView: WKWebView) async throws -> CGFloat {
+        let script = """
+        Math.max(
+          document.body ? document.body.scrollHeight : 0,
+          document.body ? document.body.offsetHeight : 0,
+          document.documentElement ? document.documentElement.clientHeight : 0,
+          document.documentElement ? document.documentElement.scrollHeight : 0,
+          document.documentElement ? document.documentElement.offsetHeight : 0
+        )
+        """
+
+        do {
+            let value: Any? = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Any?, Error>) in
+                webView.evaluateJavaScript(script) { result, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+                    continuation.resume(returning: result)
+                }
+            }
+
+            if let number = value as? NSNumber {
+                return CGFloat(number.doubleValue)
+            }
+            if let value = value as? Double {
+                return CGFloat(value)
+            }
+            if let value = value as? Int {
+                return CGFloat(value)
+            }
+        } catch {
+            // Fall through to native scroll size below.
+        }
+
+        return max(webView.bounds.height, minimumPDFPageHeight)
     }
 }
 

@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
@@ -6,6 +7,74 @@ import PipelineKit
 #if os(macOS)
 import AppKit
 #endif
+
+private enum ResumeExportFormat {
+    case json
+    case pdf
+}
+
+private enum ResumeExportFilename {
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "dd-MM-yy"
+        return formatter
+    }()
+
+    static func make(companyName: String?) -> String {
+        let company = sanitizeCompanyName(companyName)
+        let date = dateFormatter.string(from: Date())
+        return "\(company)-resume-\(date)"
+    }
+
+    private static func sanitizeCompanyName(_ companyName: String?) -> String {
+        let trimmed = (companyName ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { return "master" }
+
+        var sanitized = ""
+        var previousWasHyphen = false
+        for scalar in trimmed.unicodeScalars {
+            if CharacterSet.alphanumerics.contains(scalar) {
+                sanitized.unicodeScalars.append(scalar)
+                previousWasHyphen = false
+            } else if !previousWasHyphen {
+                sanitized.append("-")
+                previousWasHyphen = true
+            }
+        }
+
+        sanitized = sanitized.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return sanitized.isEmpty ? "master" : sanitized
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func resumeFileExporter(
+        isPresented: Binding<Bool>,
+        format: ResumeExportFormat,
+        jsonDocument: ResumeJSONFileDocument,
+        pdfDocument: ResumePDFFileDocument,
+        defaultFilename: String
+    ) -> some View {
+        switch format {
+        case .json:
+            fileExporter(
+                isPresented: isPresented,
+                document: jsonDocument,
+                contentType: .json,
+                defaultFilename: defaultFilename
+            ) { _ in }
+        case .pdf:
+            fileExporter(
+                isPresented: isPresented,
+                document: pdfDocument,
+                contentType: .pdf,
+                defaultFilename: defaultFilename
+            ) { _ in }
+        }
+    }
+}
 
 struct ResumeWorkspaceView: View {
     @Environment(\.modelContext) private var modelContext
@@ -18,10 +87,9 @@ struct ResumeWorkspaceView: View {
     @State private var validationErrorMessage: String?
     @State private var actionError: String?
 
-    @State private var exportingJSON = false
+    @State private var isExportingFile = false
+    @State private var exportFormat: ResumeExportFormat = .json
     @State private var jsonDocument = ResumeJSONFileDocument(text: "{}")
-
-    @State private var exportingPDF = false
     @State private var pdfDocument = ResumePDFFileDocument(data: Data())
 
     private var currentRevision: ResumeMasterRevision? {
@@ -160,18 +228,13 @@ struct ResumeWorkspaceView: View {
             )
 #endif
         }
-        .fileExporter(
-            isPresented: $exportingJSON,
-            document: jsonDocument,
-            contentType: .json,
-            defaultFilename: "pipeline-resume"
-        ) { _ in }
-        .fileExporter(
-            isPresented: $exportingPDF,
-            document: pdfDocument,
-            contentType: .pdf,
-            defaultFilename: "pipeline-resume"
-        ) { _ in }
+        .resumeFileExporter(
+            isPresented: $isExportingFile,
+            format: exportFormat,
+            jsonDocument: jsonDocument,
+            pdfDocument: pdfDocument,
+            defaultFilename: ResumeExportFilename.make(companyName: nil)
+        )
         .alert("Resume Action Failed", isPresented: Binding(
             get: { actionError != nil },
             set: { if !$0 { actionError = nil } }
@@ -234,7 +297,8 @@ struct ResumeWorkspaceView: View {
         guard let revision = currentRevision else { return }
         do {
             jsonDocument = try ResumeJSONExportService.makeDocument(json: revision.rawJSON)
-            exportingJSON = true
+            exportFormat = .json
+            isExportingFile = true
         } catch {
             actionError = error.localizedDescription
         }
@@ -245,7 +309,8 @@ struct ResumeWorkspaceView: View {
         guard let revision = currentRevision else { return }
         do {
             pdfDocument = try await ResumePDFExportService.makeDocument(json: revision.rawJSON)
-            exportingPDF = true
+            exportFormat = .pdf
+            isExportingFile = true
         } catch {
             actionError = error.localizedDescription
         }
@@ -287,9 +352,9 @@ struct ResumeMasterHistoryView: View {
     @State private var actionError: String?
     @State private var expandedRevisionIDs: Set<UUID> = []
 
-    @State private var exportingJSON = false
+    @State private var isExportingFile = false
+    @State private var exportFormat: ResumeExportFormat = .json
     @State private var jsonDocument = ResumeJSONFileDocument(text: "{}")
-    @State private var exportingPDF = false
     @State private var pdfDocument = ResumePDFFileDocument(data: Data())
     private let refreshRevisions: (() -> Void)?
 
@@ -401,18 +466,13 @@ struct ResumeMasterHistoryView: View {
         .onAppear {
             refreshRevisions?()
         }
-        .fileExporter(
-            isPresented: $exportingJSON,
-            document: jsonDocument,
-            contentType: .json,
-            defaultFilename: "pipeline-resume"
-        ) { _ in }
-        .fileExporter(
-            isPresented: $exportingPDF,
-            document: pdfDocument,
-            contentType: .pdf,
-            defaultFilename: "pipeline-resume"
-        ) { _ in }
+        .resumeFileExporter(
+            isPresented: $isExportingFile,
+            format: exportFormat,
+            jsonDocument: jsonDocument,
+            pdfDocument: pdfDocument,
+            defaultFilename: ResumeExportFilename.make(companyName: nil)
+        )
         .alert("History Action Failed", isPresented: Binding(
             get: { actionError != nil },
             set: { if !$0 { actionError = nil } }
@@ -444,7 +504,8 @@ struct ResumeMasterHistoryView: View {
     private func exportJSON(_ revision: ResumeMasterRevision) {
         do {
             jsonDocument = try ResumeJSONExportService.makeDocument(json: revision.rawJSON)
-            exportingJSON = true
+            exportFormat = .json
+            isExportingFile = true
         } catch {
             actionError = error.localizedDescription
         }
@@ -454,7 +515,8 @@ struct ResumeMasterHistoryView: View {
     private func exportPDF(_ revision: ResumeMasterRevision) async {
         do {
             pdfDocument = try await ResumePDFExportService.makeDocument(json: revision.rawJSON)
-            exportingPDF = true
+            exportFormat = .pdf
+            isExportingFile = true
         } catch {
             actionError = error.localizedDescription
         }
@@ -618,9 +680,9 @@ struct ResumeTailoringView: View {
     @State private var lastDecisionSnapshot: DecisionSnapshot?
     @State private var toastDismissTask: Task<Void, Never>?
 
-    @State private var exportingJSON = false
+    @State private var isExportingFile = false
+    @State private var exportFormat: ResumeExportFormat = .json
     @State private var jsonDocument = ResumeJSONFileDocument(text: "{}")
-    @State private var exportingPDF = false
     @State private var pdfDocument = ResumePDFFileDocument(data: Data())
     @State private var hasTriggeredInitialGeneration = false
     @State private var lastPersistedJSON = ""
@@ -674,18 +736,13 @@ struct ResumeTailoringView: View {
         .onChange(of: rejectedPatchIDs) { _, _ in
             publishUnsavedChangesState()
         }
-        .fileExporter(
-            isPresented: $exportingJSON,
-            document: jsonDocument,
-            contentType: .json,
-            defaultFilename: "tailored-resume"
-        ) { _ in }
-        .fileExporter(
-            isPresented: $exportingPDF,
-            document: pdfDocument,
-            contentType: .pdf,
-            defaultFilename: "tailored-resume"
-        ) { _ in }
+        .resumeFileExporter(
+            isPresented: $isExportingFile,
+            format: exportFormat,
+            jsonDocument: jsonDocument,
+            pdfDocument: pdfDocument,
+            defaultFilename: ResumeExportFilename.make(companyName: application.companyName)
+        )
         .alert("Tailoring Failed", isPresented: Binding(
             get: { actionError != nil },
             set: { if !$0 { actionError = nil } }
@@ -1618,7 +1675,8 @@ struct ResumeTailoringView: View {
     private func exportJSON() {
         do {
             jsonDocument = try ResumeJSONExportService.makeDocument(json: editedJSON)
-            exportingJSON = true
+            exportFormat = .json
+            isExportingFile = true
         } catch {
             actionError = error.localizedDescription
         }
@@ -1628,7 +1686,8 @@ struct ResumeTailoringView: View {
     private func exportPDF() async {
         do {
             pdfDocument = try await ResumePDFExportService.makeDocument(json: editedJSON)
-            exportingPDF = true
+            exportFormat = .pdf
+            isExportingFile = true
         } catch {
             actionError = error.localizedDescription
         }
@@ -1796,10 +1855,9 @@ struct JobResumePanel: View {
     @State private var historySheetWidth: CGFloat = 980
     #endif
 
-    @State private var exportingJSON = false
+    @State private var isExportingFile = false
+    @State private var exportFormat: ResumeExportFormat = .json
     @State private var jsonDocument = ResumeJSONFileDocument(text: "{}")
-
-    @State private var exportingPDF = false
     @State private var pdfDocument = ResumePDFFileDocument(data: Data())
 
     var body: some View {
@@ -1888,18 +1946,13 @@ struct JobResumePanel: View {
                 )
 #endif
         }
-        .fileExporter(
-            isPresented: $exportingJSON,
-            document: jsonDocument,
-            contentType: .json,
-            defaultFilename: "tailored-resume"
-        ) { _ in }
-        .fileExporter(
-            isPresented: $exportingPDF,
-            document: pdfDocument,
-            contentType: .pdf,
-            defaultFilename: "tailored-resume"
-        ) { _ in }
+        .resumeFileExporter(
+            isPresented: $isExportingFile,
+            format: exportFormat,
+            jsonDocument: jsonDocument,
+            pdfDocument: pdfDocument,
+            defaultFilename: ResumeExportFilename.make(companyName: application.companyName)
+        )
         .alert("Resume Action Failed", isPresented: Binding(
             get: { actionError != nil },
             set: { if !$0 { actionError = nil } }
@@ -1937,7 +1990,8 @@ struct JobResumePanel: View {
     private func exportJSON(_ snapshot: ResumeJobSnapshot) {
         do {
             jsonDocument = try ResumeJSONExportService.makeDocument(json: snapshot.rawJSON)
-            exportingJSON = true
+            exportFormat = .json
+            isExportingFile = true
         } catch {
             actionError = error.localizedDescription
         }
@@ -1947,7 +2001,8 @@ struct JobResumePanel: View {
     private func exportPDF(_ snapshot: ResumeJobSnapshot) async {
         do {
             pdfDocument = try await ResumePDFExportService.makeDocument(json: snapshot.rawJSON)
-            exportingPDF = true
+            exportFormat = .pdf
+            isExportingFile = true
         } catch {
             actionError = error.localizedDescription
         }
@@ -1962,9 +2017,9 @@ struct ResumeJobSnapshotHistoryView: View {
 
     @State private var actionError: String?
     @State private var expandedSnapshotIDs: Set<UUID> = []
-    @State private var exportingJSON = false
+    @State private var isExportingFile = false
+    @State private var exportFormat: ResumeExportFormat = .json
     @State private var jsonDocument = ResumeJSONFileDocument(text: "{}")
-    @State private var exportingPDF = false
     @State private var pdfDocument = ResumePDFFileDocument(data: Data())
 
     private var snapshots: [ResumeJobSnapshot] {
@@ -2002,18 +2057,13 @@ struct ResumeJobSnapshotHistoryView: View {
                 }
             }
         }
-        .fileExporter(
-            isPresented: $exportingJSON,
-            document: jsonDocument,
-            contentType: .json,
-            defaultFilename: "tailored-resume"
-        ) { _ in }
-        .fileExporter(
-            isPresented: $exportingPDF,
-            document: pdfDocument,
-            contentType: .pdf,
-            defaultFilename: "tailored-resume"
-        ) { _ in }
+        .resumeFileExporter(
+            isPresented: $isExportingFile,
+            format: exportFormat,
+            jsonDocument: jsonDocument,
+            pdfDocument: pdfDocument,
+            defaultFilename: ResumeExportFilename.make(companyName: application.companyName)
+        )
         .alert("History Action Failed", isPresented: Binding(
             get: { actionError != nil },
             set: { if !$0 { actionError = nil } }
@@ -2107,7 +2157,8 @@ struct ResumeJobSnapshotHistoryView: View {
     private func exportJSON(_ snapshot: ResumeJobSnapshot) {
         do {
             jsonDocument = try ResumeJSONExportService.makeDocument(json: snapshot.rawJSON)
-            exportingJSON = true
+            exportFormat = .json
+            isExportingFile = true
         } catch {
             actionError = error.localizedDescription
         }
@@ -2117,7 +2168,8 @@ struct ResumeJobSnapshotHistoryView: View {
     private func exportPDF(_ snapshot: ResumeJobSnapshot) async {
         do {
             pdfDocument = try await ResumePDFExportService.makeDocument(json: snapshot.rawJSON)
-            exportingPDF = true
+            exportFormat = .pdf
+            isExportingFile = true
         } catch {
             actionError = error.localizedDescription
         }
