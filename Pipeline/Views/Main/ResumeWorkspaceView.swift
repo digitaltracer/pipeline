@@ -13,6 +13,30 @@ private enum ResumeExportFormat {
     case pdf
 }
 
+private enum MasterResumeJSONMode: String {
+    case editor = "Editor"
+    case preview = "Preview"
+
+    var icon: String {
+        switch self {
+        case .editor:
+            return "chevron.left.forwardslash.chevron.right"
+        case .preview:
+            return "eye"
+        }
+    }
+}
+
+private enum MasterResumePreviewParseResult {
+    case valid(ResumeSchema)
+    case invalid(String)
+}
+
+private struct ContactEntry {
+    let text: String
+    let destination: URL?
+}
+
 private enum ResumeExportFilename {
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -78,6 +102,7 @@ private extension View {
 
 struct ResumeWorkspaceView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) private var colorScheme
     @State private var revisions: [ResumeMasterRevision] = []
 
     @State private var editorJSON: String = ""
@@ -86,6 +111,7 @@ struct ResumeWorkspaceView: View {
     @State private var historySheetWidth: CGFloat = 980
     @State private var validationErrorMessage: String?
     @State private var actionError: String?
+    @State private var masterJSONMode: MasterResumeJSONMode = .editor
 
     @State private var isExportingFile = false
     @State private var exportFormat: ResumeExportFormat = .json
@@ -148,16 +174,28 @@ struct ResumeWorkspaceView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 12) {
-                Text("Master Resume JSON")
-                    .font(.headline)
+                HStack {
+                    Text("Master Resume JSON")
+                        .font(.headline)
 
-                JSONCodeEditor(text: $editorJSON)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.secondary.opacity(0.08))
-                    )
+                    Spacer()
+
+                    masterJSONModeSwitcher
+                }
+
+                Group {
+                    if masterJSONMode == .editor {
+                        JSONCodeEditor(text: $editorJSON)
+                    } else {
+                        masterJSONPreview
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.secondary.opacity(0.08))
+                )
 
                 if let validationErrorMessage {
                     Label(validationErrorMessage, systemImage: "exclamationmark.triangle.fill")
@@ -243,6 +281,342 @@ struct ResumeWorkspaceView: View {
         } message: {
             Text(actionError ?? "Unknown error")
         }
+    }
+
+    private var masterJSONModeSwitcher: some View {
+        HStack(spacing: 4) {
+            ForEach([MasterResumeJSONMode.editor, .preview], id: \.self) { mode in
+                Button {
+                    masterJSONMode = mode
+                } label: {
+                    Label(mode.rawValue, systemImage: mode.icon)
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .foregroundColor(masterJSONMode == mode ? .primary : .secondary)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(masterJSONMode == mode ? DesignSystem.Colors.surfaceElevated(colorScheme) : Color.clear)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(
+            Capsule(style: .continuous)
+                .fill(Color.secondary.opacity(0.14))
+        )
+    }
+
+    private var masterJSONPreview: some View {
+        ScrollView {
+            switch parseMasterResumePreview() {
+            case .valid(let resume):
+                VStack(alignment: .leading, spacing: 14) {
+                    masterResumeHeaderCard(resume)
+
+                    if let summary = resume.summary?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !summary.isEmpty {
+                        masterResumeSectionCard(title: "SUMMARY") {
+                            Text(summary)
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    if !resume.experience.isEmpty {
+                        masterResumeSectionCard(title: "EXPERIENCE") {
+                            VStack(alignment: .leading, spacing: 16) {
+                                ForEach(Array(resume.experience.enumerated()), id: \.offset) { _, entry in
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack {
+                                            Text(entry.title)
+                                                .font(.title3.weight(.semibold))
+                                            Spacer()
+                                            if !entry.dates.isEmpty {
+                                                Text(entry.dates)
+                                                    .font(.subheadline)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
+
+                                        HStack {
+                                            Text(entry.company)
+                                                .font(.headline)
+                                                .foregroundStyle(DesignSystem.Colors.accent)
+                                            if !entry.location.isEmpty {
+                                                Text("·")
+                                                    .foregroundStyle(.secondary)
+                                                Text(entry.location)
+                                                    .font(.subheadline)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
+
+                                        ForEach(entry.responsibilities, id: \.self) { line in
+                                            HStack(alignment: .top, spacing: 8) {
+                                                Text("•")
+                                                    .foregroundStyle(DesignSystem.Colors.accent)
+                                                Text(line)
+                                                    .font(.body)
+                                                    .foregroundStyle(.secondary)
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                            }
+                                        }
+                                    }
+                                    .padding(.leading, 2)
+                                }
+                            }
+                        }
+                    }
+
+                    if !resume.projects.isEmpty {
+                        masterResumeSectionCard(title: "PROJECTS") {
+                            VStack(alignment: .leading, spacing: 14) {
+                                ForEach(Array(resume.projects.enumerated()), id: \.offset) { _, project in
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        HStack {
+                                            Text(project.name)
+                                                .font(.headline)
+                                            Spacer()
+                                            if !project.date.isEmpty {
+                                                Text(project.date)
+                                                    .font(.subheadline)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
+
+                                        if !project.technologies.isEmpty {
+                                            Text(project.technologies.joined(separator: " · "))
+                                                .font(.subheadline)
+                                                .foregroundStyle(DesignSystem.Colors.accent)
+                                        }
+
+                                        ForEach(project.description, id: \.self) { line in
+                                            HStack(alignment: .top, spacing: 8) {
+                                                Text("•")
+                                                    .foregroundStyle(DesignSystem.Colors.accent)
+                                                Text(line)
+                                                    .font(.body)
+                                                    .foregroundStyle(.secondary)
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if !resume.education.isEmpty {
+                        masterResumeSectionCard(title: "EDUCATION") {
+                            VStack(alignment: .leading, spacing: 12) {
+                                ForEach(Array(resume.education.enumerated()), id: \.offset) { _, item in
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        HStack {
+                                            Text(item.university)
+                                                .font(.headline)
+                                            Spacer()
+                                            if !item.date.isEmpty {
+                                                Text(item.date)
+                                                    .font(.subheadline)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
+
+                                        Text(item.degree)
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+
+                                        if !item.location.isEmpty {
+                                            Text(item.location)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if !resume.skills.isEmpty {
+                        masterResumeSectionCard(title: "SKILLS") {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(resume.skills.keys.sorted(), id: \.self) { category in
+                                    let values = resume.skills[category] ?? []
+                                    if !values.isEmpty {
+                                        HStack(alignment: .top, spacing: 8) {
+                                            Text("\(category):")
+                                                .font(.subheadline.weight(.semibold))
+                                            Text(values.joined(separator: ", "))
+                                                .font(.subheadline)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(4)
+
+            case .invalid(let message):
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Preview unavailable", systemImage: "exclamationmark.triangle.fill")
+                        .font(.headline)
+                        .foregroundStyle(.orange)
+
+                    Text(message)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+                )
+            }
+        }
+    }
+
+    private func parseMasterResumePreview() -> MasterResumePreviewParseResult {
+        do {
+            let schema = try ResumeSchemaValidator.validate(jsonText: editorJSON).schema
+            return .valid(schema)
+        } catch let schemaError as ResumeSchemaValidationError {
+            return .invalid(schemaError.errorDescription ?? "Master resume JSON is invalid.")
+        } catch {
+            return .invalid(error.localizedDescription)
+        }
+    }
+
+    private func masterResumeHeaderCard(_ resume: ResumeSchema) -> some View {
+        let contacts = contactEntries(from: resume.contact)
+
+        return VStack(alignment: .leading, spacing: 10) {
+            Text(resume.name.isEmpty ? "Your Name" : resume.name)
+                .font(.system(size: 44, weight: .bold, design: .rounded))
+                .frame(maxWidth: .infinity, alignment: .center)
+
+            if !contacts.isEmpty {
+                HStack(spacing: 0) {
+                    ForEach(Array(contacts.enumerated()), id: \.offset) { index, contact in
+                        if let destination = contact.destination {
+                            Link(contact.text, destination: destination)
+                                .underline()
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        } else {
+                            Text(contact.text)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
+
+                        if index < contacts.count - 1 {
+                            Text(" | ")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .font(.title3)
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+                )
+        )
+    }
+
+    private func contactEntries(from contact: ResumeSchema.Contact) -> [ContactEntry] {
+        var entries: [ContactEntry] = []
+
+        let phone = contact.phone.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !phone.isEmpty {
+            entries.append(ContactEntry(text: phone, destination: nil))
+        }
+
+        let email = contact.email.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !email.isEmpty {
+            entries.append(ContactEntry(text: email, destination: URL(string: "mailto:\(email)")))
+        }
+
+        let linkedin = contact.linkedin.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !linkedin.isEmpty {
+            entries.append(
+                ContactEntry(
+                    text: displayURL(linkedin),
+                    destination: URL(string: normalizedExternalURL(linkedin))
+                )
+            )
+        }
+
+        let github = contact.github.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !github.isEmpty {
+            entries.append(
+                ContactEntry(
+                    text: displayURL(github),
+                    destination: URL(string: normalizedExternalURL(github))
+                )
+            )
+        }
+
+        return entries
+    }
+
+    private func normalizedExternalURL(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") {
+            return trimmed
+        }
+        return "https://\(trimmed)"
+    }
+
+    private func displayURL(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let withoutScheme: String
+        if trimmed.lowercased().hasPrefix("https://") {
+            withoutScheme = String(trimmed.dropFirst(8))
+        } else if trimmed.lowercased().hasPrefix("http://") {
+            withoutScheme = String(trimmed.dropFirst(7))
+        } else {
+            withoutScheme = trimmed
+        }
+
+        return withoutScheme.hasSuffix("/") ? String(withoutScheme.dropLast()) : withoutScheme
+    }
+
+    private func masterResumeSectionCard<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(title)
+                .font(.title3.weight(.bold))
+                .tracking(1.1)
+
+            content()
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+                )
+        )
     }
 
     private func saveCurrentEditorAsRevision() {
