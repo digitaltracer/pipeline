@@ -6,11 +6,18 @@ public struct InterviewPrepResult: Sendable {
     public let likelyQuestions: [String]
     public let talkingPoints: [String]
     public let companyResearchSummary: String
+    public let usage: AIUsageMetrics?
 
-    public init(likelyQuestions: [String], talkingPoints: [String], companyResearchSummary: String) {
+    public init(
+        likelyQuestions: [String],
+        talkingPoints: [String],
+        companyResearchSummary: String,
+        usage: AIUsageMetrics? = nil
+    ) {
         self.likelyQuestions = likelyQuestions
         self.talkingPoints = talkingPoints
         self.companyResearchSummary = companyResearchSummary
+        self.usage = usage
     }
 }
 
@@ -59,7 +66,7 @@ public enum InterviewPrepService {
 
         let userPrompt = "Prepare interview prep materials for this opportunity:\n\n\(userContext)"
 
-        let rawResponse = try await AICompletionClient.complete(
+        let response = try await AICompletionClient.completeWithUsage(
             provider: provider,
             apiKey: apiKey,
             model: model,
@@ -67,12 +74,12 @@ public enum InterviewPrepService {
             userPrompt: userPrompt
         )
 
-        return try parseResponse(rawResponse)
+        return try parseResponse(response.text, usage: response.usage)
     }
 
     // MARK: - Parsing
 
-    private static func parseResponse(_ rawJSON: String) throws -> InterviewPrepResult {
+    private static func parseResponse(_ rawJSON: String, usage: AIUsageMetrics?) throws -> InterviewPrepResult {
         let cleaned = stripMarkdownFences(from: rawJSON)
 
         guard let data = cleaned.data(using: .utf8),
@@ -81,15 +88,15 @@ public enum InterviewPrepService {
             if let extracted = extractJSONObject(from: cleaned),
                let data = extracted.data(using: .utf8),
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                return buildResult(from: json)
+                return buildResult(from: json, usage: usage)
             }
             throw AIServiceError.parsingError("Interview prep response was not valid JSON.")
         }
 
-        return buildResult(from: json)
+        return buildResult(from: json, usage: usage)
     }
 
-    private static func buildResult(from json: [String: Any]) -> InterviewPrepResult {
+    private static func buildResult(from json: [String: Any], usage: AIUsageMetrics?) -> InterviewPrepResult {
         let questions = (json["likelyQuestions"] as? [String])
             ?? (json["likely_questions"] as? [String])
             ?? (json["questions"] as? [String])
@@ -109,7 +116,8 @@ public enum InterviewPrepService {
         return InterviewPrepResult(
             likelyQuestions: questions,
             talkingPoints: talkingPoints,
-            companyResearchSummary: summary
+            companyResearchSummary: summary,
+            usage: usage
         )
     }
 

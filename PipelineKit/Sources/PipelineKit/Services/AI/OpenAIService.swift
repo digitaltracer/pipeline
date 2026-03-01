@@ -94,6 +94,12 @@ public final class OpenAIService: AIServiceProtocol {
             AIParseDebugLogger.error("OpenAIService: response JSON missing expected fields.")
             throw AIServiceError.invalidResponse
         }
+        let usage = json["usage"] as? [String: Any]
+        let usageMetrics = AIUsageMetrics(
+            promptTokens: intValue(usage?["prompt_tokens"]),
+            completionTokens: intValue(usage?["completion_tokens"]),
+            totalTokens: intValue(usage?["total_tokens"])
+        )
 
         let contentText: String
         if let text = message["content"] as? String {
@@ -123,6 +129,21 @@ public final class OpenAIService: AIServiceProtocol {
         AIParseDebugLogger.info(
             "OpenAIService: model output preview: \(AIParseDebugLogger.preview(contentText, maxLength: 280))."
         )
-        return try AIResponseParser.parseJobData(from: contentText)
+        var parsed = try AIResponseParser.parseJobData(from: contentText)
+        parsed.usage = usageMetrics
+        return parsed
+    }
+
+    private func intValue(_ value: Any?) -> Int? {
+        if let intValue = value as? Int {
+            return intValue
+        }
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+        if let text = value as? String, let intValue = Int(text) {
+            return intValue
+        }
+        return nil
     }
 }

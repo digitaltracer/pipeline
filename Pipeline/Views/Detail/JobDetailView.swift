@@ -113,7 +113,8 @@ struct JobDetailView: View {
             InterviewPrepView(
                 viewModel: InterviewPrepViewModel(
                     application: application,
-                    settingsViewModel: SettingsViewModel()
+                    settingsViewModel: SettingsViewModel(),
+                    modelContext: modelContext
                 )
             )
         }
@@ -121,7 +122,8 @@ struct JobDetailView: View {
             FollowUpDrafterView(
                 viewModel: FollowUpDrafterViewModel(
                     application: application,
-                    settingsViewModel: SettingsViewModel()
+                    settingsViewModel: SettingsViewModel(),
+                    modelContext: modelContext
                 )
             )
         }
@@ -263,7 +265,14 @@ struct JobPostingSection: View {
         )
     }
     .modelContainer(
-        for: [JobApplication.self, InterviewLog.self, ResumeMasterRevision.self, ResumeJobSnapshot.self],
+        for: [
+            JobApplication.self,
+            InterviewLog.self,
+            ResumeMasterRevision.self,
+            ResumeJobSnapshot.self,
+            AIUsageRecord.self,
+            AIModelRate.self
+        ],
         inMemory: true
     )
 }

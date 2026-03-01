@@ -95,6 +95,12 @@ public final class AnthropicService: AIServiceProtocol {
             AIParseDebugLogger.error("AnthropicService: response JSON missing expected fields.")
             throw AIServiceError.invalidResponse
         }
+        let usage = json["usage"] as? [String: Any]
+        let usageMetrics = AIUsageMetrics(
+            promptTokens: intValue(usage?["input_tokens"]),
+            completionTokens: intValue(usage?["output_tokens"]),
+            totalTokens: nil
+        )
 
         let text = contentBlocks
             .compactMap { block -> String? in
@@ -112,6 +118,21 @@ public final class AnthropicService: AIServiceProtocol {
         AIParseDebugLogger.info(
             "AnthropicService: model output preview: \(AIParseDebugLogger.preview(text, maxLength: 280))."
         )
-        return try AIResponseParser.parseJobData(from: text)
+        var parsed = try AIResponseParser.parseJobData(from: text)
+        parsed.usage = usageMetrics
+        return parsed
+    }
+
+    private func intValue(_ value: Any?) -> Int? {
+        if let intValue = value as? Int {
+            return intValue
+        }
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+        if let text = value as? String, let intValue = Int(text) {
+            return intValue
+        }
+        return nil
     }
 }

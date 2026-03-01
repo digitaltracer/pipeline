@@ -10,6 +10,7 @@ struct SidebarView: View {
     @Binding var showingSettings: Bool
     @Binding var showingDashboard: Bool
     @Binding var showingResume: Bool
+    @Binding var showingCostCenter: Bool
     let statusCounts: [SidebarFilter: Int]
     @Bindable var settingsViewModel: SettingsViewModel
     @Environment(\.colorScheme) private var colorScheme
@@ -70,6 +71,7 @@ struct SidebarView: View {
                     Button {
                         showingDashboard = true
                         showingResume = false
+                        showingCostCenter = false
                     } label: {
                         HStack {
                             Image(systemName: "chart.bar.xaxis")
@@ -98,12 +100,13 @@ struct SidebarView: View {
                         Button {
                             showingDashboard = false
                             showingResume = false
+                            showingCostCenter = false
                             selectedFilter = filter
                         } label: {
                             SidebarFilterRow(
                                 filter: filter,
                                 count: statusCounts[filter] ?? 0,
-                                isSelected: !showingDashboard && !showingResume && selectedFilter == filter
+                                isSelected: !showingDashboard && !showingResume && !showingCostCenter && selectedFilter == filter
                             )
                         }
                         .buttonStyle(.plain)
@@ -111,33 +114,6 @@ struct SidebarView: View {
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                     }
-
-                    Button {
-                        showingDashboard = false
-                        showingResume = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "doc.text.fill")
-                                .foregroundColor(showingResume ? .white : .teal)
-                                .frame(width: 20)
-
-                            Text("Resume")
-                                .foregroundColor(showingResume ? .white : .primary)
-
-                            Spacer()
-                        }
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(showingResume ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.85 : 1.0) : Color.clear)
-                        )
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .sidebarHandCursor()
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
                 }
             }
             .listStyle(.sidebar)
@@ -146,30 +122,81 @@ struct SidebarView: View {
             Divider()
                 .padding(.horizontal)
 
-            Button {
-                showingSettings = true
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "gearshape.fill")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(DesignSystem.Colors.accent)
-                        .frame(width: 22, height: 22)
-
-                    Text("Settings")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.primary)
-
-                    Spacer(minLength: 0)
+            VStack(spacing: 4) {
+                Button {
+                    showingDashboard = false
+                    showingResume = true
+                    showingCostCenter = false
+                } label: {
+                    utilityRow(
+                        title: "Resume",
+                        icon: "doc.text",
+                        isSelected: showingResume,
+                        accentColor: .teal
+                    )
                 }
-                .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-                .padding(.horizontal, 16)
+                .buttonStyle(.plain)
+                .sidebarHandCursor()
+
+                Button {
+                    showingDashboard = false
+                    showingResume = false
+                    showingCostCenter = true
+                } label: {
+                    utilityRow(
+                        title: "Cost Center",
+                        icon: "dollarsign.arrow.circlepath",
+                        isSelected: showingCostCenter,
+                        accentColor: .mint
+                    )
+                }
+                .buttonStyle(.plain)
+                .sidebarHandCursor()
+
+                Button {
+                    showingSettings = true
+                } label: {
+                    utilityRow(
+                        title: "Settings",
+                        icon: "gearshape",
+                        isSelected: false,
+                        accentColor: .secondary
+                    )
+                }
+                .buttonStyle(.plain)
+                .sidebarHandCursor()
             }
-            .buttonStyle(.plain)
-            .sidebarHandCursor()
             .padding(.horizontal, 16)
-            .padding(.bottom, 16)
+            .padding(.vertical, 12)
         }
         .background(DesignSystem.Colors.sidebarBackground(colorScheme))
+    }
+
+    private func utilityRow(
+        title: String,
+        icon: String,
+        isSelected: Bool,
+        accentColor: Color
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(isSelected ? .white : accentColor)
+                .frame(width: 20, height: 20)
+
+            Text(title)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(isSelected ? .white : .primary)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isSelected ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.85 : 1.0) : Color.clear)
+        )
+        .contentShape(Rectangle())
     }
 }
 
@@ -229,6 +256,7 @@ struct SidebarFilterRow: View {
         showingSettings: .constant(false),
         showingDashboard: .constant(false),
         showingResume: .constant(false),
+        showingCostCenter: .constant(false),
         statusCounts: [
             .all: 25,
             .saved: 5,
@@ -251,6 +279,7 @@ struct SidebarView: View {
     @Binding var showingSettings: Bool
     @Binding var showingDashboard: Bool
     @Binding var showingResume: Bool
+    @Binding var showingCostCenter: Bool
     let statusCounts: [SidebarFilter: Int]
     @Bindable var settingsViewModel: SettingsViewModel
 

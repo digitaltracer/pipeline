@@ -689,6 +689,10 @@ struct ResumeTailoringView: View {
     @State private var lastPersistedAcceptedPatchIDs: Set<UUID> = []
     @State private var lastPersistedRejectedPatchIDs: Set<UUID> = []
     @State private var showingDiscardChangesConfirmation = false
+    @State private var generationTimeline: [GenerationTimelineEntry] = []
+    @State private var generationStartedAt: Date?
+    @State private var latestGenerationUsage: AIUsageMetrics?
+    @State private var simulatedReasoningTask: Task<Void, Never>?
 
     init(
         application: JobApplication,
@@ -777,6 +781,7 @@ struct ResumeTailoringView: View {
         }
         .onDisappear {
             toastDismissTask?.cancel()
+            simulatedReasoningTask?.cancel()
         }
     }
 
@@ -879,9 +884,20 @@ struct ResumeTailoringView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Generating Tailored Suggestions")
                         .font(.headline)
-                    Text("Analyzing the job description, mapping your experience, and producing safe resume patches.")
+                    Text("Live timeline of resume tailoring steps.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                if let startedAt = generationStartedAt {
+                    TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                        let elapsed = max(0, timeline.date.timeIntervalSince(startedAt))
+                        Text(elapsedLabel(elapsed))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
@@ -889,14 +905,53 @@ struct ResumeTailoringView: View {
                 .progressViewStyle(.linear)
                 .tint(DesignSystem.Colors.accent)
 
-            HStack(spacing: 8) {
-                statusChip("Extracting role requirements")
-                statusChip("Matching resume evidence")
-                statusChip("Validating safe edits")
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(generationTimeline) { item in
+                    generationTimelineRow(item)
+                }
             }
         }
         .padding(14)
         .appCard(cornerRadius: 12, elevated: true, shadow: false)
+    }
+
+    private func generationTimelineRow(_ item: GenerationTimelineEntry) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            if item.state == .inProgress {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(item.state.tint)
+            } else {
+                Image(systemName: item.state.icon)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(item.state.tint)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                    .font(.caption.weight(.semibold))
+
+                if let detail = item.detail {
+                    Text(detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+
+            if let startedAt = generationStartedAt {
+                Text(elapsedLabel(item.timestamp.timeIntervalSince(startedAt)))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.secondary.opacity(colorScheme == .dark ? 0.18 : 0.1))
+        )
     }
 
     private func patchCard(_ patch: ResumePatch) -> some View {
@@ -1286,6 +1341,52 @@ struct ResumeTailoringView: View {
         let showsUndo: Bool
     }
 
+    private enum GenerationTimelineState {
+        case inProgress
+        case completed
+        case info
+        case failed
+
+        var icon: String {
+            switch self {
+            case .inProgress:
+                return "ellipsis.circle.fill"
+            case .completed:
+                return "checkmark.circle.fill"
+            case .info:
+                return "info.circle.fill"
+            case .failed:
+                return "xmark.octagon.fill"
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .inProgress:
+                return .orange
+            case .completed:
+                return .green
+            case .info:
+                return .secondary
+            case .failed:
+                return .red
+            }
+        }
+    }
+
+    private struct GenerationTimelineEntry: Identifiable {
+        let id = UUID()
+        let title: String
+        let detail: String?
+        let timestamp: Date
+        var state: GenerationTimelineState
+    }
+
+    private struct SimulatedReasoningMessage {
+        let title: String
+        let detail: String
+    }
+
     private var hasDraftChanges: Bool {
         editedJSON != lastPersistedJSON
             || acceptedPatchIDs != lastPersistedAcceptedPatchIDs
@@ -1367,20 +1468,8 @@ struct ResumeTailoringView: View {
             )
     }
 
-    private func statusChip(_ title: String) -> some View {
-        HStack(spacing: 5) {
-            ProgressView()
-                .controlSize(.small)
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
-        .background(
-            Capsule()
-                .fill(Color.secondary.opacity(colorScheme == .dark ? 0.18 : 0.12))
-        )
+    private func elapsedLabel(_ elapsed: TimeInterval) -> String {
+        String(format: "+%.1fs", elapsed)
     }
 
     private func decisionToastView(_ toast: DecisionToast) -> some View {
@@ -1544,6 +1633,11 @@ struct ResumeTailoringView: View {
         lastPersistedAcceptedPatchIDs = []
         lastPersistedRejectedPatchIDs = []
         collapsedPatchIDs = []
+        generationTimeline = []
+        generationStartedAt = nil
+        latestGenerationUsage = nil
+        simulatedReasoningTask?.cancel()
+        simulatedReasoningTask = nil
         decisionToast = nil
         lastDecisionSnapshot = nil
         toastDismissTask?.cancel()
@@ -1577,6 +1671,303 @@ struct ResumeTailoringView: View {
     }
 
     @MainActor
+    private func beginGenerationTimeline() {
+        generationStartedAt = Date()
+        generationTimeline = [
+            GenerationTimelineEntry(
+                title: "Starting tailoring run",
+                detail: "Preparing prompts and validating inputs.",
+                timestamp: Date(),
+                state: .inProgress
+            )
+        ]
+    }
+
+    @MainActor
+    private func markInProgressTimelineEntriesCompleted() {
+        for index in generationTimeline.indices where generationTimeline[index].state == .inProgress {
+            generationTimeline[index].state = .completed
+        }
+    }
+
+    @MainActor
+    private func appendTimeline(
+        title: String,
+        detail: String? = nil,
+        state: GenerationTimelineState
+    ) {
+        generationTimeline.append(
+            GenerationTimelineEntry(
+                title: title,
+                detail: detail,
+                timestamp: Date(),
+                state: state
+            )
+        )
+
+        if generationTimeline.count > 14 {
+            generationTimeline.removeFirst(generationTimeline.count - 14)
+        }
+    }
+
+    @MainActor
+    private func handleTailoringProgress(_ event: ResumeTailoringProgressEvent) {
+        switch event {
+        case .started:
+            beginGenerationTimeline()
+        case .attemptStarted(let attempt, let isRetry):
+            markInProgressTimelineEntriesCompleted()
+            appendTimeline(
+                title: isRetry ? "Retry attempt \(attempt)" : "Attempt \(attempt)",
+                detail: isRetry ? "Running compact retry prompt." : "Sending tailoring request.",
+                state: .inProgress
+            )
+        case .requestStarted(let provider, let model):
+            appendTimeline(
+                title: "Calling \(provider.rawValue)",
+                detail: "Model \(model)",
+                state: .inProgress
+            )
+        case .responseReceived(let characters, let usage):
+            markInProgressTimelineEntriesCompleted()
+            latestGenerationUsage = usage
+            appendTimeline(
+                title: "Model response received",
+                detail: responseDetail(characters: characters, usage: usage),
+                state: .completed
+            )
+        case .parsingStarted:
+            appendTimeline(
+                title: "Parsing structured patches",
+                detail: "Validating model JSON payload.",
+                state: .inProgress
+            )
+        case .retryScheduled(let reason):
+            markInProgressTimelineEntriesCompleted()
+            appendTimeline(
+                title: "Retry scheduled",
+                detail: reason,
+                state: .info
+            )
+        case .completed(let patchCount, let sectionGapCount, let usage):
+            markInProgressTimelineEntriesCompleted()
+            latestGenerationUsage = usage
+            appendTimeline(
+                title: "Suggestions ready",
+                detail: "Patches: \(patchCount), gaps: \(sectionGapCount)\(usageSuffix(usage))",
+                state: .completed
+            )
+        case .failed(let message):
+            markInProgressTimelineEntriesCompleted()
+            appendTimeline(
+                title: "Tailoring failed",
+                detail: message,
+                state: .failed
+            )
+        }
+    }
+
+    private func responseDetail(characters: Int, usage: AIUsageMetrics?) -> String {
+        var detail = "\(characters) chars received."
+        if let usage {
+            let promptTokens = usage.promptTokens ?? 0
+            let completionTokens = usage.completionTokens ?? 0
+            let totalTokens = usage.totalTokens ?? (promptTokens + completionTokens)
+            detail += " Tokens \(totalTokens) (in \(promptTokens), out \(completionTokens))."
+        }
+        return detail
+    }
+
+    private func usageSuffix(_ usage: AIUsageMetrics?) -> String {
+        guard let usage else { return "" }
+        let promptTokens = usage.promptTokens ?? 0
+        let completionTokens = usage.completionTokens ?? 0
+        let totalTokens = usage.totalTokens ?? (promptTokens + completionTokens)
+        return ", tokens: \(totalTokens)"
+    }
+
+    @MainActor
+    private func startSimulatedReasoningFeed(
+        resumeJSON: String,
+        jobDescription: String
+    ) {
+        simulatedReasoningTask?.cancel()
+        let messages = buildSimulatedReasoningMessages(
+            resumeJSON: resumeJSON,
+            jobDescription: jobDescription
+        )
+        guard !messages.isEmpty else { return }
+
+        simulatedReasoningTask = Task {
+            for message in messages {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    appendTimeline(
+                        title: message.title,
+                        detail: message.detail,
+                        state: .info
+                    )
+                }
+                try? await Task.sleep(nanoseconds: 1_300_000_000)
+            }
+        }
+    }
+
+    private func buildSimulatedReasoningMessages(
+        resumeJSON: String,
+        jobDescription: String
+    ) -> [SimulatedReasoningMessage] {
+        var messages: [SimulatedReasoningMessage] = []
+        let resumeSchema = try? ResumeSchemaValidator.validate(jsonText: resumeJSON).schema
+
+        let jdKeywords = topKeywords(from: jobDescription, limit: 12)
+
+        if let summary = resumeSchema?.summary, !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let summaryKeywords = topKeywords(from: summary, limit: 4)
+            messages.append(
+                SimulatedReasoningMessage(
+                    title: "Now comparing Summary section",
+                    detail: summaryKeywords.isEmpty
+                        ? "Checking whether summary aligns with the role expectations."
+                        : "Summary currently emphasizes: \(summaryKeywords.joined(separator: ", "))."
+                )
+            )
+        } else {
+            messages.append(
+                SimulatedReasoningMessage(
+                    title: "Now comparing Summary section",
+                    detail: "No summary found in resume. Looking for strong evidence in experience/projects."
+                )
+            )
+        }
+
+        let experienceEntries = Array((resumeSchema?.experience ?? []).prefix(2))
+        if experienceEntries.isEmpty {
+            messages.append(
+                SimulatedReasoningMessage(
+                    title: "Now comparing Experience section",
+                    detail: "No experience entries found. Tailoring will rely on projects and skills."
+                )
+            )
+        } else {
+            for entry in experienceEntries {
+                let evidenceText = entry.responsibilities.joined(separator: " ")
+                let evidenceKeywords = topKeywords(from: evidenceText, limit: 4)
+                let label = entry.company.trimmingCharacters(in: .whitespacesAndNewlines)
+                let companyLabel = label.isEmpty ? entry.title : label
+                messages.append(
+                    SimulatedReasoningMessage(
+                        title: "Now comparing Experience - \(companyLabel)",
+                        detail: evidenceKeywords.isEmpty
+                            ? "Role: \(entry.title). Searching for matching evidence."
+                            : "Role: \(entry.title). Resume evidence: \(evidenceKeywords.joined(separator: ", "))."
+                    )
+                )
+            }
+        }
+
+        let skillValues = Array((resumeSchema?.skills ?? [:]).values).flatMap { $0 }
+        let skillJoined = skillValues.joined(separator: " ")
+        let skillKeywords = topKeywords(from: skillJoined, limit: 5)
+        messages.append(
+            SimulatedReasoningMessage(
+                title: "Now comparing Skills section",
+                detail: skillKeywords.isEmpty
+                    ? "No explicit skill list found. Using projects/experience terminology instead."
+                    : "Resume skills include: \(skillKeywords.joined(separator: ", "))."
+            )
+        )
+
+        var resumeCorpus = ""
+        if let summary = resumeSchema?.summary {
+            resumeCorpus.append(" \(summary)")
+        }
+        for entry in (resumeSchema?.experience ?? []) {
+            resumeCorpus.append(" \(entry.title) \(entry.company) \(entry.responsibilities.joined(separator: " "))")
+        }
+        for project in (resumeSchema?.projects ?? []) {
+            resumeCorpus.append(" \(project.name) \(project.technologies.joined(separator: " ")) \(project.description.joined(separator: " "))")
+        }
+        resumeCorpus.append(" \(skillJoined)")
+
+        let resumeKeywords = topKeywords(from: resumeCorpus, limit: 30)
+        let resumeSet = Set(resumeKeywords.map { $0.lowercased() })
+
+        let matching = jdKeywords.filter { resumeSet.contains($0.lowercased()) }
+        let missing = jdKeywords.filter { !resumeSet.contains($0.lowercased()) }
+
+        if !matching.isEmpty {
+            messages.append(
+                SimulatedReasoningMessage(
+                    title: "The user has \(matching.prefix(4).joined(separator: ", "))",
+                    detail: "Found overlap between resume and job description requirements."
+                )
+            )
+        } else {
+            messages.append(
+                SimulatedReasoningMessage(
+                    title: "Current resume evidence has limited keyword overlap",
+                    detail: "Will prioritize extracting stronger role-specific terms from the JD."
+                )
+            )
+        }
+
+        if !missing.isEmpty {
+            messages.append(
+                SimulatedReasoningMessage(
+                    title: "But job description requires \(missing.prefix(4).joined(separator: ", "))",
+                    detail: "Tailoring will focus on phrasing updates using existing resume evidence."
+                )
+            )
+        } else {
+            messages.append(
+                SimulatedReasoningMessage(
+                    title: "Most core JD terms already appear in the resume",
+                    detail: "Tailoring likely focuses on prioritization and section emphasis."
+                )
+            )
+        }
+
+        return messages
+    }
+
+    private func topKeywords(from text: String, limit: Int) -> [String] {
+        let tokens = text
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { token in
+                token.count >= 3 && !resumeStopWords.contains(token)
+            }
+
+        guard !tokens.isEmpty else { return [] }
+
+        var frequency: [String: Int] = [:]
+        for token in tokens {
+            frequency[token, default: 0] += 1
+        }
+
+        return frequency
+            .sorted { lhs, rhs in
+                if lhs.value == rhs.value {
+                    return lhs.key < rhs.key
+                }
+                return lhs.value > rhs.value
+            }
+            .prefix(limit)
+            .map { $0.key }
+    }
+
+    private var resumeStopWords: Set<String> {
+        [
+            "the", "and", "for", "with", "that", "from", "this", "are", "was", "were",
+            "have", "has", "had", "your", "our", "their", "you", "will", "can", "into",
+            "across", "through", "within", "about", "role", "team", "work", "using",
+            "build", "built", "developed", "experience", "summary", "skills", "section",
+            "job", "description", "company", "candidate", "required", "preferred"
+        ]
+    }
+
+    @MainActor
     private func generateSuggestions() async {
         guard preflightError == nil,
               let masterRevision,
@@ -1585,12 +1976,25 @@ struct ResumeTailoringView: View {
             return
         }
 
+        let requestStartedAt = Date()
         isGenerating = true
-        defer { isGenerating = false }
+        generationStartedAt = requestStartedAt
+        generationTimeline = []
+        latestGenerationUsage = nil
+        defer {
+            isGenerating = false
+            markInProgressTimelineEntriesCompleted()
+            simulatedReasoningTask?.cancel()
+            simulatedReasoningTask = nil
+        }
 
         do {
             let provider = settingsViewModel.selectedAIProvider
             let model = settingsViewModel.preferredModel(for: provider)
+            startSimulatedReasoningFeed(
+                resumeJSON: masterRevision.rawJSON,
+                jobDescription: jobDescription
+            )
 
             let result = try await settingsViewModel.withAPIKeyWaterfall(for: provider) { apiKey in
                 try await ResumeTailoringService.generateSuggestions(
@@ -1600,16 +2004,71 @@ struct ResumeTailoringView: View {
                     resumeJSON: masterRevision.rawJSON,
                     company: application.companyName,
                     role: application.role,
-                    jobDescription: jobDescription
+                    jobDescription: jobDescription,
+                    onProgress: { progress in
+                        Task { @MainActor in
+                            handleTailoringProgress(progress)
+                        }
+                    }
                 )
             }
 
             try applyTailoringResult(result, originalJSON: masterRevision.rawJSON)
+            recordTailoringUsage(
+                provider: provider,
+                model: model,
+                usage: result.usage,
+                status: .succeeded,
+                startedAt: requestStartedAt,
+                errorMessage: nil
+            )
         } catch let keyError as SettingsViewModel.APIKeyValidationError {
             actionError = keyError.localizedDescription
+            let provider = settingsViewModel.selectedAIProvider
+            let model = settingsViewModel.preferredModel(for: provider)
+            recordTailoringUsage(
+                provider: provider,
+                model: model,
+                usage: latestGenerationUsage,
+                status: .failed,
+                startedAt: requestStartedAt,
+                errorMessage: keyError.localizedDescription
+            )
         } catch {
             actionError = error.localizedDescription
+            let provider = settingsViewModel.selectedAIProvider
+            let model = settingsViewModel.preferredModel(for: provider)
+            recordTailoringUsage(
+                provider: provider,
+                model: model,
+                usage: latestGenerationUsage,
+                status: .failed,
+                startedAt: requestStartedAt,
+                errorMessage: error.localizedDescription
+            )
         }
+    }
+
+    private func recordTailoringUsage(
+        provider: AIProvider,
+        model: String,
+        usage: AIUsageMetrics?,
+        status: AIUsageRequestStatus,
+        startedAt: Date,
+        errorMessage: String?
+    ) {
+        _ = try? AIUsageLedgerService.record(
+            feature: .resumeTailoring,
+            provider: provider,
+            model: model,
+            usage: usage,
+            status: status,
+            applicationID: application.id,
+            startedAt: startedAt,
+            finishedAt: Date(),
+            errorMessage: errorMessage,
+            in: modelContext
+        )
     }
 
     private func applyTailoringResult(_ result: ResumeTailoringResult, originalJSON: String) throws {

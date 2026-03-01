@@ -79,6 +79,7 @@ secrets.json
 *.pem
 *.p12
 *.key
+scripts/release-macos.env
 
 # IDEs
 .idea/
@@ -94,3 +95,6 @@ xcresult/
 # Core Data
 *.mom
 *.momd
+
+# Dist
+dist/*

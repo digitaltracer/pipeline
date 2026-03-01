@@ -136,6 +136,9 @@ struct AddApplicationView: View {
         } message: {
             Text(saveErrorMessage ?? "An unknown error occurred.")
         }
+        .onAppear {
+            aiViewModel.modelContext = modelContext
+        }
     }
 
     #if os(macOS)

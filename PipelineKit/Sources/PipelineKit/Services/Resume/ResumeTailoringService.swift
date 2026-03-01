@@ -1,5 +1,16 @@
 import Foundation
 
+public enum ResumeTailoringProgressEvent: Sendable, Equatable {
+    case started
+    case attemptStarted(attempt: Int, isRetry: Bool)
+    case requestStarted(provider: AIProvider, model: String)
+    case responseReceived(characters: Int, usage: AIUsageMetrics?)
+    case parsingStarted
+    case retryScheduled(reason: String)
+    case completed(patchCount: Int, sectionGapCount: Int, usage: AIUsageMetrics?)
+    case failed(message: String)
+}
+
 public enum ResumeTailoringService {
     private static let invalidJSONErrorMessage =
         "Resume tailoring response was not valid JSON. Check Xcode console logs for \"AIParse\" entries."
@@ -16,11 +27,13 @@ public enum ResumeTailoringService {
         resumeJSON: String,
         company: String,
         role: String,
-        jobDescription: String
+        jobDescription: String,
+        onProgress: (@Sendable (ResumeTailoringProgressEvent) -> Void)? = nil
     ) async throws -> ResumeTailoringResult {
         AIParseDebugLogger.info(
             "ResumeTailoringService: generating suggestions provider=\(provider.rawValue) model=\(model) resumeChars=\(resumeJSON.count) jobDescriptionChars=\(jobDescription.count)."
         )
+        onProgress?(.started)
 
         let userPrompt = ResumeTailoringPrompts.userPrompt(
             resumeJSON: resumeJSON,
@@ -37,32 +50,59 @@ public enum ResumeTailoringService {
         for attemptIndex in attemptPrompts.indices {
             let systemPrompt = attemptPrompts[attemptIndex]
             let isRetryAttempt = attemptIndex > 0
+            onProgress?(.attemptStarted(attempt: attemptIndex + 1, isRetry: isRetryAttempt))
 
             if isRetryAttempt {
                 AIParseDebugLogger.warning(
                     "ResumeTailoringService: retrying with compact prompt after truncated response."
                 )
+                onProgress?(.retryScheduled(reason: "Previous response appeared truncated. Retrying with compact prompt."))
             }
 
-            let raw = try await AICompletionClient.complete(
-                provider: provider,
-                apiKey: apiKey,
-                model: model,
-                systemPrompt: systemPrompt,
-                userPrompt: userPrompt,
-                maxTokens: tailoringMaxTokens,
-                temperature: isRetryAttempt ? 0.2 : 0.3
-            )
+            onProgress?(.requestStarted(provider: provider, model: model))
+            let response: AICompletionResponse
+            do {
+                response = try await AICompletionClient.completeWithUsage(
+                    provider: provider,
+                    apiKey: apiKey,
+                    model: model,
+                    systemPrompt: systemPrompt,
+                    userPrompt: userPrompt,
+                    maxTokens: tailoringMaxTokens,
+                    temperature: isRetryAttempt ? 0.2 : 0.3
+                )
+            } catch {
+                onProgress?(.failed(message: error.localizedDescription))
+                throw error
+            }
+            onProgress?(.responseReceived(characters: response.text.count, usage: response.usage))
+            onProgress?(.parsingStarted)
 
             do {
-                return try parseResult(from: raw)
+                let parsed = try parseResult(from: response.text)
+                let result = ResumeTailoringResult(
+                    patches: parsed.patches,
+                    sectionGaps: parsed.sectionGaps,
+                    usage: response.usage
+                )
+                onProgress?(
+                    .completed(
+                        patchCount: result.patches.count,
+                        sectionGapCount: result.sectionGaps.count,
+                        usage: result.usage
+                    )
+                )
+                return result
             } catch {
                 guard isRetryableTruncationError(error), !isRetryAttempt else {
+                    onProgress?(.failed(message: error.localizedDescription))
                     throw error
                 }
+                onProgress?(.retryScheduled(reason: "Parser detected truncated JSON response."))
             }
         }
 
+        onProgress?(.failed(message: truncatedResponseErrorMessage))
         throw AIServiceError.parsingError(truncatedResponseErrorMessage)
     }
 

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import SwiftData
 import PipelineKit
 
 @Observable
@@ -17,13 +18,18 @@ final class AIParsingViewModel {
     var parseModel: String {
         settingsViewModel.preferredModel(for: parseProvider)
     }
+    var modelContext: ModelContext?
 
     // Services
     private let settingsViewModel: SettingsViewModel
 
-    init(settingsViewModel: SettingsViewModel = SettingsViewModel()) {
+    init(
+        settingsViewModel: SettingsViewModel = SettingsViewModel(),
+        modelContext: ModelContext? = nil
+    ) {
         self.settingsViewModel = settingsViewModel
         self.parseProvider = settingsViewModel.selectedAIProvider
+        self.modelContext = modelContext
     }
 
     // MARK: - Configuration
@@ -76,6 +82,7 @@ final class AIParsingViewModel {
             return
         }
 
+        let requestStartedAt = Date()
         isLoading = true
         error = nil
         parsedData = nil
@@ -114,19 +121,51 @@ final class AIParsingViewModel {
             }
             parsedData = parsed
             AIParseDebugLogger.info("AIParsingViewModel: parse completed successfully.")
+            recordUsage(
+                provider: parseProvider,
+                model: model,
+                usage: parsed.usage,
+                status: .succeeded,
+                startedAt: requestStartedAt,
+                errorMessage: nil
+            )
 
         } catch let keyError as SettingsViewModel.APIKeyValidationError {
             error = keyError.localizedDescription
+            recordUsage(
+                provider: parseProvider,
+                model: model,
+                usage: nil,
+                status: .failed,
+                startedAt: requestStartedAt,
+                errorMessage: keyError.localizedDescription
+            )
         } catch let aiError as AIServiceError {
             AIParseDebugLogger.error(
                 "AIParsingViewModel: parse failed with AIServiceError: \(aiError.localizedDescription)."
             )
             error = aiError.localizedDescription
+            recordUsage(
+                provider: parseProvider,
+                model: model,
+                usage: nil,
+                status: .failed,
+                startedAt: requestStartedAt,
+                errorMessage: aiError.localizedDescription
+            )
         } catch {
             AIParseDebugLogger.error(
                 "AIParsingViewModel: parse failed with unexpected error: \(error.localizedDescription)."
             )
             self.error = "Failed to parse job posting: \(error.localizedDescription)"
+            recordUsage(
+                provider: parseProvider,
+                model: model,
+                usage: nil,
+                status: .failed,
+                startedAt: requestStartedAt,
+                errorMessage: error.localizedDescription
+            )
         }
     }
 
@@ -171,5 +210,28 @@ final class AIParsingViewModel {
         isLoading = false
         error = nil
         parsedData = nil
+    }
+
+    private func recordUsage(
+        provider: AIProvider,
+        model: String,
+        usage: AIUsageMetrics?,
+        status: AIUsageRequestStatus,
+        startedAt: Date,
+        errorMessage: String?
+    ) {
+        guard let modelContext else { return }
+        _ = try? AIUsageLedgerService.record(
+            feature: .jobParsing,
+            provider: provider,
+            model: model,
+            usage: usage,
+            status: status,
+            applicationID: nil,
+            startedAt: startedAt,
+            finishedAt: Date(),
+            errorMessage: errorMessage,
+            in: modelContext
+        )
     }
 }

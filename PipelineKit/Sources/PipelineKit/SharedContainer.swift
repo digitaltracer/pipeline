@@ -14,7 +14,9 @@ public enum SharedContainer {
             JobApplication.self,
             InterviewLog.self,
             ResumeMasterRevision.self,
-            ResumeJobSnapshot.self
+            ResumeJobSnapshot.self,
+            AIUsageRecord.self,
+            AIModelRate.self
         ])
 
         let storeURL = resolvedStoreURL()

@@ -1,5 +1,27 @@
 import Foundation
 
+public struct AIUsageMetrics: Codable, Sendable, Equatable {
+    public let promptTokens: Int?
+    public let completionTokens: Int?
+    public let totalTokens: Int?
+
+    public init(promptTokens: Int? = nil, completionTokens: Int? = nil, totalTokens: Int? = nil) {
+        self.promptTokens = promptTokens
+        self.completionTokens = completionTokens
+        self.totalTokens = totalTokens
+    }
+}
+
+public struct AICompletionResponse: Sendable, Equatable {
+    public let text: String
+    public let usage: AIUsageMetrics?
+
+    public init(text: String, usage: AIUsageMetrics? = nil) {
+        self.text = text
+        self.usage = usage
+    }
+}
+
 /// A lightweight client that sends a system + user prompt to any supported AI provider
 /// and returns the raw text response. Reusable across Interview Prep, Follow-up Drafter, etc.
 public enum AICompletionClient {
@@ -13,24 +35,53 @@ public enum AICompletionClient {
         maxTokens: Int = 4000,
         temperature: Double = 0.3
     ) async throws -> String {
+        try await completeWithUsage(
+            provider: provider,
+            apiKey: apiKey,
+            model: model,
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            maxTokens: maxTokens,
+            temperature: temperature
+        ).text
+    }
+
+    public static func completeWithUsage(
+        provider: AIProvider,
+        apiKey: String,
+        model: String,
+        systemPrompt: String,
+        userPrompt: String,
+        maxTokens: Int = 4000,
+        temperature: Double = 0.3
+    ) async throws -> AICompletionResponse {
         switch provider {
         case .openAI:
             return try await completeOpenAI(
-                apiKey: apiKey, model: model,
-                systemPrompt: systemPrompt, userPrompt: userPrompt,
-                maxTokens: maxTokens, temperature: temperature
+                apiKey: apiKey,
+                model: model,
+                systemPrompt: systemPrompt,
+                userPrompt: userPrompt,
+                maxTokens: maxTokens,
+                temperature: temperature
             )
         case .anthropic:
             return try await completeAnthropic(
-                apiKey: apiKey, model: model,
-                systemPrompt: systemPrompt, userPrompt: userPrompt,
-                maxTokens: maxTokens, temperature: temperature
+                apiKey: apiKey,
+                model: model,
+                systemPrompt: systemPrompt,
+                userPrompt: userPrompt,
+                maxTokens: maxTokens,
+                temperature: temperature
             )
         case .gemini:
             return try await completeGemini(
-                apiKey: apiKey, model: model,
-                systemPrompt: systemPrompt, userPrompt: userPrompt,
-                maxTokens: maxTokens, temperature: temperature
+                apiKey: apiKey,
+                model: model,
+                systemPrompt: systemPrompt,
+                userPrompt: userPrompt,
+                maxTokens: maxTokens,
+                temperature: temperature
             )
         }
     }
@@ -38,10 +89,13 @@ public enum AICompletionClient {
     // MARK: - OpenAI
 
     private static func completeOpenAI(
-        apiKey: String, model: String,
-        systemPrompt: String, userPrompt: String,
-        maxTokens: Int, temperature: Double
-    ) async throws -> String {
+        apiKey: String,
+        model: String,
+        systemPrompt: String,
+        userPrompt: String,
+        maxTokens: Int,
+        temperature: Double
+    ) async throws -> AICompletionResponse {
         let requestBody: [String: Any] = [
             "model": model,
             "messages": [
@@ -71,12 +125,21 @@ public enum AICompletionClient {
 
         let finishReason = (firstChoice["finish_reason"] as? String) ?? "unknown"
         let usage = json["usage"] as? [String: Any]
+        let usageMetrics = makeUsage(
+            prompt: intValue(usage?["prompt_tokens"]),
+            completion: intValue(usage?["completion_tokens"]),
+            total: intValue(usage?["total_tokens"])
+        )
+
         AIParseDebugLogger.info(
             "AICompletionClient(OpenAI): model=\(model) finish_reason=\(finishReason) prompt_tokens=\(tokenString(usage?["prompt_tokens"])) completion_tokens=\(tokenString(usage?["completion_tokens"])) total_tokens=\(tokenString(usage?["total_tokens"]))."
         )
 
         if let text = message["content"] as? String, !text.isEmpty {
-            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return AICompletionResponse(
+                text: text.trimmingCharacters(in: .whitespacesAndNewlines),
+                usage: usageMetrics
+            )
         }
 
         if let parts = message["content"] as? [[String: Any]] {
@@ -84,7 +147,10 @@ public enum AICompletionClient {
                 .compactMap { ($0["text"] as? String) ?? ($0["content"] as? String) }
                 .joined(separator: "\n")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty { return text }
+
+            if !text.isEmpty {
+                return AICompletionResponse(text: text, usage: usageMetrics)
+            }
         }
 
         throw AIServiceError.invalidResponse
@@ -93,10 +159,13 @@ public enum AICompletionClient {
     // MARK: - Anthropic
 
     private static func completeAnthropic(
-        apiKey: String, model: String,
-        systemPrompt: String, userPrompt: String,
-        maxTokens: Int, temperature: Double
-    ) async throws -> String {
+        apiKey: String,
+        model: String,
+        systemPrompt: String,
+        userPrompt: String,
+        maxTokens: Int,
+        temperature: Double
+    ) async throws -> AICompletionResponse {
         let requestBody: [String: Any] = [
             "model": model,
             "max_tokens": maxTokens,
@@ -125,6 +194,12 @@ public enum AICompletionClient {
         let stopReason = (json["stop_reason"] as? String) ?? "unknown"
         let stopSequence = json["stop_sequence"] as? String
         let usage = json["usage"] as? [String: Any]
+        let usageMetrics = makeUsage(
+            prompt: intValue(usage?["input_tokens"]),
+            completion: intValue(usage?["output_tokens"]),
+            total: nil
+        )
+
         AIParseDebugLogger.info(
             "AICompletionClient(Anthropic): model=\(model) stop_reason=\(stopReason) stop_sequence=\(stopSequence ?? "<nil>") input_tokens=\(tokenString(usage?["input_tokens"])) output_tokens=\(tokenString(usage?["output_tokens"]))."
         )
@@ -138,16 +213,19 @@ public enum AICompletionClient {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !text.isEmpty else { throw AIServiceError.invalidResponse }
-        return text
+        return AICompletionResponse(text: text, usage: usageMetrics)
     }
 
     // MARK: - Gemini
 
     private static func completeGemini(
-        apiKey: String, model: String,
-        systemPrompt: String, userPrompt: String,
-        maxTokens: Int, temperature: Double
-    ) async throws -> String {
+        apiKey: String,
+        model: String,
+        systemPrompt: String,
+        userPrompt: String,
+        maxTokens: Int,
+        temperature: Double
+    ) async throws -> AICompletionResponse {
         let prompt = "\(systemPrompt)\n\n\(userPrompt)"
 
         let requestBody: [String: Any] = [
@@ -177,9 +255,16 @@ public enum AICompletionClient {
         }
 
         let usage = json["usageMetadata"] as? [String: Any]
+        let usageMetrics = makeUsage(
+            prompt: intValue(usage?["promptTokenCount"]),
+            completion: intValue(usage?["candidatesTokenCount"]),
+            total: intValue(usage?["totalTokenCount"])
+        )
+
         let finishReasons = candidates
             .compactMap { $0["finishReason"] as? String }
             .joined(separator: ",")
+
         AIParseDebugLogger.info(
             "AICompletionClient(Gemini): model=\(model) finish_reasons=[\(finishReasons)] prompt_tokens=\(tokenString(usage?["promptTokenCount"])) completion_tokens=\(tokenString(usage?["candidatesTokenCount"])) total_tokens=\(tokenString(usage?["totalTokenCount"]))."
         )
@@ -198,7 +283,7 @@ public enum AICompletionClient {
                 AIParseDebugLogger.info(
                     "AICompletionClient(Gemini): selected candidate finish_reason=\(finishReason) output_chars=\(text.count)."
                 )
-                return text
+                return AICompletionResponse(text: text, usage: usageMetrics)
             }
         }
 
@@ -260,6 +345,36 @@ public enum AICompletionClient {
             )
             throw AIServiceError.apiError("HTTP \(httpResponse.statusCode)")
         }
+    }
+
+    private static func intValue(_ value: Any?) -> Int? {
+        if let intValue = value as? Int {
+            return intValue
+        }
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+        if let text = value as? String, let intValue = Int(text) {
+            return intValue
+        }
+        return nil
+    }
+
+    private static func makeUsage(prompt: Int?, completion: Int?, total: Int?) -> AIUsageMetrics? {
+        let resolvedTotal = total ?? {
+            guard let prompt, let completion else { return nil }
+            return prompt + completion
+        }()
+
+        guard prompt != nil || completion != nil || resolvedTotal != nil else {
+            return nil
+        }
+
+        return AIUsageMetrics(
+            promptTokens: prompt,
+            completionTokens: completion,
+            totalTokens: resolvedTotal
+        )
     }
 
     private static func tokenString(_ value: Any?) -> String {

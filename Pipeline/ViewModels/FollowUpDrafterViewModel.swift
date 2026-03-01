@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import SwiftData
 import PipelineKit
 
 @Observable
@@ -14,10 +15,16 @@ final class FollowUpDrafterViewModel {
 
     private let application: JobApplication
     private let settingsViewModel: SettingsViewModel
+    private let modelContext: ModelContext?
 
-    init(application: JobApplication, settingsViewModel: SettingsViewModel) {
+    init(
+        application: JobApplication,
+        settingsViewModel: SettingsViewModel,
+        modelContext: ModelContext? = nil
+    ) {
         self.application = application
         self.settingsViewModel = settingsViewModel
+        self.modelContext = modelContext
     }
 
     var hasResult: Bool { result != nil }
@@ -58,6 +65,7 @@ final class FollowUpDrafterViewModel {
             return
         }
 
+        let requestStartedAt = Date()
         isLoading = true
         error = nil
         result = nil
@@ -98,12 +106,48 @@ final class FollowUpDrafterViewModel {
             result = emailResult
             editableSubject = emailResult.subject
             editableBody = emailResult.body
+            recordUsage(
+                feature: .followUpDraft,
+                provider: provider,
+                model: model,
+                usage: emailResult.usage,
+                status: .succeeded,
+                startedAt: requestStartedAt,
+                errorMessage: nil
+            )
         } catch let keyError as SettingsViewModel.APIKeyValidationError {
             error = keyError.localizedDescription
+            recordUsage(
+                feature: .followUpDraft,
+                provider: provider,
+                model: model,
+                usage: nil,
+                status: .failed,
+                startedAt: requestStartedAt,
+                errorMessage: keyError.localizedDescription
+            )
         } catch let aiError as AIServiceError {
             error = aiError.localizedDescription
+            recordUsage(
+                feature: .followUpDraft,
+                provider: provider,
+                model: model,
+                usage: nil,
+                status: .failed,
+                startedAt: requestStartedAt,
+                errorMessage: aiError.localizedDescription
+            )
         } catch {
             self.error = "Failed to generate follow-up email: \(error.localizedDescription)"
+            recordUsage(
+                feature: .followUpDraft,
+                provider: provider,
+                model: model,
+                usage: nil,
+                status: .failed,
+                startedAt: requestStartedAt,
+                errorMessage: error.localizedDescription
+            )
         }
     }
 
@@ -126,5 +170,29 @@ final class FollowUpDrafterViewModel {
             URLQueryItem(name: "body", value: editableBody)
         ]
         return components.url
+    }
+
+    private func recordUsage(
+        feature: AIUsageFeature,
+        provider: AIProvider,
+        model: String,
+        usage: AIUsageMetrics?,
+        status: AIUsageRequestStatus,
+        startedAt: Date,
+        errorMessage: String?
+    ) {
+        guard let modelContext else { return }
+        _ = try? AIUsageLedgerService.record(
+            feature: feature,
+            provider: provider,
+            model: model,
+            usage: usage,
+            status: status,
+            applicationID: application.id,
+            startedAt: startedAt,
+            finishedAt: Date(),
+            errorMessage: errorMessage,
+            in: modelContext
+        )
     }
 }

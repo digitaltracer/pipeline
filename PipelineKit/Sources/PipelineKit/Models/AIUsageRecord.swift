@@ -1,0 +1,97 @@
+import Foundation
+import SwiftData
+
+public enum AIUsageFeature: String, Codable, CaseIterable, Sendable, Identifiable {
+    case resumeTailoring = "resume_tailoring"
+    case interviewPrep = "interview_prep"
+    case followUpDraft = "follow_up_draft"
+    case jobParsing = "job_parsing"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .resumeTailoring:
+            return "Resume Tailoring"
+        case .interviewPrep:
+            return "Interview Prep"
+        case .followUpDraft:
+            return "Follow-up Draft"
+        case .jobParsing:
+            return "Job Parsing"
+        }
+    }
+}
+
+public enum AIUsageRequestStatus: String, Codable, CaseIterable, Sendable, Identifiable {
+    case succeeded = "succeeded"
+    case failed = "failed"
+
+    public var id: String { rawValue }
+}
+
+@Model
+public final class AIUsageRecord {
+    public var id: UUID = UUID()
+    public var featureRawValue: String = AIUsageFeature.resumeTailoring.rawValue
+    public var providerID: String = ""
+    public var model: String = ""
+    public var requestStatusRawValue: String = AIUsageRequestStatus.succeeded.rawValue
+
+    public var promptTokens: Int?
+    public var completionTokens: Int?
+    public var totalTokens: Int?
+
+    public var inputCostUSD: Double?
+    public var outputCostUSD: Double?
+    public var totalCostUSD: Double?
+
+    public var applicationID: UUID?
+    public var startedAt: Date = Date()
+    public var finishedAt: Date = Date()
+    public var errorMessage: String?
+
+    public init(
+        id: UUID = UUID(),
+        feature: AIUsageFeature,
+        providerID: String,
+        model: String,
+        requestStatus: AIUsageRequestStatus,
+        promptTokens: Int? = nil,
+        completionTokens: Int? = nil,
+        totalTokens: Int? = nil,
+        inputCostUSD: Double? = nil,
+        outputCostUSD: Double? = nil,
+        totalCostUSD: Double? = nil,
+        applicationID: UUID? = nil,
+        startedAt: Date = Date(),
+        finishedAt: Date = Date(),
+        errorMessage: String? = nil
+    ) {
+        self.id = id
+        self.featureRawValue = feature.rawValue
+        self.providerID = providerID
+        self.model = model
+        self.requestStatusRawValue = requestStatus.rawValue
+        self.promptTokens = promptTokens
+        self.completionTokens = completionTokens
+        self.totalTokens = totalTokens
+        self.inputCostUSD = inputCostUSD
+        self.outputCostUSD = outputCostUSD
+        self.totalCostUSD = totalCostUSD
+        self.applicationID = applicationID
+        self.startedAt = startedAt
+        self.finishedAt = finishedAt
+        self.errorMessage = errorMessage
+    }
+
+    public var feature: AIUsageFeature {
+        get { AIUsageFeature(rawValue: featureRawValue) ?? .resumeTailoring }
+        set { featureRawValue = newValue.rawValue }
+    }
+
+    public var requestStatus: AIUsageRequestStatus {
+        get { AIUsageRequestStatus(rawValue: requestStatusRawValue) ?? .succeeded }
+        set { requestStatusRawValue = newValue.rawValue }
+    }
+}

@@ -15,6 +15,7 @@ struct MainView: View {
     @Binding var showingAddApplication: Bool
     @Binding var searchText: String
     @Binding var showingResume: Bool
+    @Binding var showingCostCenter: Bool
     @Bindable var settingsViewModel: SettingsViewModel
 
     enum ViewMode: String, CaseIterable {
@@ -38,7 +39,7 @@ struct MainView: View {
 #endif
 
     private var isKanbanAvailable: Bool {
-        selectedFilter == .all && !showingDashboard && !showingResume
+        selectedFilter == .all && !showingDashboard && !showingResume && !showingCostCenter
     }
 
     private var availableViewModes: [ViewMode] {
@@ -67,13 +68,16 @@ struct MainView: View {
     }
 
     private var shouldShowDetailColumn: Bool {
-        selectedApplication != nil && !showingDashboard && !showingResume
+        selectedApplication != nil && !showingDashboard && !showingResume && !showingCostCenter
     }
 
     @ViewBuilder
     private var contentColumn: some View {
         if showingDashboard {
             DashboardView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else if showingCostCenter {
+            CostCenterView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else if showingResume {
             ResumeWorkspaceView()
@@ -139,6 +143,7 @@ struct MainView: View {
             showingSettings: $showingSettings,
             showingDashboard: $showingDashboard,
             showingResume: $showingResume,
+            showingCostCenter: $showingCostCenter,
             statusCounts: viewModel.statusCounts(
                 from: applications,
                 includeInAllApplications: allApplicationsInclusionRule
@@ -220,6 +225,13 @@ struct MainView: View {
                 enforceViewModeAvailability()
             }
             guard isShowingResume, selectedApplication != nil else { return }
+            closeSelectedApplication()
+        }
+        .onChange(of: showingCostCenter) { _, isShowingCostCenter in
+            if isShowingCostCenter {
+                enforceViewModeAvailability()
+            }
+            guard isShowingCostCenter, selectedApplication != nil else { return }
             closeSelectedApplication()
         }
         .onChange(of: viewMode) { _, _ in
@@ -349,10 +361,18 @@ private extension View {
         showingAddApplication: .constant(false),
         searchText: .constant(""),
         showingResume: .constant(false),
+        showingCostCenter: .constant(false),
         settingsViewModel: SettingsViewModel()
     )
     .modelContainer(
-        for: [JobApplication.self, InterviewLog.self, ResumeMasterRevision.self, ResumeJobSnapshot.self],
+        for: [
+            JobApplication.self,
+            InterviewLog.self,
+            ResumeMasterRevision.self,
+            ResumeJobSnapshot.self,
+            AIUsageRecord.self,
+            AIModelRate.self
+        ],
         inMemory: true
     )
 }

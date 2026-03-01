@@ -8,6 +8,7 @@ public struct ParsedJobData: Sendable {
     public var salaryMin: Int?
     public var salaryMax: Int?
     public var currency: Currency
+    public var usage: AIUsageMetrics?
 
     public init(
         companyName: String = "",
@@ -16,7 +17,8 @@ public struct ParsedJobData: Sendable {
         jobDescription: String = "",
         salaryMin: Int? = nil,
         salaryMax: Int? = nil,
-        currency: Currency = .usd
+        currency: Currency = .usd,
+        usage: AIUsageMetrics? = nil
     ) {
         self.companyName = companyName
         self.role = role
@@ -25,6 +27,7 @@ public struct ParsedJobData: Sendable {
         self.salaryMin = salaryMin
         self.salaryMax = salaryMax
         self.currency = currency
+        self.usage = usage
     }
 
     public var hasMeaningfulContent: Bool {

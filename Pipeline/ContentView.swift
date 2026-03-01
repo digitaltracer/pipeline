@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var selectedApplication: JobApplication?
     @State private var showingAddApplication = false
     @State private var showingResume = false
+    @State private var showingCostCenter = false
     @State private var searchText = ""
     @Bindable var settingsViewModel: SettingsViewModel
 
@@ -31,6 +32,7 @@ struct ContentView: View {
             showingAddApplication: $showingAddApplication,
             searchText: $searchText,
             showingResume: $showingResume,
+            showingCostCenter: $showingCostCenter,
             settingsViewModel: settingsViewModel
         )
         .preferredColorScheme(settingsViewModel.getColorScheme())
@@ -95,7 +97,14 @@ struct ContentView: View {
 #Preview {
     ContentView(settingsViewModel: SettingsViewModel())
         .modelContainer(
-            for: [JobApplication.self, InterviewLog.self, ResumeMasterRevision.self, ResumeJobSnapshot.self],
+            for: [
+                JobApplication.self,
+                InterviewLog.self,
+                ResumeMasterRevision.self,
+                ResumeJobSnapshot.self,
+                AIUsageRecord.self,
+                AIModelRate.self
+            ],
             inMemory: true
         )
 }
