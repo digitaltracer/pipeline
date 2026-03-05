@@ -10,7 +10,7 @@
   - `Utilities/`: small helpers/constants (date formatters, URL helpers).
   - `Resources/`: assets (`Assets.xcassets`) and other bundled resources.
 - `runlocal.md`: detailed local setup (signing, simulator, iCloud).
-- `screenshots/`: UI screenshots for PRs/docs.
+- `CHANGELOG.md`: public-facing list of notable changes.
 
 ## Build, Test, and Development Commands
 
@@ -54,7 +54,11 @@ xcrun simctl list devices
 ## Commit & Pull Request Guidelines
 
 - Commit messages in this repo are short and action-oriented (e.g., “move files to repo root”); keep them concise and specific.
-- PRs should include: summary of user-visible changes, manual test notes (macOS/iOS), and screenshots for UI changes (store in `screenshots/` when helpful).
+- PRs should include: summary of user-visible changes and manual test notes (macOS/iOS).
+- When adding, removing, or modifying a user-facing feature, update `CHANGELOG.md` in the same change.
+- Add changelog entries under `## [Unreleased]` using `Added`, `Changed`, or `Fixed` sections.
+- Keep changelog entries grouped by release context: if multiple edits touch the same feature in one release cycle, update the existing bullet instead of appending near-duplicate bullets.
+- Prefer compact, feature-level summaries in `## [Unreleased]` (what changed and why) over step-by-step implementation notes.
 
 ## Security & Configuration Tips
 

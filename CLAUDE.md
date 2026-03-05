@@ -233,3 +233,9 @@ The AI parse flow works as follows:
 - Mark classes as `final` unless inheritance needed
 - Use `private` for internal implementation details
 - Group related code with `// MARK: -` comments
+
+## Changelog Guidelines
+
+- When updating `CHANGELOG.md`, keep entries under `## [Unreleased]` grouped by feature/release context.
+- If multiple commits refine the same feature in one release cycle, update a single existing bullet rather than adding many near-duplicate bullets.
+- Write compact, user-facing summaries of outcomes; avoid implementation-by-implementation timeline bullets.
