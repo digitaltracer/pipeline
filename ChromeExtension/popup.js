@@ -67,6 +67,13 @@
     copyJsonBtn.textContent = "Copy Parsed JSON";
   }
 
+  function formatDescriptionPreview(text, maxLength = 380) {
+    const normalized = String(text || "").replace(/\r\n?/g, "\n").trim();
+    if (!normalized) return "\u2014";
+    if (normalized.length <= maxLength) return normalized;
+    return `${normalized.substring(0, maxLength).trimEnd()}...`;
+  }
+
   function setSavingState() {
     saveBtn.disabled = true;
     saveBtn.textContent = "Saving...";
@@ -203,9 +210,7 @@
         previewSalary.textContent = extractedData.salary;
         salaryField.classList.remove("hidden");
       }
-      previewDescription.textContent = extractedData.description
-        ? extractedData.description.substring(0, 300) + (extractedData.description.length > 300 ? "..." : "")
-        : "\u2014";
+      previewDescription.textContent = formatDescriptionPreview(extractedData.description);
 
       showOnly(previewEl);
     } catch (err) {
