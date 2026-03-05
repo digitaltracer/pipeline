@@ -98,6 +98,20 @@ private extension View {
             ) { _ in }
         }
     }
+
+#if os(macOS)
+    func resumeModeHandCursor() -> some View {
+        onHover { isHovering in
+            if isHovering {
+                NSCursor.pointingHand.set()
+            } else {
+                NSCursor.arrow.set()
+            }
+        }
+    }
+#else
+    func resumeModeHandCursor() -> some View { self }
+#endif
 }
 
 struct ResumeWorkspaceView: View {
@@ -300,6 +314,7 @@ struct ResumeWorkspaceView: View {
                         )
                 }
                 .buttonStyle(.plain)
+                .resumeModeHandCursor()
             }
         }
         .padding(4)

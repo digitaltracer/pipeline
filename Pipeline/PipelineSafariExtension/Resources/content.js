@@ -3,9 +3,10 @@
 // Shared between Safari and Chrome extensions.
 //
 // Extraction priority:
-//   1. JSON-LD / microdata (schema.org JobPosting)
-//   2. Semantic DOM extraction (standards-first, class-agnostic heuristics)
-//   3. Open Graph / meta tags as weak fallback
+//   1. Platform-specific extraction (currently LinkedIn two-pane details view)
+//   2. JSON-LD / microdata (schema.org JobPosting)
+//   3. Semantic DOM extraction (standards-first, class-agnostic heuristics)
+//   4. Open Graph / meta tags as weak fallback
 //
 // Important: we gate the final payload by confidence to avoid saving junk data.
 
@@ -55,6 +56,9 @@
     "help me stand out",
     "easy apply",
     "save",
+    "top job picks for you",
+    "jobs for you",
+    "people also viewed",
   ];
 
   const DESCRIPTION_START_PATTERNS = [
@@ -120,10 +124,19 @@
 
   function looksLikeLocation(text) {
     if (!text) return false;
-    const value = text.toLowerCase();
+    const normalized = normalizeText(text);
+    if (!normalized || normalized.length > 80) return false;
+    const value = normalized.toLowerCase();
+    if (
+      /\b(top job picks|show match details|tailor my resume|create cover letter|our culture|connections)\b/i.test(
+        value
+      )
+    ) {
+      return false;
+    }
     if (/\b(remote|hybrid|on-site|onsite)\b/.test(value)) return true;
-    if (/\b[a-z .'-]+,\s*[a-z]{2}\b/i.test(text)) return true;
-    if (/\b[a-z .'-]+,\s*[a-z .'-]{3,}\b/i.test(text)) return true;
+    if (/\b[a-z .'-]+,\s*[a-z]{2}\b/i.test(normalized)) return true;
+    if (/\b[a-z .'-]+,\s*[a-z .'-]{3,}\b/i.test(normalized)) return true;
     return false;
   }
 
@@ -138,7 +151,7 @@
 
     const filtered = segments.filter(
       (segment) =>
-        !/\b(applicant|applied|day|days|hour|hours|week|weeks|month|months|promoted|reviewing|viewed)\b/i.test(
+        !/\b(applicant|applied|day|days|hour|hours|week|weeks|month|months|promoted|reviewing|viewed|premium|connections|our culture|show match details|tailor my resume|create cover letter|click apply|easy apply)\b/i.test(
           segment
         )
     );
@@ -175,12 +188,15 @@
   function isValidCompany(value) {
     if (!value) return false;
     const company = normalizeText(value);
-    if (company.length < 2 || company.length > 120) return false;
+    if (company.length < 2 || company.length > 80) return false;
     const lower = company.toLowerCase();
     if (lower.includes("sign in") || lower.includes("join now")) return false;
     if (lower.includes("easy apply") || lower.includes("quick apply")) return false;
     if (lower.includes("posted") || lower.includes("minutes ago")) return false;
     if (lower.includes("full-time") || lower.includes("part-time")) return false;
+    if (lower.includes("employees") || lower.includes("connections")) return false;
+    if (lower.includes("our culture") || lower.includes("show match details")) return false;
+    if (company.split(/\s+/).length > 8) return false;
     if (looksLikeLocation(company)) return false;
     return true;
   }
@@ -274,6 +290,16 @@
       const element = root.querySelector(selector);
       if (!element) continue;
       const value = normalizeText(element.textContent || "");
+      if (value) return value;
+    }
+    return "";
+  }
+
+  function pickFirstInnerText(selectors, root = document) {
+    for (const selector of selectors) {
+      const element = root.querySelector(selector);
+      if (!(element instanceof HTMLElement)) continue;
+      const value = normalizeText(element.innerText || "");
       if (value) return value;
     }
     return "";
@@ -412,12 +438,13 @@
 
     return {
       timestamp: new Date().toISOString(),
-      extractorVersion: "heuristic-v3-debug",
+      extractorVersion: "heuristic-v4-debug",
       url: window.location.href,
       platform: detectPlatform(),
       documentTitle: document.title || "",
       extraction: extractedData || null,
       candidates: {
+        linkedinPanel: toDebugRecord(rawCandidates.linkedinPanel),
         jsonLd: toDebugRecord(rawCandidates.jsonLd),
         microdata: toDebugRecord(rawCandidates.microdata),
         semanticDom: toDebugRecord(rawCandidates.semanticDom),
@@ -600,7 +627,257 @@
   }
 
   // ---------------------------------------------------------------------------
-  // 3. Semantic DOM extraction (class-agnostic heuristics)
+  // 3. LinkedIn panel extraction (selected job details in two-pane layout)
+  // ---------------------------------------------------------------------------
+
+  function isLinkedInJobsContext() {
+    return /(^|\.)linkedin\.com$/i.test(location.hostname) && /\/jobs(\/|$)/i.test(location.pathname);
+  }
+
+  function hasLinkedInListPaneSignals(element) {
+    if (!(element instanceof Element)) return false;
+    return Boolean(
+      element.querySelector(
+        ".jobs-search-results-list, .jobs-search-results__list-item, ul.scaffold-layout__list-container, .scaffold-layout__list"
+      )
+    );
+  }
+
+  function scoreLinkedInDetailsRegion(element) {
+    if (!(element instanceof Element)) return -10;
+    if (hasLinkedInListPaneSignals(element)) return -10;
+
+    const text = normalizeText(element?.innerText || "");
+    if (!text || text.length < MIN_DESCRIPTION_LENGTH) return -10;
+
+    let score = 0;
+    if (text.length >= 280 && text.length <= 16000) score += 2;
+    if (
+      element.querySelector(
+        ".job-details-jobs-unified-top-card, .jobs-unified-top-card, .jobs-unified-top-card__job-title, .job-details-jobs-unified-top-card__job-title"
+      )
+    ) {
+      score += 3;
+    }
+    if (element.querySelector(".jobs-apply-button, .jobs-apply-button--top-card, [data-live-test-job-apply-button]")) {
+      score += 2;
+    }
+    if (element.querySelector('a[href*="/company/"]')) score += 2;
+    if (
+      element.querySelector(
+        ".jobs-description-content__text, .jobs-description__content, .jobs-box__html-content, #job-details"
+      )
+    ) {
+      score += 5;
+    }
+    if (/\b(about the job|responsibilities|qualifications|job description)\b/i.test(text)) score += 2;
+    if (/\b(top job picks for you|jobs for you)\b/i.test(text)) score -= 4;
+    if (/\b(people also viewed|more jobs|promoted)\b/i.test(text)) score -= 2;
+    return score;
+  }
+
+  function findLinkedInDetailsRegion() {
+    const candidates = new Set();
+    const selectors = [
+      ".jobs-search__job-details--container",
+      ".jobs-search-two-pane__job-details",
+      ".jobs-search-two-pane__job-details-pane",
+      ".jobs-details",
+      ".jobs-details__main-content",
+      ".scaffold-layout__detail",
+      "section.jobs-search__right-rail",
+      "[aria-label*='job details' i]",
+      "[id*='job-details' i]",
+      "[data-testid*='job-details' i]",
+    ];
+
+    for (const selector of selectors) {
+      document.querySelectorAll(selector).forEach((element) => candidates.add(element));
+    }
+
+    document
+      .querySelectorAll(".jobs-description-content__text, .jobs-box__html-content, #job-details")
+      .forEach((element) => {
+        const container = element.closest("section, article, main, div");
+        if (container) candidates.add(container);
+      });
+
+    document
+      .querySelectorAll(
+        ".job-details-jobs-unified-top-card, .jobs-unified-top-card, .jobs-unified-top-card__job-title, .job-details-jobs-unified-top-card__job-title"
+      )
+      .forEach((element) => {
+        const container = element.closest(
+          ".jobs-search__job-details--container, .jobs-search-two-pane__job-details, .jobs-search-two-pane__job-details-pane, .jobs-details, .scaffold-layout__detail, section, main"
+        );
+        if (container) candidates.add(container);
+      });
+
+    const scored = Array.from(candidates)
+      .map((element) => ({ element, score: scoreLinkedInDetailsRegion(element) }))
+      .filter((candidate) => candidate.score >= 4)
+      .sort((a, b) => b.score - a.score);
+
+    return scored[0]?.element || null;
+  }
+
+  function tryExpandLinkedInDescription(root) {
+    const selectors = [
+      'button[aria-label*="click to see more description" i]',
+      'button[aria-label*="show more" i]',
+      'button[aria-label*="see more" i]',
+      ".jobs-description__footer-button",
+      ".jobs-box__footer-button",
+    ];
+
+    for (const selector of selectors) {
+      const button = root.querySelector(selector);
+      if (!(button instanceof HTMLElement)) continue;
+      if (button.getAttribute("aria-expanded") === "true") continue;
+
+      const signal = `${normalizeText(button.textContent || "")} ${normalizeText(
+        button.getAttribute("aria-label") || ""
+      )}`.toLowerCase();
+      if (signal && !/\b(more|expand|full)\b/.test(signal)) continue;
+
+      button.click();
+      return true;
+    }
+
+    return false;
+  }
+
+  function extractLinkedInDescriptionText(root) {
+    const directSelectors = [
+      ".jobs-description-content__text",
+      ".jobs-description__content",
+      ".jobs-box__html-content",
+      "#job-details",
+      '[id*="job-details" i]',
+      '[data-test-id*="job-details" i]',
+      '[data-testid*="job-details" i]',
+    ];
+
+    for (const selector of directSelectors) {
+      const text = pickFirstInnerText([selector], root);
+      if (!text) continue;
+      const normalized = cleanDescriptionText(dedupeWords(clampDescription(text)) || text);
+      if (isValidDescription(normalized)) return normalized;
+    }
+
+    const headings = Array.from(root.querySelectorAll("h2, h3, strong, span"))
+      .map((el) => ({ el, text: normalizeText(el.textContent || "") }))
+      .filter((entry) => /\b(about the job|job description|responsibilities|qualifications|what you'll do)\b/i.test(entry.text));
+
+    for (const heading of headings) {
+      const container = heading.el.closest("section, article, div");
+      if (!container || hasLinkedInListPaneSignals(container)) continue;
+      const text = normalizeText(container.innerText || "");
+      if (!text) continue;
+      const normalized = cleanDescriptionText(dedupeWords(clampDescription(text)) || text);
+      if (isValidDescription(normalized)) return normalized;
+    }
+
+    return "";
+  }
+
+  function extractFromLinkedInPanel() {
+    if (!isLinkedInJobsContext()) return null;
+
+    const root = findLinkedInDetailsRegion();
+    if (!root) return null;
+    if (hasLinkedInListPaneSignals(root)) return null;
+
+    tryExpandLinkedInDescription(root);
+
+    const parsedTitleCompany = parseTitleCompanyFromDocumentTitle();
+    const topCard =
+      root.querySelector(".job-details-jobs-unified-top-card, .jobs-unified-top-card") || root;
+
+    const titleCandidate = cleanTitle(
+      pickFirstText(
+        [
+          ".job-details-jobs-unified-top-card__job-title",
+          ".jobs-unified-top-card__job-title",
+          '[class*="jobs-unified-top-card__job-title"]',
+          '[data-test-id*="job-title" i]',
+          '[data-testid*="job-title" i]',
+        ],
+        topCard
+      )
+    );
+    const title = looksLikeTitle(titleCandidate)
+      ? titleCandidate
+      : looksLikeTitle(parsedTitleCompany.title)
+      ? parsedTitleCompany.title
+      : "";
+
+    const companyCandidate =
+      pickFirstText(
+        [
+          ".job-details-jobs-unified-top-card__company-name a",
+          ".jobs-unified-top-card__company-name a",
+          ".job-details-jobs-unified-top-card__company-name",
+          ".jobs-unified-top-card__company-name",
+          '[class*="jobs-unified-top-card__company-name"] a',
+          '[class*="jobs-unified-top-card__company-name"]',
+          '[data-test-id*="company" i]',
+          '[data-testid*="company" i]',
+          'a[href*="/company/"]',
+        ],
+        topCard
+      ) || parsedTitleCompany.company;
+    const company = isValidCompany(companyCandidate) ? companyCandidate : "";
+
+    const topCardText = normalizeText(
+      topCard.innerText || ""
+    );
+    const topLines = compactMultiline(topCardText)
+      .split("\n")
+      .map((line) => normalizeText(line))
+      .filter(Boolean)
+      .slice(0, 28);
+
+    const locationCandidate = cleanLocation(
+      pickFirstText(
+        [
+          ".jobs-unified-top-card__bullet",
+          ".job-details-jobs-unified-top-card__tertiary-description-container",
+          '[class*="jobs-unified-top-card__bullet"]',
+          '[aria-label*="location" i]',
+          '[data-test-id*="location" i]',
+          '[data-testid*="location" i]',
+        ],
+        topCard
+      ) || extractLocationFromLines(topLines)
+    );
+    const location = looksLikeLocation(locationCandidate) ? locationCandidate : "";
+
+    const description = extractLinkedInDescriptionText(root);
+    const salary =
+      pickFirstText(
+        [
+          '[aria-label*="salary" i]',
+          '[data-test-id*="salary" i]',
+          '[data-testid*="salary" i]',
+        ],
+        topCard
+      ) || extractSalaryFromText(`${topCardText}\n${description}`);
+
+    if (!title && !description) return null;
+
+    return {
+      title,
+      company,
+      location,
+      description,
+      salary,
+      source: "linkedin-panel",
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // 4. Semantic DOM extraction (class-agnostic heuristics)
   // ---------------------------------------------------------------------------
 
   function scoreRegion(element) {
@@ -732,7 +1009,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // 4. Meta tag extraction (Open Graph, standard meta)
+  // 5. Meta tag extraction (Open Graph, standard meta)
   // ---------------------------------------------------------------------------
 
   function metaContent(nameOrProp) {
@@ -830,6 +1107,8 @@
 
   function sourceBonus(source) {
     switch (source) {
+      case "linkedin-panel":
+        return 0.14;
       case "jsonld":
         return 0.12;
       case "microdata":
@@ -882,6 +1161,7 @@
 
   function gatherRawCandidates() {
     return {
+      linkedinPanel: extractFromLinkedInPanel(),
       jsonLd: extractFromJsonLd(),
       microdata: extractFromMicrodata(),
       semanticDom: extractFromSemanticDom(),
@@ -946,7 +1226,7 @@
   }
 
   async function extractJobDataWithRetries() {
-    const delays = [0, 120, 320];
+    const delays = detectPlatform() === "LinkedIn" ? [0, 180, 420, 780, 1250] : [0, 120, 320];
     for (const delayMs of delays) {
       if (delayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -958,7 +1238,7 @@
   }
 
   async function extractDebugPacketWithRetries() {
-    const delays = [0, 120, 320];
+    const delays = detectPlatform() === "LinkedIn" ? [0, 180, 420, 780, 1250] : [0, 120, 320];
     for (const delayMs of delays) {
       if (delayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));

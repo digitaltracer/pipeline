@@ -80,6 +80,9 @@
 		A00000000000000000000050 /* popup.html in Resources */ = {isa = PBXBuildFile; fileRef = A01000000000000000000050 /* popup.html */; };
 		A00000000000000000000060 /* popup.js in Resources */ = {isa = PBXBuildFile; fileRef = A01000000000000000000060 /* popup.js */; };
 		A00000000000000000000070 /* popup.css in Resources */ = {isa = PBXBuildFile; fileRef = A01000000000000000000070 /* popup.css */; };
+		A000000000000000000000B0 /* icon-16.png in Resources */ = {isa = PBXBuildFile; fileRef = A010000000000000000000D0 /* icon-16.png */; };
+		A000000000000000000000C0 /* icon-48.png in Resources */ = {isa = PBXBuildFile; fileRef = A010000000000000000000E0 /* icon-48.png */; };
+		A000000000000000000000D0 /* icon-128.png in Resources */ = {isa = PBXBuildFile; fileRef = A010000000000000000000F0 /* icon-128.png */; };
 		A00000000000000000000080 /* SafariServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A01000000000000000000100 /* SafariServices.framework */; };
 		A00000000000000000000090 /* PipelineKit in Frameworks */ = {isa = PBXBuildFile; productRef = A09000000000000000000010 /* PipelineKit */; };
 		A00000000000000000000100 /* PipelineSafariExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A01000000000000000000200 /* PipelineSafariExtension.appex */; platformFilters = (macos, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -206,6 +209,9 @@
 		A01000000000000000000050 /* popup.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = popup.html; sourceTree = "<group>"; };
 		A01000000000000000000060 /* popup.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = popup.js; sourceTree = "<group>"; };
 		A01000000000000000000070 /* popup.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = popup.css; sourceTree = "<group>"; };
+		A010000000000000000000D0 /* icon-16.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "icon-16.png"; sourceTree = "<group>"; };
+		A010000000000000000000E0 /* icon-48.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "icon-48.png"; sourceTree = "<group>"; };
+		A010000000000000000000F0 /* icon-128.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "icon-128.png"; sourceTree = "<group>"; };
 		A01000000000000000000080 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A01000000000000000000090 /* PipelineSafariExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PipelineSafariExtension.entitlements; sourceTree = "<group>"; };
 		A01000000000000000000100 /* SafariServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SafariServices.framework; path = System/Library/Frameworks/SafariServices.framework; sourceTree = SDKROOT; };
@@ -470,6 +476,9 @@
 				A01000000000000000000050 /* popup.html */,
 				A01000000000000000000060 /* popup.js */,
 				A01000000000000000000070 /* popup.css */,
+				A010000000000000000000D0 /* icon-16.png */,
+				A010000000000000000000E0 /* icon-48.png */,
+				A010000000000000000000F0 /* icon-128.png */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -622,6 +631,9 @@
 				A00000000000000000000050 /* popup.html in Resources */,
 				A00000000000000000000060 /* popup.js in Resources */,
 				A00000000000000000000070 /* popup.css in Resources */,
+				A000000000000000000000B0 /* icon-16.png in Resources */,
+				A000000000000000000000C0 /* icon-48.png in Resources */,
+				A000000000000000000000D0 /* icon-128.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -863,7 +875,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Pipeline.CloudKit.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 0203;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = N3B962X7RX;
@@ -888,7 +900,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = io.github.digitaltracer.pipeline;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -911,7 +923,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Pipeline.CloudKit.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 0203;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = N3B962X7RX;
@@ -936,7 +948,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = io.github.digitaltracer.pipeline;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -953,7 +965,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = PipelineSafariExtension/PipelineSafariExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 0203;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = N3B962X7RX;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -966,7 +978,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = "io.github.digitaltracer.pipeline.safari-extension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -981,7 +993,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = PipelineSafariExtension/PipelineSafariExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 0203;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = N3B962X7RX;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -994,7 +1006,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = "io.github.digitaltracer.pipeline.safari-extension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -1011,12 +1023,12 @@
 				CODE_SIGN_ENTITLEMENTS = PipelineNativeHost/PipelineNativeHost.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 0203;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = N3B962X7RX;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = "io.github.digitaltracer.pipeline.native-host";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -1033,12 +1045,12 @@
 				CODE_SIGN_ENTITLEMENTS = PipelineNativeHost/PipelineNativeHost.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 0203;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = N3B962X7RX;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = "io.github.digitaltracer.pipeline.native-host";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
