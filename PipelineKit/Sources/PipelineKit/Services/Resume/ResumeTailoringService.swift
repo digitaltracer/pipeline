@@ -18,7 +18,10 @@ public enum ResumeTailoringService {
         "Resume tailoring response JSON did not match expected schema. Check Xcode console logs for \"AIParse\" entries."
     private static let truncatedResponseErrorMessage =
         "Resume tailoring response appears truncated before JSON completed. Please retry Generate Suggestions and check AIParse logs."
+    private static let patchRevisionSchemaErrorMessage =
+        "Patch revision response must return exactly one patch for the selected section. Check Xcode console logs for \"AIParse\" entries."
     private static let tailoringMaxTokens = 25_000
+    private static let patchRevisionMaxTokens = 8_000
 
     public static func generateSuggestions(
         provider: AIProvider,
@@ -174,6 +177,80 @@ public enum ResumeTailoringService {
         )
 
         throw AIServiceError.parsingError(invalidJSONErrorMessage)
+    }
+
+    public static func revisePatch(
+        provider: AIProvider,
+        apiKey: String,
+        model: String,
+        resumeJSON: String,
+        company: String,
+        role: String,
+        jobDescription: String,
+        selectedPatch: ResumePatch,
+        userInstruction: String
+    ) async throws -> ResumeTailoringResult {
+        let trimmedInstruction = userInstruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedInstruction.isEmpty else {
+            throw AIServiceError.parsingError("Custom instruction cannot be empty.")
+        }
+
+        AIParseDebugLogger.info(
+            "ResumeTailoringService: revising patch provider=\(provider.rawValue) model=\(model) path=\(selectedPatch.path) instructionChars=\(trimmedInstruction.count)."
+        )
+
+        let userPrompt = ResumeTailoringPrompts.patchRevisionUserPrompt(
+            resumeJSON: resumeJSON,
+            company: company,
+            role: role,
+            jobDescription: jobDescription,
+            selectedPatch: selectedPatch,
+            userInstruction: trimmedInstruction
+        )
+
+        let attemptPrompts = [
+            ResumeTailoringPrompts.patchRevisionSystemPrompt,
+            ResumeTailoringPrompts.patchRevisionCompactRetrySystemPrompt
+        ]
+
+        for attemptIndex in attemptPrompts.indices {
+            let isRetryAttempt = attemptIndex > 0
+
+            if isRetryAttempt {
+                AIParseDebugLogger.warning(
+                    "ResumeTailoringService: retrying patch revision with compact prompt after truncated response."
+                )
+            }
+
+            let response = try await AICompletionClient.completeWithUsage(
+                provider: provider,
+                apiKey: apiKey,
+                model: model,
+                systemPrompt: attemptPrompts[attemptIndex],
+                userPrompt: userPrompt,
+                maxTokens: patchRevisionMaxTokens,
+                temperature: isRetryAttempt ? 0.15 : 0.2
+            )
+
+            do {
+                let parsed = try parseResult(from: response.text)
+                let revisedPatch = try validateRevisedPatch(
+                    parsed,
+                    expectedPath: selectedPatch.path
+                )
+                return ResumeTailoringResult(
+                    patches: [revisedPatch],
+                    sectionGaps: [],
+                    usage: response.usage
+                )
+            } catch {
+                guard isRetryableTruncationError(error), !isRetryAttempt else {
+                    throw error
+                }
+            }
+        }
+
+        throw AIServiceError.parsingError(truncatedResponseErrorMessage)
     }
 
     private struct RawResult: Decodable {
@@ -439,6 +516,24 @@ public enum ResumeTailoringService {
         }
 
         return inString || objectDepth > 0 || arrayDepth > 0
+    }
+
+    private static func validateRevisedPatch(
+        _ result: ResumeTailoringResult,
+        expectedPath: String
+    ) throws -> ResumePatch {
+        guard result.patches.count == 1 else {
+            throw AIServiceError.parsingError(patchRevisionSchemaErrorMessage)
+        }
+
+        let patch = result.patches[0]
+        guard patch.path == expectedPath else {
+            throw AIServiceError.parsingError(
+                "\(patchRevisionSchemaErrorMessage) Expected path \(expectedPath), got \(patch.path)."
+            )
+        }
+
+        return patch
     }
 
     private static func decodeErrorDetails(_ error: Error) -> String {

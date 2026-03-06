@@ -66,61 +66,65 @@ enum ResumeHTMLRenderer {
     private static let fallbackTemplate = RenderTemplate(
         css: """
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        @page { size: letter; margin: 0.5in; }
+        @page { size: letter; margin: 0; }
+        html, body { width: 612pt; }
         body {
           font-family: "Computer Modern Serif", "CMU Serif", "Latin Modern Roman", "TeX Gyre Termes", "Times New Roman", "Times", "serif";
-          font-size: 11pt;
-          line-height: 1.15;
+          font-size: 10.95pt;
+          line-height: 1.2;
           color: black;
-          max-width: 7.5in;
-          margin: 0 auto;
-          padding: 0.5in;
+          margin: 0;
+          padding: 36pt;
           font-display: swap;
         }
         .font-loading {
           font-family: "Computer Modern Serif", "CMU Serif", "Latin Modern Roman", "TeX Gyre Termes", "Times New Roman", "Times", "serif";
         }
-        .header { text-align: center; margin-bottom: 15pt; }
-        .name { font-size: 24pt; font-weight: bold; font-variant: normal; margin-bottom: 3pt; }
-        .contact { font-size: 9.5pt; color: black; }
+        .header { text-align: center; margin-bottom: 1pt; }
+        .name { font-size: 24.88pt; font-weight: bold; font-variant: small-caps; text-transform: none; line-height: 1; margin-bottom: 1pt; }
+        .contact { font-size: 10pt; color: black; }
         .contact a { color: black; text-decoration: underline; }
-        .section { margin-bottom: 9pt; }
+        .contact-sep { margin: 0 3pt; }
+        .section { margin-bottom: 0; margin-top: -4pt; }
         .section-title {
-          font-size: 13pt;
+          font-size: 12pt;
           font-variant: small-caps;
+          text-transform: none;
+          letter-spacing: 0;
           font-weight: normal;
-          margin-bottom: 2.42pt;
-          border-bottom: 0.5pt solid black;
-          padding-bottom: 1pt;
+          margin-bottom: 0;
+          border-bottom: 0.6pt solid black;
+          padding-bottom: 0;
+          line-height: 1;
         }
-        .section-content { margin-left: 15pt; }
-        .entry { display: flex; justify-content: space-between; margin-bottom: 2pt; }
-        .entry-main { font-weight: bold; }
-        .entry-date { font-weight: normal; }
-        .entry-location { font-weight: normal; }
-        .entry-sub { display: flex; justify-content: space-between; margin-bottom: 6pt; font-style: italic; font-size: 9.5pt; }
+        .section-content { margin-left: 0; padding-top: -5pt; }
+        .subheading-list { list-style: none; padding-left: 10.8pt; margin: 0; }
         .experience-entry, .basic-entry {
           break-inside: avoid;
           page-break-inside: avoid;
-          margin-bottom: 6pt;
+          margin-top: -2pt;
+          margin-bottom: 0;
         }
-        .item-list { margin-left: 15pt; margin-bottom: 8pt; }
-        .item-list li { margin-bottom: 1pt; list-style-type: disc; font-size: calc(9.5pt * 1.01); line-height: 1.21; }
-        .project-header { display: flex; justify-content: space-between; margin-bottom: 2pt; }
+        .entry { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0; }
+        .entry-main { font-weight: bold; font-size: 10.95pt; }
+        .entry-date { font-weight: normal; font-size: 10.95pt; }
+        .entry-sub { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0; font-style: italic; font-size: 10pt; }
+        .entry-location { font-weight: normal; font-style: italic; font-size: 10pt; }
+        .item-list { margin-left: 18pt; margin-top: -7pt; margin-bottom: 0; padding-left: 0; }
+        .item-list li { margin-bottom: -2pt; font-size: 10pt; line-height: 1.2; }
+        .item-list li::marker { font-size: 6pt; }
+        .project-entry { break-inside: avoid; page-break-inside: avoid; margin-top: 0; margin-bottom: 0; }
+        .project-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0; font-size: 10pt; }
         .project-name { font-weight: bold; }
         .project-name a { color: black; text-decoration: underline; }
         .project-tech { font-style: italic; }
-        .project-entry {
-          break-inside: avoid;
-          page-break-inside: avoid;
-          margin-bottom: 6pt;
-        }
-        .summary-text { margin-left: 15pt; font-size: 9.5pt; line-height: 1.3; text-align: justify; }
-        .skills-list { margin-left: 15pt; }
+        .project-date { font-size: 10.95pt; }
+        .summary-text { margin-left: 0; font-size: 10pt; line-height: 1.3; text-align: justify; }
+        .skills-list { list-style: none; padding-left: 10.8pt; margin: 0; }
         .skill-category { font-weight: bold; }
-        .skill-line { margin-bottom: 2pt; font-size: 9.5pt; }
+        .skill-line { margin-bottom: 0; font-size: 10pt; line-height: 1.3; }
         @media print {
-          body { padding: 0; max-width: none; margin: 0; }
+          body { padding: 36pt; margin: 0; }
         }
         """,
         sectionTitles: [
@@ -182,10 +186,11 @@ enum ResumeHTMLRenderer {
             parts.append("<a href=\"\(escapeHTML(githubURL))\">\(escapeHTML(contact.github))</a>")
         }
 
+        let separator = "<span class=\"contact-sep\">|</span>"
         return """
         <div class=\"header\">
           <div class=\"name\">\(escapeHTML(resume.name))</div>
-          <div class=\"contact\">\(parts.joined(separator: " | "))</div>
+          <div class=\"contact\">\(parts.joined(separator: " \(separator) "))</div>
         </div>
         """
     }
@@ -214,7 +219,7 @@ enum ResumeHTMLRenderer {
             </div>
             """
         }
-        return section(title: title, content: entries.joined(separator: "\n"))
+        return section(title: title, content: "<div class=\"subheading-list\">\(entries.joined(separator: "\n"))</div>")
     }
 
     private static func experience(for resume: ResumeSchema, title: String) -> String {
@@ -231,7 +236,7 @@ enum ResumeHTMLRenderer {
             </div>
             """
         }
-        return section(title: title, content: entries.joined(separator: "\n"))
+        return section(title: title, content: "<div class=\"subheading-list\">\(entries.joined(separator: "\n"))</div>")
     }
 
     private static func projects(for resume: ResumeSchema, title: String) -> String {
@@ -243,17 +248,18 @@ enum ResumeHTMLRenderer {
             } else {
                 projectName = "<span class=\"project-name\">\(escapeHTML(item.name))</span>"
             }
+            let techStr = item.technologies.isEmpty ? "" : " <span class=\"contact-sep\">|</span> <span class=\"project-tech\">\(escapeHTML(item.technologies.joined(separator: ", ")))</span>"
             return """
             <div class=\"project-entry\">
               <div class=\"project-header\">
-                <div>\(projectName) | <span class=\"project-tech\">\(escapeHTML(item.technologies.joined(separator: ", ")))</span></div>
-                <div>\(escapeHTML(item.date))</div>
+                <div>\(projectName)\(techStr)</div>
+                <div class=\"project-date\">\(escapeHTML(item.date))</div>
               </div>
               <ul class=\"item-list\">\(bulletHTML)</ul>
             </div>
             """
         }
-        return section(title: title, content: entries.joined(separator: "\n"))
+        return section(title: title, content: "<div class=\"subheading-list\">\(entries.joined(separator: "\n"))</div>")
     }
 
     private static func skills(for resume: ResumeSchema, title: String) -> String {
@@ -326,8 +332,9 @@ enum ResumeHTMLRenderer {
 }
 
 enum ResumePDFExportService {
-    private static let pdfPageWidth: CGFloat = 816
-    private static let minimumPDFPageHeight: CGFloat = 1056
+    // WKWebView uses points for PDF output; use true US Letter points.
+    private static let pdfPageWidth: CGFloat = 612
+    private static let minimumPDFPageHeight: CGFloat = 792
 
     @MainActor
     static func makeDocument(json: String) async throws -> ResumePDFFileDocument {
@@ -344,17 +351,20 @@ enum ResumePDFExportService {
         webView.loadHTMLString(html, baseURL: Bundle.main.resourceURL)
 
         try await delegate.awaitLoad()
+        await adjustExperienceEntryBreaks(for: webView)
         let documentHeight = try await measuredDocumentHeight(for: webView)
         let exportHeight = max(documentHeight, minimumPDFPageHeight)
 
-        return try await withCheckedThrowingContinuation { continuation in
+        let rawData: Data = try await withCheckedThrowingContinuation { continuation in
             let config = WKPDFConfiguration()
-            // Use full rendered content height so long resumes are not clipped to one page.
+            // Capture full rendered content, then paginate into letter pages below.
             config.rect = CGRect(x: 0, y: 0, width: pdfPageWidth, height: exportHeight)
             webView.createPDF(configuration: config) { result in
                 continuation.resume(with: result)
             }
         }
+
+        return paginateIfNeeded(pdfData: rawData)
     }
 
     @MainActor
@@ -370,15 +380,7 @@ enum ResumePDFExportService {
         """
 
         do {
-            let value: Any? = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Any?, Error>) in
-                webView.evaluateJavaScript(script) { result, error in
-                    if let error {
-                        continuation.resume(throwing: error)
-                        return
-                    }
-                    continuation.resume(returning: result)
-                }
-            }
+            let value = try await evaluateJavaScript(script, in: webView)
 
             if let number = value as? NSNumber {
                 return CGFloat(number.doubleValue)
@@ -394,6 +396,109 @@ enum ResumePDFExportService {
         }
 
         return max(webView.bounds.height, minimumPDFPageHeight)
+    }
+
+    @MainActor
+    private static func adjustExperienceEntryBreaks(for webView: WKWebView) async {
+        let script = """
+        (async () => {
+          if (document.fonts && document.fonts.ready) {
+            try { await document.fonts.ready; } catch (_) {}
+          }
+
+          const pageHeight = \(minimumPDFPageHeight);
+          const overflowTolerance = 0.5;
+          const entries = Array.from(document.querySelectorAll(".experience-entry, .project-entry, .basic-entry"));
+
+          for (const entry of entries) {
+            const computedMargin = parseFloat(window.getComputedStyle(entry).marginTop || "0");
+            const baseMargin = Number.isFinite(computedMargin) ? computedMargin : 0;
+            entry.style.marginTop = `${baseMargin}px`;
+          }
+
+          for (const entry of entries) {
+            const rect = entry.getBoundingClientRect();
+            const top = rect.top + window.scrollY;
+            const height = rect.height;
+
+            if (height >= pageHeight - overflowTolerance) {
+              continue;
+            }
+
+            const nextBoundary = (Math.floor(top / pageHeight) + 1) * pageHeight;
+            const overflow = (top + height) - nextBoundary;
+            if (overflow <= overflowTolerance) {
+              continue;
+            }
+
+            const shift = nextBoundary - top;
+            if (shift > overflowTolerance) {
+              const baseMargin = parseFloat(entry.style.marginTop || "0") || 0;
+              entry.style.marginTop = `${baseMargin + shift}px`;
+            }
+          }
+
+          return true;
+        })()
+        """
+
+        _ = try? await evaluateJavaScript(script, in: webView)
+    }
+
+    @MainActor
+    private static func evaluateJavaScript(_ script: String, in webView: WKWebView) async throws -> Any? {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Any?, Error>) in
+            webView.evaluateJavaScript(script) { result, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                continuation.resume(returning: result)
+            }
+        }
+    }
+
+    private static func paginateIfNeeded(pdfData: Data) -> Data {
+        guard let provider = CGDataProvider(data: pdfData as CFData),
+              let sourceDocument = CGPDFDocument(provider),
+              sourceDocument.numberOfPages == 1,
+              let sourcePage = sourceDocument.page(at: 1)
+        else {
+            return pdfData
+        }
+
+        let sourceRect = sourcePage.getBoxRect(.mediaBox)
+        guard sourceRect.height > minimumPDFPageHeight + 0.5 else {
+            return pdfData
+        }
+
+        let pageCount = Int(ceil(sourceRect.height / minimumPDFPageHeight))
+        let outputData = NSMutableData()
+        guard let consumer = CGDataConsumer(data: outputData as CFMutableData) else {
+            return pdfData
+        }
+
+        var mediaBox = CGRect(x: 0, y: 0, width: pdfPageWidth, height: minimumPDFPageHeight)
+        guard let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else {
+            return pdfData
+        }
+
+        // Split from top-to-bottom so page 1 keeps the visual start of the resume.
+        for index in 0..<pageCount {
+            context.beginPDFPage(nil)
+            context.saveGState()
+
+            let sliceTop = sourceRect.height - CGFloat(index) * minimumPDFPageHeight
+            let sliceBottom = max(0, sliceTop - minimumPDFPageHeight)
+            context.translateBy(x: 0, y: -sliceBottom)
+            context.drawPDFPage(sourcePage)
+
+            context.restoreGState()
+            context.endPDFPage()
+        }
+
+        context.closePDF()
+        return outputData as Data
     }
 }
 

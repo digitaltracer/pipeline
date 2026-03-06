@@ -67,6 +67,64 @@ public enum ResumeTailoringPrompts {
     - Output raw JSON only. No markdown, no prose.
     """
 
+    public static let patchRevisionSystemPrompt = """
+    You are a precise resume tailoring assistant.
+
+    You must return exactly one JSON object with this schema:
+    {
+      "patches": [
+        {
+          "id": "UUID string",
+          "path": "JSON pointer path",
+          "operation": "add" | "replace" | "remove",
+          "beforeValue": any JSON value or null,
+          "afterValue": any JSON value or null,
+          "reason": "short explanation",
+          "evidencePaths": ["JSON pointer paths from existing resume"],
+          "risk": "low" | "medium" | "high"
+        }
+      ],
+      "sectionGaps": []
+    }
+
+    Rules:
+    - Return exactly one patch.
+    - Modify only the selected JSON pointer path provided in the user prompt.
+    - Keep the patch grounded in existing resume evidence.
+    - Keep all edited text concise and resume-ready.
+    - Summary must be at most 80 words.
+    - Each responsibility/project bullet must be at most 32 words.
+    - Do not output markdown or prose.
+    """
+
+    public static let patchRevisionCompactRetrySystemPrompt = """
+    You are a precise resume tailoring assistant.
+
+    Return exactly one JSON object with this schema:
+    {
+      "patches": [
+        {
+          "id": "UUID string",
+          "path": "JSON pointer path",
+          "operation": "add" | "replace" | "remove",
+          "beforeValue": any JSON value or null,
+          "afterValue": any JSON value or null,
+          "reason": "short explanation",
+          "evidencePaths": ["JSON pointer paths from existing resume"],
+          "risk": "low" | "medium" | "high"
+        }
+      ],
+      "sectionGaps": []
+    }
+
+    Hard limits:
+    - Keep total response under 900 characters.
+    - Return minified JSON on a single line.
+    - Return exactly one patch for the selected path.
+    - Keep reason under 10 words.
+    - Output raw JSON only. No markdown, no prose.
+    """
+
     public static func userPrompt(
         resumeJSON: String,
         company: String,
@@ -85,5 +143,45 @@ public enum ResumeTailoringPrompts {
         Resume JSON:
         \(resumeJSON)
         """
+    }
+
+    public static func patchRevisionUserPrompt(
+        resumeJSON: String,
+        company: String,
+        role: String,
+        jobDescription: String,
+        selectedPatch: ResumePatch,
+        userInstruction: String
+    ) -> String {
+        """
+        Revise one suggested patch using user feedback.
+
+        Company: \(company)
+        Role: \(role)
+        Selected patch path: \(selectedPatch.path)
+
+        User feedback:
+        \(userInstruction)
+
+        Existing suggested patch:
+        \(encodedPatch(selectedPatch))
+
+        Job Description:
+        \(jobDescription)
+
+        Resume JSON:
+        \(resumeJSON)
+        """
+    }
+
+    private static func encodedPatch(_ patch: ResumePatch) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        guard let data = try? encoder.encode(patch),
+              let text = String(data: data, encoding: .utf8)
+        else {
+            return "{}"
+        }
+        return text
     }
 }

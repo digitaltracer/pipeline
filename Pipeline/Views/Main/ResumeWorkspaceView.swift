@@ -1068,6 +1068,10 @@ struct ResumeTailoringView: View {
     @State private var decisionToast: DecisionToast?
     @State private var lastDecisionSnapshot: DecisionSnapshot?
     @State private var toastDismissTask: Task<Void, Never>?
+    @State private var selectedPatchForRefinement: ResumePatch?
+    @State private var customInstructionText = ""
+    @State private var isSubmittingCustomInstruction = false
+    @State private var refiningPatchID: UUID?
 
     @State private var isExportingFile = false
     @State private var exportFormat: ResumeExportFormat = .json
@@ -1151,6 +1155,10 @@ struct ResumeTailoringView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("You have unsaved changes. Close without saving?")
+        }
+        .sheet(item: $selectedPatchForRefinement) { patch in
+            customInstructionSheet(for: patch)
+                .interactiveDismissDisabled(isSubmittingCustomInstruction)
         }
         .safeAreaInset(edge: .bottom) {
             if preflightError == nil, !patches.isEmpty {
@@ -1598,12 +1606,16 @@ struct ResumeTailoringView: View {
     }
 
     private func decisionRow(for patch: ResumePatch) -> some View {
-        HStack(spacing: 10) {
+        let isRefiningThisPatch = refiningPatchID == patch.id
+        let disableButtons = isSubmittingCustomInstruction || isGenerating
+
+        return HStack(spacing: 10) {
             tailoringDecisionButton(
                 title: "Accept",
                 icon: "checkmark",
                 isActive: acceptedPatchIDs.contains(patch.id),
                 tint: Color.green,
+                isDisabled: disableButtons,
                 action: {
                     applyPatchDecision(.accept, for: patch)
                 }
@@ -1614,10 +1626,27 @@ struct ResumeTailoringView: View {
                 icon: "xmark",
                 isActive: rejectedPatchIDs.contains(patch.id),
                 tint: Color.gray,
+                isDisabled: disableButtons,
                 action: {
                     applyPatchDecision(.reject, for: patch)
                 }
             )
+
+            tailoringDecisionButton(
+                title: "Refine",
+                icon: "slider.horizontal.3",
+                isActive: isRefiningThisPatch,
+                tint: Color.blue,
+                isDisabled: disableButtons,
+                action: {
+                    openCustomInstruction(for: patch)
+                }
+            )
+
+            if isRefiningThisPatch {
+                ProgressView()
+                    .controlSize(.small)
+            }
 
             Spacer()
         }
@@ -1641,6 +1670,7 @@ struct ResumeTailoringView: View {
         icon: String,
         isActive: Bool,
         tint: Color,
+        isDisabled: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -1659,6 +1689,71 @@ struct ResumeTailoringView: View {
                 .foregroundStyle(isActive ? tint : Color.secondary)
         }
         .buttonStyle(.plain)
+        .disabled(isDisabled)
+    }
+
+    private func customInstructionSheet(for patch: ResumePatch) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Refine suggestion")
+                .font(.title3.weight(.semibold))
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Section path")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(patch.path)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Your instruction")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                TextEditor(text: $customInstructionText)
+                    .frame(minHeight: 120)
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.secondary.opacity(colorScheme == .dark ? 0.2 : 0.1))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Color.secondary.opacity(0.24), lineWidth: 1)
+                    )
+            }
+
+            Text("Example: Keep this change but make the impact metric explicit and mention iOS ownership.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Spacer()
+
+                Button("Cancel", role: .cancel) {
+                    closeCustomInstructionSheet()
+                }
+                .buttonStyle(.bordered)
+                .disabled(isSubmittingCustomInstruction)
+
+                Button {
+                    submitCustomInstruction(for: patch)
+                } label: {
+                    if isSubmittingCustomInstruction {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text("Update Section")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(customInstructionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmittingCustomInstruction)
+            }
+        }
+        .padding(16)
+#if os(macOS)
+        .frame(minWidth: 520, minHeight: 320)
+#endif
     }
 
     private enum PatchDecisionAction {
@@ -1934,6 +2029,144 @@ struct ResumeTailoringView: View {
                 snapshot: snapshot
             )
         }
+    }
+
+    private func openCustomInstruction(for patch: ResumePatch) {
+        customInstructionText = ""
+        selectedPatchForRefinement = patch
+    }
+
+    private func closeCustomInstructionSheet() {
+        selectedPatchForRefinement = nil
+        customInstructionText = ""
+    }
+
+    private func submitCustomInstruction(for patch: ResumePatch) {
+        let instruction = customInstructionText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !instruction.isEmpty else { return }
+        Task { await refinePatchSuggestion(patch, with: instruction) }
+    }
+
+    @MainActor
+    private func refinePatchSuggestion(_ patch: ResumePatch, with instruction: String) async {
+        guard let masterRevision,
+              let jobDescription = application.jobDescription?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !jobDescription.isEmpty
+        else {
+            actionError = "Could not refine suggestion because resume or job description is missing."
+            return
+        }
+
+        guard patches.contains(where: { $0.id == patch.id }) else {
+            actionError = "This suggestion is no longer available. Please generate suggestions again."
+            return
+        }
+
+        isSubmittingCustomInstruction = true
+        refiningPatchID = patch.id
+        let requestStartedAt = Date()
+        defer {
+            isSubmittingCustomInstruction = false
+            refiningPatchID = nil
+        }
+
+        do {
+            let provider = settingsViewModel.selectedAIProvider
+            let model = settingsViewModel.preferredModel(for: provider)
+            let result = try await settingsViewModel.withAPIKeyWaterfall(for: provider) { apiKey in
+                try await ResumeTailoringService.revisePatch(
+                    provider: provider,
+                    apiKey: apiKey,
+                    model: model,
+                    resumeJSON: masterRevision.rawJSON,
+                    company: application.companyName,
+                    role: application.role,
+                    jobDescription: jobDescription,
+                    selectedPatch: patch,
+                    userInstruction: instruction
+                )
+            }
+
+            try applyRefinedPatchResult(
+                result,
+                replacing: patch,
+                originalJSON: masterRevision.rawJSON
+            )
+            closeCustomInstructionSheet()
+
+            recordTailoringUsage(
+                provider: provider,
+                model: model,
+                usage: result.usage,
+                status: .succeeded,
+                startedAt: requestStartedAt,
+                errorMessage: nil
+            )
+        } catch let keyError as SettingsViewModel.APIKeyValidationError {
+            actionError = keyError.localizedDescription
+            let provider = settingsViewModel.selectedAIProvider
+            let model = settingsViewModel.preferredModel(for: provider)
+            recordTailoringUsage(
+                provider: provider,
+                model: model,
+                usage: nil,
+                status: .failed,
+                startedAt: requestStartedAt,
+                errorMessage: keyError.localizedDescription
+            )
+        } catch {
+            actionError = error.localizedDescription
+            let provider = settingsViewModel.selectedAIProvider
+            let model = settingsViewModel.preferredModel(for: provider)
+            recordTailoringUsage(
+                provider: provider,
+                model: model,
+                usage: nil,
+                status: .failed,
+                startedAt: requestStartedAt,
+                errorMessage: error.localizedDescription
+            )
+        }
+    }
+
+    private func applyRefinedPatchResult(
+        _ result: ResumeTailoringResult,
+        replacing originalPatch: ResumePatch,
+        originalJSON: String
+    ) throws {
+        let validation = try ResumePatchSafetyValidator.validate(
+            patches: result.patches,
+            originalJSON: originalJSON
+        )
+
+        if let rejection = validation.rejected.first {
+            safetyRejections.insert(rejection, at: 0)
+            throw AIServiceError.parsingError("Custom instruction was rejected by safety checks: \(rejection.reason)")
+        }
+
+        guard validation.accepted.count == 1,
+              let updatedPatch = validation.accepted.first else {
+            throw AIServiceError.parsingError("Custom instruction response did not produce exactly one valid patch.")
+        }
+
+        guard let patchIndex = patches.firstIndex(where: { $0.id == originalPatch.id }) else {
+            throw AIServiceError.parsingError("Suggestion changed while refining. Please retry.")
+        }
+
+        patches[patchIndex] = updatedPatch
+        acceptedPatchIDs.remove(originalPatch.id)
+        rejectedPatchIDs.remove(originalPatch.id)
+        collapsedPatchIDs.remove(originalPatch.id)
+        collapsedPatchIDs.remove(updatedPatch.id)
+
+        refreshEditedJSON()
+        publishUnsavedChangesState()
+        presentDecisionToast(
+            message: "Updated \(updatedPatch.path). Review and accept or reject.",
+            style: .neutral,
+            showsUndo: false,
+            snapshot: nil
+        )
     }
 
     private func undoLastDecision() {
