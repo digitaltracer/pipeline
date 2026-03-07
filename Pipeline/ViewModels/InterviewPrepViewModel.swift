@@ -54,22 +54,22 @@ final class InterviewPrepViewModel {
         result = nil
         defer { isLoading = false }
 
-        // Gather interview stage from latest interview log
         let interviewStage: String
-        if let latestLog = application.interviewLogs?
-            .sorted(by: { $0.date > $1.date })
-            .first {
-            interviewStage = latestLog.interviewType.displayName
+        if let latestInterview = application.sortedActivities
+            .first(where: { $0.kind == .interview }) {
+            interviewStage = latestInterview.interviewStage?.displayName ?? latestInterview.kind.displayName
         } else {
             interviewStage = ""
         }
 
-        // Gather notes from interview logs
-        let notes = (application.interviewLogs ?? [])
-            .sorted { $0.date > $1.date }
-            .compactMap { log -> String? in
-                guard let n = log.notes, !n.isEmpty else { return nil }
-                return n
+        let notes = application.sortedActivities
+            .compactMap { activity -> String? in
+                switch activity.kind {
+                case .email:
+                    return activity.emailBodySnapshot ?? activity.notes
+                default:
+                    return activity.notes
+                }
             }
             .joined(separator: "\n")
 

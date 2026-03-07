@@ -9,6 +9,7 @@ public final class InterviewLog {
     public var interviewerName: String?
     public var rating: Int = 3
     public var notes: String?
+    public var migratedActivityID: UUID?
 
     public var application: JobApplication?
 
@@ -28,6 +29,7 @@ public final class InterviewLog {
         interviewerName: String? = nil,
         rating: Int = 3,
         notes: String? = nil,
+        migratedActivityID: UUID? = nil,
         application: JobApplication? = nil
     ) {
         self.id = id
@@ -36,6 +38,7 @@ public final class InterviewLog {
         self.interviewerName = interviewerName
         self.rating = min(max(rating, 1), 5)
         self.notes = notes
+        self.migratedActivityID = migratedActivityID
         self.application = application
     }
 

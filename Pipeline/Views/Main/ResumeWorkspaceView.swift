@@ -4,8 +4,13 @@ import SwiftData
 import UniformTypeIdentifiers
 import WebKit
 import PipelineKit
+#if canImport(PDFKit)
+import PDFKit
+#endif
 #if os(macOS)
 import AppKit
+#elseif os(iOS)
+import UIKit
 #endif
 
 private enum ResumeExportFormat {
@@ -2925,11 +2930,16 @@ private enum ResumePatchSplitDiff {
 
 struct JobResumePanel: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.openURL) private var openURL
 
     @Bindable var application: JobApplication
+    private let attachmentStorageService = ApplicationAttachmentStorageService()
 
     @State private var showingTailor = false
     @State private var showingHistory = false
+    @State private var showingAttachmentImporter = false
+    @State private var editorState: AttachmentEditorState?
+    @State private var previewItem: AttachmentPreviewItem?
     @State private var actionError: String?
     #if os(macOS)
     @State private var tailorWindowPresenter = TailorResumeWindowPresenter()
@@ -2941,78 +2951,150 @@ struct JobResumePanel: View {
     @State private var jsonDocument = ResumeJSONFileDocument(text: "{}")
     @State private var pdfDocument = ResumePDFFileDocument(data: Data())
 
+    private var groupedAttachments: [(ApplicationAttachmentCategory, [ApplicationAttachment])] {
+        let grouped = Dictionary(grouping: application.sortedAttachments, by: \.category)
+        return ApplicationAttachmentCategory.allCases.compactMap { category in
+            guard let attachments = grouped[category], !attachments.isEmpty else { return nil }
+            return (category, attachments)
+        }
+    }
+
+    private var recentSnapshots: [ResumeJobSnapshot] {
+        Array(application.sortedResumeSnapshots.prefix(3))
+    }
+
     var body: some View {
         let snapshots = application.sortedResumeSnapshots
 
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("Resume Versions", systemImage: "doc.text")
+                Label("Documents", systemImage: "folder")
                     .font(.headline)
 
                 Spacer()
 
-                Button("History") {
-#if os(macOS)
-                    historySheetWidth = preferredHistorySheetWidth()
-#endif
-                    showingHistory = true
+                if let submitted = application.submittedResumeAttachment {
+                    Text("Submitted: \(submitted.resolvedTitle)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
                 }
-                .buttonStyle(.bordered)
-
-                Button {
-                    #if os(macOS)
-                    presentTailorWindow()
-                    #else
-                    showingTailor = true
-                    #endif
-                } label: {
-                    Label("Tailor Resume", systemImage: "sparkles")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(DesignSystem.Colors.accent)
             }
 
-            if snapshots.isEmpty {
-                Text("No tailored resumes attached to this job yet.")
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Button {
+                        showingAttachmentImporter = true
+                    } label: {
+                        Label("Add File", systemImage: "paperclip")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(DesignSystem.Colors.accent)
+
+                    Button {
+                        editorState = .newLink()
+                    } label: {
+                        Label("Add Link", systemImage: "link.badge.plus")
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        editorState = .newNote()
+                    } label: {
+                        Label("Add Note", systemImage: "square.and.pencil")
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                HStack(spacing: 8) {
+                    Button("History") {
+#if os(macOS)
+                        historySheetWidth = preferredHistorySheetWidth()
+#endif
+                        showingHistory = true
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        #if os(macOS)
+                        presentTailorWindow()
+                        #else
+                        showingTailor = true
+                        #endif
+                    } label: {
+                        Label("Tailor Resume", systemImage: "sparkles")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+
+            if groupedAttachments.isEmpty, snapshots.isEmpty {
+                Text("No documents, links, notes, or tailored resumes attached to this job yet.")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(snapshots) { snapshot in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(snapshot.createdAt.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                Text("Accepted: \(snapshot.acceptedPatchIDs.count)  Rejected: \(snapshot.rejectedPatchIDs.count)")
+                    ForEach(groupedAttachments, id: \.0.id) { category, attachments in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label(category.displayName, systemImage: category.icon)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.secondary)
+
+                            ForEach(attachments) { attachment in
+                                attachmentRow(attachment)
+                            }
+                        }
+                    }
+
+                    if !recentSnapshots.isEmpty {
+                        Divider()
+                            .padding(.vertical, 4)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Label("Resume Versions", systemImage: "doc.text")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(.secondary)
+
+                                Spacer()
+
+                                Text("Open History to compare and export versions")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
+
+                                if snapshots.count > recentSnapshots.count {
+                                    Text("+\(snapshots.count - recentSnapshots.count) more in history")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
                             }
 
-                            Spacer()
-
-                            Button("JSON") {
-                                exportJSON(snapshot)
+                            ForEach(recentSnapshots) { snapshot in
+                                snapshotSummaryRow(snapshot)
                             }
-                            .buttonStyle(.bordered)
-
-                            Button("PDF") {
-                                Task { await exportPDF(snapshot) }
-                            }
-                            .buttonStyle(.bordered)
-
-                            Button("Delete", role: .destructive) {
-                                deleteSnapshot(snapshot)
-                            }
-                            .buttonStyle(.bordered)
                         }
-                        .padding(.vertical, 4)
                     }
                 }
             }
         }
         .padding(16)
         .appCard(cornerRadius: 14, elevated: true, shadow: false)
+        .fileImporter(
+            isPresented: $showingAttachmentImporter,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: false
+        ) { result in
+            importAttachmentFile(result)
+        }
+        .sheet(item: $editorState) { state in
+            AttachmentEditorView(state: state) { saveState in
+                saveAttachmentEditorState(saveState)
+            }
+        }
+        .sheet(item: $previewItem) { item in
+            AttachmentPreviewSheet(item: item)
+        }
         .sheet(isPresented: $showingTailor) {
             ResumeTailoringView(application: application)
         }
@@ -3060,6 +3142,117 @@ struct JobResumePanel: View {
     }
 #endif
 
+    private func attachmentRow(_ attachment: ApplicationAttachment) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: attachment.category.icon)
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(DesignSystem.Colors.accent.opacity(0.12)))
+                    .foregroundColor(DesignSystem.Colors.accent)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(attachment.resolvedTitle)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+
+                        if attachment.isSubmittedResume {
+                            Text("Submitted")
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(Color.green.opacity(0.18)))
+                        }
+                    }
+
+                    Text(attachmentSubtitle(attachment))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    if let previewText = attachmentPreviewText(attachment) {
+                        Text(previewText)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+
+                Spacer(minLength: 8)
+
+                Menu {
+                    if attachment.kind == .file {
+                        if isPreviewable(attachment) {
+                            Button("Preview") {
+                                previewAttachment(attachment)
+                            }
+                        }
+
+                        Button("Open") {
+                            openAttachment(attachment)
+                        }
+
+                        if attachment.category == .resume && !attachment.isSubmittedResume {
+                            Button("Mark as Submitted Resume") {
+                                markSubmittedResume(attachment)
+                            }
+                        }
+                    } else if attachment.kind == .link {
+                        Button("Open Link") {
+                            openAttachment(attachment)
+                        }
+                    }
+
+                    Button("Edit") {
+                        editorState = .edit(attachment)
+                    }
+
+                    Button("Delete", role: .destructive) {
+                        deleteAttachment(attachment)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.title3)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if !attachment.tags.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(attachment.tags, id: \.self) { tag in
+                            Text(tag)
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Capsule().fill(Color.secondary.opacity(0.12)))
+                        }
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.secondary.opacity(0.08))
+        )
+    }
+
+    private func snapshotSummaryRow(_ snapshot: ResumeJobSnapshot) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(snapshot.createdAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.subheadline.weight(.semibold))
+                Text("Accepted: \(snapshot.acceptedPatchIDs.count)  Rejected: \(snapshot.rejectedPatchIDs.count)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+
     private func deleteSnapshot(_ snapshot: ResumeJobSnapshot) {
         do {
             try ResumeStoreService.deleteJobSnapshot(snapshot, in: modelContext)
@@ -3088,6 +3281,181 @@ struct JobResumePanel: View {
             actionError = error.localizedDescription
         }
     }
+
+    private func deleteAttachment(_ attachment: ApplicationAttachment) {
+        do {
+            try attachmentStorageService.deleteAttachment(
+                attachment,
+                from: application,
+                in: modelContext
+            )
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func markSubmittedResume(_ attachment: ApplicationAttachment) {
+        do {
+            try attachmentStorageService.ensureSingleSubmittedResume(
+                current: attachment,
+                in: application,
+                context: modelContext
+            )
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func saveAttachmentEditorState(_ state: AttachmentEditorState) {
+        do {
+            let tags = attachmentTags(from: state.tagsText)
+            if let attachment = state.attachment {
+                try attachmentStorageService.updateMetadata(
+                    for: attachment,
+                    title: state.title,
+                    category: state.category,
+                    tags: tags,
+                    description: state.description.isEmpty ? nil : state.description,
+                    urlString: state.kind == .link ? state.urlString : nil,
+                    noteBody: state.kind == .note ? state.noteBody : nil,
+                    isSubmittedResume: state.kind == .file ? state.isSubmittedResume : false,
+                    in: application,
+                    context: modelContext
+                )
+            } else {
+                switch state.kind {
+                case .link:
+                    _ = try attachmentStorageService.createLinkAttachment(
+                        title: state.title,
+                        urlString: state.urlString,
+                        category: state.category,
+                        tags: tags,
+                        description: state.description.isEmpty ? nil : state.description,
+                        for: application,
+                        in: modelContext
+                    )
+                case .note:
+                    _ = try attachmentStorageService.createNoteAttachment(
+                        title: state.title,
+                        body: state.noteBody,
+                        category: state.category,
+                        tags: tags,
+                        description: state.description.isEmpty ? nil : state.description,
+                        for: application,
+                        in: modelContext
+                    )
+                case .file:
+                    break
+                }
+            }
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func importAttachmentFile(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            let access = url.startAccessingSecurityScopedResource()
+            defer {
+                if access {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+
+            _ = try attachmentStorageService.createFileAttachment(
+                from: url,
+                category: .other,
+                for: application,
+                in: modelContext
+            )
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func previewAttachment(_ attachment: ApplicationAttachment) {
+        do {
+            let url = try attachmentStorageService.managedFileURL(for: attachment)
+            previewItem = AttachmentPreviewItem(
+                id: attachment.id,
+                title: attachment.resolvedTitle,
+                url: url,
+                contentType: attachment.contentType
+            )
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func openAttachment(_ attachment: ApplicationAttachment) {
+        do {
+            switch attachment.kind {
+            case .file:
+                let url = try attachmentStorageService.managedFileURL(for: attachment)
+                openSystemURL(url)
+            case .link:
+                if let url = attachment.normalizedExternalURL {
+                    openURL(url)
+                }
+            case .note:
+                editorState = .edit(attachment)
+            }
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func attachmentSubtitle(_ attachment: ApplicationAttachment) -> String {
+        switch attachment.kind {
+        case .file:
+            let formatter = ByteCountFormatter()
+            formatter.countStyle = .file
+            let sizeText = attachment.fileSize.map { formatter.string(fromByteCount: $0) } ?? "Unknown size"
+            let typeText = attachment.contentType
+                ?? attachment.originalFilename.map { URL(fileURLWithPath: $0).pathExtension.uppercased() }
+                ?? "File"
+            return "\(typeText) • \(sizeText) • \(attachment.createdAt.formatted(date: .abbreviated, time: .omitted))"
+        case .link:
+            return attachment.normalizedExternalURL?.host() ?? "Web link"
+        case .note:
+            return "Plain text note • \(attachment.createdAt.formatted(date: .abbreviated, time: .omitted))"
+        }
+    }
+
+    private func attachmentPreviewText(_ attachment: ApplicationAttachment) -> String? {
+        switch attachment.kind {
+        case .file:
+            return attachment.originalFilename
+        case .link:
+            return attachment.normalizedExternalURL?.absoluteString
+        case .note:
+            return attachment.noteBody?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    private func isPreviewable(_ attachment: ApplicationAttachment) -> Bool {
+        guard attachment.kind == .file else { return false }
+        if let contentType = attachment.contentType,
+           let type = UTType(contentType) {
+            return type.conforms(to: .pdf) || type.conforms(to: .image)
+        }
+
+        if let filename = attachment.originalFilename,
+           let type = UTType(filenameExtension: URL(fileURLWithPath: filename).pathExtension) {
+            return type.conforms(to: .pdf) || type.conforms(to: .image)
+        }
+
+        return false
+    }
+
+    private func openSystemURL(_ url: URL) {
+        #if os(macOS)
+        NSWorkspace.shared.open(url)
+        #else
+        openURL(url)
+        #endif
+    }
 }
 
 struct ResumeJobSnapshotHistoryView: View {
@@ -3095,6 +3463,7 @@ struct ResumeJobSnapshotHistoryView: View {
     @Environment(\.modelContext) private var modelContext
 
     @Bindable var application: JobApplication
+    private let attachmentStorageService = ApplicationAttachmentStorageService()
 
     @State private var actionError: String?
     @State private var expandedSnapshotIDs: Set<UUID> = []
@@ -3209,6 +3578,12 @@ struct ResumeJobSnapshotHistoryView: View {
                 }
                 .buttonStyle(.bordered)
 
+                Button("Use as Submitted Resume") {
+                    Task { await useSnapshotAsSubmittedResume(snapshot) }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DesignSystem.Colors.accent)
+
                 Spacer()
 
                 Button("Delete", role: .destructive) {
@@ -3251,6 +3626,27 @@ struct ResumeJobSnapshotHistoryView: View {
             pdfDocument = try await ResumePDFExportService.makeDocument(json: snapshot.rawJSON)
             exportFormat = .pdf
             isExportingFile = true
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func useSnapshotAsSubmittedResume(_ snapshot: ResumeJobSnapshot) async {
+        do {
+            let document = try await ResumePDFExportService.makeDocument(json: snapshot.rawJSON)
+            let filename = "\(ResumeExportFilename.make(companyName: application.companyName)).pdf"
+            _ = try attachmentStorageService.createManagedFileAttachment(
+                data: document.data,
+                preferredFilename: filename,
+                title: "Submitted Resume",
+                contentType: UTType.pdf.identifier,
+                category: .resume,
+                tags: [],
+                isSubmittedResume: true,
+                for: application,
+                in: modelContext
+            )
         } catch {
             actionError = error.localizedDescription
         }
@@ -3383,6 +3779,317 @@ struct ResumeJobSnapshotHistoryView: View {
             return Color.clear
         }
     }
+}
+
+private struct AttachmentEditorState: Identifiable {
+    let id: UUID
+    let attachment: ApplicationAttachment?
+    let kind: ApplicationAttachmentKind
+    var title: String
+    var category: ApplicationAttachmentCategory
+    var tagsText: String
+    var description: String
+    var urlString: String
+    var noteBody: String
+    var isSubmittedResume: Bool
+
+    static func newLink() -> AttachmentEditorState {
+        AttachmentEditorState(
+            id: UUID(),
+            attachment: nil,
+            kind: .link,
+            title: "",
+            category: .link,
+            tagsText: "",
+            description: "",
+            urlString: "",
+            noteBody: "",
+            isSubmittedResume: false
+        )
+    }
+
+    static func newNote() -> AttachmentEditorState {
+        AttachmentEditorState(
+            id: UUID(),
+            attachment: nil,
+            kind: .note,
+            title: "",
+            category: .note,
+            tagsText: "",
+            description: "",
+            urlString: "",
+            noteBody: "",
+            isSubmittedResume: false
+        )
+    }
+
+    static func edit(_ attachment: ApplicationAttachment) -> AttachmentEditorState {
+        AttachmentEditorState(
+            id: attachment.id,
+            attachment: attachment,
+            kind: attachment.kind,
+            title: attachment.resolvedTitle,
+            category: attachment.category,
+            tagsText: attachment.tags.joined(separator: ", "),
+            description: attachment.attachmentDescription ?? "",
+            urlString: attachment.externalURL ?? "",
+            noteBody: attachment.noteBody ?? "",
+            isSubmittedResume: attachment.isSubmittedResume
+        )
+    }
+}
+
+private struct AttachmentPreviewItem: Identifiable {
+    let id: UUID
+    let title: String
+    let url: URL
+    let contentType: String?
+}
+
+private struct AttachmentEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let state: AttachmentEditorState
+    let onSave: (AttachmentEditorState) -> Void
+
+    @State private var draft: AttachmentEditorState
+
+    init(
+        state: AttachmentEditorState,
+        onSave: @escaping (AttachmentEditorState) -> Void
+    ) {
+        self.state = state
+        self.onSave = onSave
+        _draft = State(initialValue: state)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Details") {
+                    TextField("Title", text: $draft.title)
+
+                    Picker("Category", selection: $draft.category) {
+                        ForEach(ApplicationAttachmentCategory.allCases) { category in
+                            Text(category.displayName).tag(category)
+                        }
+                    }
+
+                    TextField("Tags", text: $draft.tagsText, prompt: Text("Comma separated"))
+                    TextField("Description", text: $draft.description, axis: .vertical)
+                }
+
+                switch draft.kind {
+                case .link:
+                    Section("Link") {
+                        TextField("https://example.com", text: $draft.urlString)
+                            #if os(iOS)
+                            .keyboardType(.URL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            #endif
+                    }
+                case .note:
+                    Section("Note") {
+                        TextField("Body", text: $draft.noteBody, axis: .vertical)
+                            .lineLimit(6...12)
+                    }
+                case .file:
+                    if draft.category == .resume {
+                        Section("Resume") {
+                            Toggle("Mark as submitted resume", isOn: $draft.isSubmittedResume)
+                        }
+                    }
+                }
+            }
+            .navigationTitle(editorTitle)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        onSave(draft)
+                        dismiss()
+                    }
+                    .disabled(!canSave)
+                }
+            }
+        }
+    }
+
+    private var editorTitle: String {
+        if state.attachment != nil {
+            return "Edit Attachment"
+        }
+
+        switch state.kind {
+        case .file:
+            return "Edit File"
+        case .link:
+            return "New Link"
+        case .note:
+            return "New Note"
+        }
+    }
+
+    private var canSave: Bool {
+        switch draft.kind {
+        case .link:
+            return !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                !draft.urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .note:
+            return !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                !draft.noteBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .file:
+            return !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+}
+
+private struct AttachmentPreviewSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let item: AttachmentPreviewItem
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if isPDF {
+                    AttachmentPDFPreview(url: item.url)
+                } else {
+                    AttachmentImagePreview(url: item.url)
+                }
+            }
+            .navigationTitle(item.title)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var isPDF: Bool {
+        if let contentType = item.contentType,
+           let type = UTType(contentType) {
+            return type.conforms(to: .pdf)
+        }
+        return item.url.pathExtension.lowercased() == "pdf"
+    }
+}
+
+#if canImport(PDFKit)
+private struct AttachmentPDFPreview: View {
+    let url: URL
+
+    var body: some View {
+        PDFKitContainer(url: url)
+            .background(Color.secondary.opacity(0.06))
+    }
+}
+
+#if os(macOS)
+private struct PDFKitContainer: NSViewRepresentable {
+    let url: URL
+
+    func makeNSView(context: Context) -> PDFView {
+        let view = PDFView()
+        view.autoScales = true
+        view.document = PDFDocument(url: url)
+        return view
+    }
+
+    func updateNSView(_ nsView: PDFView, context: Context) {
+        if nsView.document?.documentURL != url {
+            nsView.document = PDFDocument(url: url)
+        }
+    }
+}
+#elseif os(iOS)
+private struct PDFKitContainer: UIViewRepresentable {
+    let url: URL
+
+    func makeUIView(context: Context) -> PDFView {
+        let view = PDFView()
+        view.autoScales = true
+        view.document = PDFDocument(url: url)
+        return view
+    }
+
+    func updateUIView(_ uiView: PDFView, context: Context) {
+        if uiView.document?.documentURL != url {
+            uiView.document = PDFDocument(url: url)
+        }
+    }
+}
+#endif
+#endif
+
+private struct AttachmentImagePreview: View {
+    let url: URL
+
+    var body: some View {
+        Group {
+            if let platformImage = AttachmentPlatformImage.load(from: url) {
+                ScrollView([.horizontal, .vertical]) {
+                    AttachmentPlatformImageView(image: platformImage)
+                        .scaledToFit()
+                        .padding()
+                }
+            } else {
+                ContentUnavailableView(
+                    "Preview Unavailable",
+                    systemImage: "photo",
+                    description: Text("Pipeline could not load this image.")
+                )
+            }
+        }
+        .background(Color.secondary.opacity(0.06))
+    }
+}
+
+#if os(macOS)
+private typealias AttachmentPlatformImage = NSImage
+
+private struct AttachmentPlatformImageView: View {
+    let image: NSImage
+
+    var body: some View {
+        Image(nsImage: image)
+            .resizable()
+    }
+}
+
+private extension NSImage {
+    static func load(from url: URL) -> NSImage? {
+        NSImage(contentsOf: url)
+    }
+}
+#elseif os(iOS)
+private typealias AttachmentPlatformImage = UIImage
+
+private struct AttachmentPlatformImageView: View {
+    let image: UIImage
+
+    var body: some View {
+        Image(uiImage: image)
+            .resizable()
+    }
+}
+
+private extension UIImage {
+    static func load(from url: URL) -> UIImage? {
+        UIImage(contentsOfFile: url.path)
+    }
+}
+#endif
+
+private func attachmentTags(from text: String) -> [String] {
+    ApplicationAttachment.normalizedTags(
+        text.split(separator: ",").map { String($0) }
+    )
 }
 
 #if os(macOS)

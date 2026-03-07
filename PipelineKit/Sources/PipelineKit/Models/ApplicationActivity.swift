@@ -1,0 +1,89 @@
+import Foundation
+import SwiftData
+
+@Model
+public final class ApplicationActivity {
+    public var id: UUID = UUID()
+    private var kindRawValue: String = ApplicationActivityKind.note.rawValue
+    private var interviewStageRawValue: String?
+    public var occurredAt: Date = Date()
+    public var notes: String?
+    public var rating: Int?
+    public var emailSubject: String?
+    public var emailBodySnapshot: String?
+    public var legacyInterviewLogID: UUID?
+    public var createdAt: Date = Date()
+    public var updatedAt: Date = Date()
+
+    public var application: JobApplication?
+    public var contact: Contact?
+
+    public var kind: ApplicationActivityKind {
+        get { ApplicationActivityKind(rawValue: kindRawValue) }
+        set { kindRawValue = newValue.rawValue }
+    }
+
+    public var interviewStage: InterviewStage? {
+        get {
+            guard let interviewStageRawValue,
+                  !interviewStageRawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return nil }
+            return InterviewStage(rawValue: interviewStageRawValue)
+        }
+        set { interviewStageRawValue = newValue?.rawValue }
+    }
+
+    public init(
+        id: UUID = UUID(),
+        kind: ApplicationActivityKind,
+        occurredAt: Date = Date(),
+        notes: String? = nil,
+        rating: Int? = nil,
+        emailSubject: String? = nil,
+        emailBodySnapshot: String? = nil,
+        application: JobApplication? = nil,
+        contact: Contact? = nil,
+        interviewStage: InterviewStage? = nil,
+        legacyInterviewLogID: UUID? = nil,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.kindRawValue = kind.rawValue
+        self.occurredAt = occurredAt
+        self.notes = notes
+        self.rating = rating
+        self.emailSubject = emailSubject
+        self.emailBodySnapshot = emailBodySnapshot
+        self.application = application
+        self.contact = contact
+        self.interviewStageRawValue = interviewStage?.rawValue
+        self.legacyInterviewLogID = legacyInterviewLogID
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    public var title: String {
+        switch kind {
+        case .interview:
+            return interviewStage?.displayName ?? kind.displayName
+        case .email:
+            return emailSubject?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? emailSubject! : kind.displayName
+        default:
+            return kind.displayName
+        }
+    }
+
+    public var summary: String? {
+        switch kind {
+        case .email:
+            return emailBodySnapshot
+        default:
+            return notes
+        }
+    }
+
+    public func updateTimestamp() {
+        updatedAt = Date()
+    }
+}

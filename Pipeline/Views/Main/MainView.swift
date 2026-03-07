@@ -8,14 +8,15 @@ import AppKit
 struct MainView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var applications: [JobApplication]
+    @Query private var contacts: [Contact]
     @Environment(\.colorScheme) private var colorScheme
 
-    @Binding var selectedFilter: SidebarFilter
+    @Binding var selectedDestination: MainDestination
     @Binding var selectedApplication: JobApplication?
+    @Binding var selectedContact: Contact?
     @Binding var showingAddApplication: Bool
+    @Binding var showingAddContact: Bool
     @Binding var searchText: String
-    @Binding var showingResume: Bool
-    @Binding var showingCostCenter: Bool
     @Bindable var settingsViewModel: SettingsViewModel
 
     enum ViewMode: String, CaseIterable {
@@ -31,15 +32,23 @@ struct MainView: View {
     }
 
     @State private var viewModel = ApplicationListViewModel()
+    @State private var contactsViewModel = ContactsListViewModel()
     @State private var showingSettings = false
-    @State private var showingDashboard = false
     @State private var viewMode: ViewMode = .grid
 #if os(macOS)
     @State private var escapeKeyMonitor: Any?
 #endif
 
+    private var currentApplicationFilter: SidebarFilter {
+        selectedDestination.applicationFilter ?? .all
+    }
+
+    private var isApplicationsDestination: Bool {
+        selectedDestination.applicationFilter != nil
+    }
+
     private var isKanbanAvailable: Bool {
-        selectedFilter == .all && !showingDashboard && !showingResume && !showingCostCenter
+        selectedDestination == .applications(.all)
     }
 
     private var availableViewModes: [ViewMode] {
@@ -67,83 +76,133 @@ struct MainView: View {
         )
     }
 
+    private var filteredContacts: [Contact] {
+        contactsViewModel.filterContacts(contacts)
+    }
+
+    private var shouldShowApplicationDetail: Bool {
+        isApplicationsDestination && selectedApplication != nil
+    }
+
+    private var shouldShowContactDetail: Bool {
+        selectedDestination == .contacts && selectedContact != nil
+    }
+
     private var shouldShowDetailColumn: Bool {
-        selectedApplication != nil && !showingDashboard && !showingResume && !showingCostCenter
+        shouldShowApplicationDetail || shouldShowContactDetail
     }
 
     @ViewBuilder
     private var contentColumn: some View {
-        if showingDashboard {
-            DashboardView()
+        switch selectedDestination {
+        case .dashboard:
+            DashboardView(settingsViewModel: settingsViewModel)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        } else if showingCostCenter {
-            CostCenterView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        } else if showingResume {
+        case .resume:
             ResumeWorkspaceView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        } else {
-            VStack(spacing: 0) {
-                // Section header with filter title and count
-                HStack {
-                    Text(selectedFilter.displayName)
-                        .font(.title2)
-                        .fontWeight(.semibold)
+        case .costCenter:
+            CostCenterView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        case .contacts:
+            contactsColumn
+        case .applications:
+            applicationsColumn
+        }
+    }
 
-                    Text("\(filteredCount) application\(filteredCount == 1 ? "" : "s")")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+    private var applicationsColumn: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(currentApplicationFilter.displayName)
+                    .font(.title2)
+                    .fontWeight(.semibold)
 
-                    Spacer()
-                }
+                Text("\(filteredCount) application\(filteredCount == 1 ? "" : "s")")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.top, 20)
+            .padding(.bottom, 12)
+
+            StatsBarView(
+                stats: viewModel.calculateStats(from: applications),
+                isDetailPanelOpen: selectedApplication != nil
+            )
+            .padding(.horizontal)
+            .padding(.bottom, 12)
+
+            SearchBar(text: $searchText, placeholder: "Search by company, role, or location...")
                 .padding(.horizontal)
-                .padding(.top, 20)
                 .padding(.bottom, 12)
 
-                StatsBarView(
-                    stats: viewModel.calculateStats(from: applications),
-                    isDetailPanelOpen: selectedApplication != nil
+            Divider()
+                .overlay(DesignSystem.Colors.divider(colorScheme))
+
+            switch viewMode {
+            case .grid:
+                ApplicationListView(
+                    applications: filteredApplications,
+                    selectedApplication: $selectedApplication,
+                    searchText: $searchText
                 )
-                    .padding(.horizontal)
-                    .padding(.bottom, 12)
-
-                // Inline search bar
-                SearchBar(text: $searchText, placeholder: "Search by company, role, or location...")
-                    .padding(.horizontal)
-                    .padding(.bottom, 12)
-
-                Divider()
-                    .overlay(DesignSystem.Colors.divider(colorScheme))
-
-                switch viewMode {
-                case .grid:
-                    ApplicationListView(
-                        applications: filteredApplications,
-                        selectedApplication: $selectedApplication,
-                        searchText: $searchText
-                    )
-                case .kanban:
-                    KanbanBoardView(
-                        applications: filteredApplications,
-                        selectedApplication: $selectedApplication
-                    )
-                }
+            case .kanban:
+                KanbanBoardView(
+                    applications: filteredApplications,
+                    selectedApplication: $selectedApplication
+                )
             }
-            // NavigationSplitView centers its child if it has an intrinsic height;
-            // this pins the header/stats/search to the top like the mock.
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(DesignSystem.Colors.contentBackground(colorScheme))
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(DesignSystem.Colors.contentBackground(colorScheme))
+    }
+
+    private var contactsColumn: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Contacts")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("\(filteredContacts.count) contact\(filteredContacts.count == 1 ? "" : "s")")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.top, 20)
+            .padding(.bottom, 12)
+
+            SearchBar(text: $searchText, placeholder: "Search by name, company, or email...")
+                .padding(.horizontal)
+                .padding(.bottom, 12)
+
+            Divider()
+                .overlay(DesignSystem.Colors.divider(colorScheme))
+
+            ContactsListView(
+                contacts: filteredContacts,
+                selectedContact: $selectedContact,
+                searchText: $searchText,
+                onAddContact: {
+                    showingAddContact = true
+                }
+            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(DesignSystem.Colors.contentBackground(colorScheme))
     }
 
     private var sidebarColumn: some View {
         SidebarView(
-            selectedFilter: $selectedFilter,
+            selectedDestination: $selectedDestination,
             showingAddApplication: $showingAddApplication,
+            showingAddContact: $showingAddContact,
             showingSettings: $showingSettings,
-            showingDashboard: $showingDashboard,
-            showingResume: $showingResume,
-            showingCostCenter: $showingCostCenter,
             statusCounts: viewModel.statusCounts(
                 from: applications,
                 includeInAllApplications: allApplicationsInclusionRule
@@ -155,11 +214,33 @@ struct MainView: View {
 
     @ViewBuilder
     private var detailColumn: some View {
-        if let application = selectedApplication {
-            JobDetailView(application: application, onClose: {
-                closeSelectedApplication()
-            })
-            .navigationSplitViewColumnWidth(min: 360, ideal: 440)
+        if shouldShowApplicationDetail, let application = selectedApplication {
+            JobDetailView(
+                application: application,
+                onClose: {
+                    closeSelectedApplication()
+                },
+                onSelectContact: { contact in
+                    selectedDestination = .contacts
+                    selectedContact = contact
+                    selectedApplication = nil
+                }
+            )
+            .navigationSplitViewColumnWidth(min: 360, ideal: 460)
+            .background(DesignSystem.Colors.contentBackground(colorScheme))
+        } else if shouldShowContactDetail, let contact = selectedContact {
+            ContactDetailView(
+                contact: contact,
+                onClose: {
+                    closeSelectedContact()
+                },
+                onSelectApplication: { application in
+                    selectedDestination = .applications(.all)
+                    selectedApplication = application
+                    selectedContact = nil
+                }
+            )
+            .navigationSplitViewColumnWidth(min: 360, ideal: 460)
             .background(DesignSystem.Colors.contentBackground(colorScheme))
         }
     }
@@ -201,38 +282,27 @@ struct MainView: View {
                 }
             )
         }
+        .sheet(isPresented: $showingAddContact) {
+            ContactEditorView()
+        }
         .sheet(isPresented: $showingSettings) {
             SettingsView(viewModel: settingsViewModel, isPresentedInSheet: true)
         }
         .onChange(of: searchText) { _, newValue in
             viewModel.searchText = newValue
+            contactsViewModel.searchText = newValue
         }
-        .onChange(of: selectedFilter) { _, newValue in
-            viewModel.selectedFilter = newValue
+        .onChange(of: selectedDestination) { _, newValue in
+            if let filter = newValue.applicationFilter {
+                viewModel.selectedFilter = filter
+            }
             enforceViewModeAvailability()
-            guard selectedApplication != nil else { return }
-            closeSelectedApplication()
-        }
-        .onChange(of: showingDashboard) { _, isShowingDashboard in
-            if isShowingDashboard {
-                enforceViewModeAvailability()
+            if newValue.applicationFilter == nil {
+                closeSelectedApplication()
             }
-            guard isShowingDashboard, selectedApplication != nil else { return }
-            closeSelectedApplication()
-        }
-        .onChange(of: showingResume) { _, isShowingResume in
-            if isShowingResume {
-                enforceViewModeAvailability()
+            if newValue != .contacts {
+                closeSelectedContact()
             }
-            guard isShowingResume, selectedApplication != nil else { return }
-            closeSelectedApplication()
-        }
-        .onChange(of: showingCostCenter) { _, isShowingCostCenter in
-            if isShowingCostCenter {
-                enforceViewModeAvailability()
-            }
-            guard isShowingCostCenter, selectedApplication != nil else { return }
-            closeSelectedApplication()
         }
         .onChange(of: viewMode) { _, _ in
             enforceViewModeAvailability()
@@ -241,7 +311,8 @@ struct MainView: View {
         }
         .onAppear {
             viewModel.searchText = searchText
-            viewModel.selectedFilter = selectedFilter
+            viewModel.selectedFilter = currentApplicationFilter
+            contactsViewModel.searchText = searchText
             enforceViewModeAvailability()
 #if os(macOS)
             installEscapeKeyMonitor()
@@ -275,24 +346,38 @@ struct MainView: View {
             .help("Change appearance")
         }
 #endif
-        ToolbarItem(placement: .automatic) {
-            Picker("View", selection: $viewMode) {
-                ForEach(availableViewModes, id: \.self) { mode in
-                    Label(mode.rawValue, systemImage: mode.icon).tag(mode)
+        if isApplicationsDestination {
+            ToolbarItem(placement: .automatic) {
+                Picker("View", selection: $viewMode) {
+                    ForEach(availableViewModes, id: \.self) { mode in
+                        Label(mode.rawValue, systemImage: mode.icon).tag(mode)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .toolbarHandCursor()
             }
-            .pickerStyle(.segmented)
-            .toolbarHandCursor()
+            ToolbarItem(placement: .automatic) {
+                Picker("Sort", selection: $viewModel.sortOrder) {
+                    ForEach(ApplicationListViewModel.SortOrder.allCases, id: \.self) { order in
+                        Text(order.rawValue).tag(order)
+                    }
+                }
+                .pickerStyle(.menu)
+                .toolbarHandCursor()
+                .padding(.horizontal, 6)
+            }
         }
-        ToolbarItem(placement: .automatic) {
-            Picker("Sort", selection: $viewModel.sortOrder) {
-                ForEach(ApplicationListViewModel.SortOrder.allCases, id: \.self) { order in
-                    Text(order.rawValue).tag(order)
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                if selectedDestination == .contacts {
+                    showingAddContact = true
+                } else if isApplicationsDestination {
+                    showingAddApplication = true
                 }
+            } label: {
+                Image(systemName: selectedDestination == .contacts ? "person.badge.plus" : "plus")
             }
-            .pickerStyle(.menu)
-            .toolbarHandCursor()
-            .padding(.horizontal, 6)
+            .disabled(!(selectedDestination == .contacts || isApplicationsDestination))
         }
     }
 
@@ -300,12 +385,20 @@ struct MainView: View {
     private func installEscapeKeyMonitor() {
         guard escapeKeyMonitor == nil else { return }
         escapeKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard event.keyCode == 53 else { return event } // Escape
-            guard !showingAddApplication, !showingSettings else { return event }
-            guard selectedApplication != nil else { return event }
+            guard event.keyCode == 53 else { return event }
+            guard !showingAddApplication, !showingAddContact, !showingSettings else { return event }
 
-            closeSelectedApplication()
-            return nil
+            if selectedApplication != nil {
+                closeSelectedApplication()
+                return nil
+            }
+
+            if selectedContact != nil {
+                closeSelectedContact()
+                return nil
+            }
+
+            return event
         }
     }
 
@@ -331,6 +424,10 @@ struct MainView: View {
         selectedApplication = nil
     }
 
+    private func closeSelectedContact() {
+        selectedContact = nil
+    }
+
     private func enforceViewModeAvailability() {
         if viewMode == .kanban && !isKanbanAvailable {
             viewMode = .grid
@@ -338,8 +435,8 @@ struct MainView: View {
     }
 }
 
-private extension View {
 #if os(macOS)
+private extension View {
     func toolbarHandCursor() -> some View {
         onHover { isHovering in
             if isHovering {
@@ -349,30 +446,9 @@ private extension View {
             }
         }
     }
+}
 #else
+private extension View {
     func toolbarHandCursor() -> some View { self }
+}
 #endif
-}
-
-#Preview {
-    MainView(
-        selectedFilter: .constant(.all),
-        selectedApplication: .constant(nil),
-        showingAddApplication: .constant(false),
-        searchText: .constant(""),
-        showingResume: .constant(false),
-        showingCostCenter: .constant(false),
-        settingsViewModel: SettingsViewModel()
-    )
-    .modelContainer(
-        for: [
-            JobApplication.self,
-            InterviewLog.self,
-            ResumeMasterRevision.self,
-            ResumeJobSnapshot.self,
-            AIUsageRecord.self,
-            AIModelRate.self
-        ],
-        inMemory: true
-    )
-}

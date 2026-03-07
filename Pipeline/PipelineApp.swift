@@ -49,6 +49,11 @@ struct PipelineApp: App {
             }
 
             self.modelContainer = container
+
+            let migrationContext = ModelContext(container)
+            _ = try? ApplicationTimelineMigrationService.migrateLegacyInterviewLogs(in: migrationContext)
+            _ = try? JobSearchCycleMigrationService.backfillImportedCycleIfNeeded(in: migrationContext)
+
             _settingsViewModel = State(
                 initialValue: SettingsViewModel(
                     cloudSyncSupported: cloudSyncSupportedInThisBuild,

@@ -3,137 +3,143 @@ import PipelineKit
 
 @Observable
 final class DashboardViewModel {
-
-    // MARK: - Data Types
-
-    struct FunnelItem: Identifiable {
-        let id = UUID()
-        let status: ApplicationStatus
-        let count: Int
+    struct SummaryCard: Identifiable {
+        let id: String
+        let title: String
+        let value: String
+        let deltaText: String
+        let deltaColorName: String
+        let icon: String
     }
 
-    struct WeeklyActivity: Identifiable {
-        let id = UUID()
-        let weekStart: Date
-        let count: Int
+    var selectedScope: AnalyticsComparisonScope = .thisWeek
+    var analytics: DashboardAnalyticsResult?
+    var isRefreshing = false
+    var lastRefreshToken = ""
+
+    private let analyticsService: DashboardAnalyticsService
+
+    init(analyticsService: DashboardAnalyticsService = DashboardAnalyticsService()) {
+        self.analyticsService = analyticsService
     }
 
-    struct TimeInStage: Identifiable {
-        let id = UUID()
-        let status: ApplicationStatus
-        let averageDays: Double
+    func refresh(
+        applications: [JobApplication],
+        cycles: [JobSearchCycle],
+        goals: [SearchGoal],
+        baseCurrency: Currency
+    ) async {
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        analytics = await analyticsService.analyze(
+            applications: applications,
+            cycles: cycles,
+            goals: goals,
+            scope: selectedScope,
+            baseCurrency: baseCurrency
+        )
     }
 
-    // MARK: - Computed Stats
+    var summaryCards: [SummaryCard] {
+        guard let analytics else { return [] }
 
-    var funnel: [FunnelItem] = []
-    var weeklyActivity: [WeeklyActivity] = []
-    var timeInStage: [TimeInStage] = []
-    var totalApplications: Int = 0
-    var activeApplications: Int = 0
-    var responseRate: Double = 0
-    var interviewRate: Double = 0
-    var offerRate: Double = 0
-
-    // MARK: - Refresh
-
-    func refresh(applications: [JobApplication]) {
-        totalApplications = applications.count
-        computeFunnel(applications)
-        computeWeeklyActivity(applications)
-        computeTimeInStage(applications)
-        computeRates(applications)
-    }
-
-    // MARK: - Funnel
-
-    private func computeFunnel(_ applications: [JobApplication]) {
-        let statuses: [ApplicationStatus] = [.saved, .applied, .interviewing, .offered, .rejected]
-        funnel = statuses.map { status in
-            FunnelItem(status: status, count: applications.filter { $0.status == status }.count)
-        }
-    }
-
-    // MARK: - Weekly Activity
-
-    private func computeWeeklyActivity(_ applications: [JobApplication]) {
-        let calendar = Calendar.current
-        let now = Date()
-
-        // Last 8 weeks
-        var weeks: [WeeklyActivity] = []
-        for weekOffset in (0..<8).reversed() {
-            guard let weekStart = calendar.date(byAdding: .weekOfYear, value: -weekOffset, to: now) else { continue }
-            let startOfWeek = calendar.startOfWeek(for: weekStart)
-            guard let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek) else { continue }
-
-            let count = applications.filter { app in
-                app.createdAt >= startOfWeek && app.createdAt < endOfWeek
-            }.count
-
-            weeks.append(WeeklyActivity(weekStart: startOfWeek, count: count))
-        }
-
-        weeklyActivity = weeks
-    }
-
-    // MARK: - Time in Stage
-
-    private func computeTimeInStage(_ applications: [JobApplication]) {
-        let trackableStatuses: [ApplicationStatus] = [.applied, .interviewing, .offered]
-
-        timeInStage = trackableStatuses.compactMap { status in
-            let matching = applications.filter { $0.status == status }
-            guard !matching.isEmpty else { return nil }
-
-            let totalDays = matching.reduce(0.0) { sum, app in
-                let start = app.appliedDate ?? app.createdAt
-                let days = Date().timeIntervalSince(start) / 86400
-                return sum + days
-            }
-
-            return TimeInStage(
-                status: status,
-                averageDays: totalDays / Double(matching.count)
+        return [
+            SummaryCard(
+                id: "submitted",
+                title: "Submitted",
+                value: "\(analytics.currentSnapshot.submittedApplications)",
+                deltaText: deltaString(
+                    current: analytics.currentSnapshot.submittedApplications,
+                    previous: analytics.previousSnapshot.submittedApplications
+                ),
+                deltaColorName: deltaColorName(
+                    current: Double(analytics.currentSnapshot.submittedApplications),
+                    previous: Double(analytics.previousSnapshot.submittedApplications)
+                ),
+                icon: "paperplane.fill"
+            ),
+            SummaryCard(
+                id: "interviews",
+                title: "Interviews",
+                value: "\(analytics.currentSnapshot.interviewingApplications)",
+                deltaText: deltaString(
+                    current: analytics.currentSnapshot.interviewingApplications,
+                    previous: analytics.previousSnapshot.interviewingApplications
+                ),
+                deltaColorName: deltaColorName(
+                    current: Double(analytics.currentSnapshot.interviewingApplications),
+                    previous: Double(analytics.previousSnapshot.interviewingApplications)
+                ),
+                icon: "person.2.fill"
+            ),
+            SummaryCard(
+                id: "offers",
+                title: "Offers",
+                value: "\(analytics.currentSnapshot.offeredApplications)",
+                deltaText: deltaString(
+                    current: analytics.currentSnapshot.offeredApplications,
+                    previous: analytics.previousSnapshot.offeredApplications
+                ),
+                deltaColorName: deltaColorName(
+                    current: Double(analytics.currentSnapshot.offeredApplications),
+                    previous: Double(analytics.previousSnapshot.offeredApplications)
+                ),
+                icon: "gift.fill"
+            ),
+            SummaryCard(
+                id: "response-rate",
+                title: "Response Rate",
+                value: percentString(analytics.currentSnapshot.responseRate),
+                deltaText: deltaString(
+                    current: analytics.currentSnapshot.responseRate,
+                    previous: analytics.previousSnapshot.responseRate,
+                    isPercent: true
+                ),
+                deltaColorName: deltaColorName(
+                    current: analytics.currentSnapshot.responseRate,
+                    previous: analytics.previousSnapshot.responseRate
+                ),
+                icon: "chart.line.uptrend.xyaxis"
             )
-        }
+        ]
     }
 
-    // MARK: - Rates
+    func percentString(_ value: Double) -> String {
+        "\(Int((value * 100).rounded()))%"
+    }
 
-    private func computeRates(_ applications: [JobApplication]) {
-        let nonSaved = applications.filter { $0.status != .saved && $0.status != .archived }
-        activeApplications = nonSaved.count
+    func currencyString(_ value: Double, currency: Currency) -> String {
+        currency.format(Int(value.rounded()))
+    }
 
-        guard !nonSaved.isEmpty else {
-            responseRate = 0
-            interviewRate = 0
-            offerRate = 0
-            return
+    private func deltaString(current: Int, previous: Int) -> String {
+        let delta = current - previous
+        if delta == 0 {
+            return "No change"
+        }
+        return delta > 0 ? "+\(delta)" : "\(delta)"
+    }
+
+    private func deltaString(current: Double, previous: Double, isPercent: Bool) -> String {
+        let delta = current - previous
+        if abs(delta) < 0.0001 {
+            return "No change"
         }
 
-        let total = Double(nonSaved.count)
-        let gotResponse = nonSaved.filter {
-            $0.status == .interviewing || $0.status == .offered || $0.status == .rejected
-        }.count
+        if isPercent {
+            let points = Int((delta * 100).rounded())
+            return points > 0 ? "+\(points) pts" : "\(points) pts"
+        }
 
-        responseRate = Double(gotResponse) / total
-
-        let interviewing = nonSaved.filter {
-            $0.status == .interviewing || $0.status == .offered
-        }.count
-        interviewRate = Double(interviewing) / total
-
-        let offered = nonSaved.filter { $0.status == .offered }.count
-        offerRate = Double(offered) / total
+        let rounded = Int(delta.rounded())
+        return rounded > 0 ? "+\(rounded)" : "\(rounded)"
     }
-}
 
-// MARK: - Calendar Extension
-
-private extension Calendar {
-    func startOfWeek(for date: Date) -> Date {
-        let components = dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
-        return self.date(from: components) ?? date
+    private func deltaColorName(current: Double, previous: Double) -> String {
+        if abs(current - previous) < 0.0001 {
+            return "secondary"
+        }
+        return current >= previous ? "positive" : "negative"
     }
 }

@@ -3,18 +3,24 @@ import SwiftData
 import PipelineKit
 
 struct ContentView: View {
-    @Environment(\.modelContext) private var modelContext
     @Query(sort: \JobApplication.updatedAt, order: .reverse) private var applications: [JobApplication]
-    @State private var selectedFilter: SidebarFilter = .all
+    @Query(sort: \Contact.updatedAt, order: .reverse) private var contacts: [Contact]
+    @State private var selectedDestination: MainDestination = .applications(.all)
     @State private var selectedApplication: JobApplication?
+    @State private var selectedContact: Contact?
     @State private var showingAddApplication = false
-    @State private var showingResume = false
-    @State private var showingCostCenter = false
+    @State private var showingAddContact = false
     @State private var searchText = ""
     @Bindable var settingsViewModel: SettingsViewModel
 
     private var filteredApplications: [JobApplication] {
-        let visibleApplications = applications.filter(settingsViewModel.shouldIncludeInAllApplications)
+        let visibleApplications: [JobApplication]
+        if let filter = selectedDestination.applicationFilter, filter != .all, let status = filter.status {
+            visibleApplications = applications.filter { $0.status == status }
+        } else {
+            visibleApplications = applications.filter(settingsViewModel.shouldIncludeInAllApplications)
+        }
+
         guard !searchText.isEmpty else { return visibleApplications }
         let lowercasedSearch = searchText.lowercased()
         return visibleApplications.filter { app in
@@ -24,15 +30,25 @@ struct ContentView: View {
         }
     }
 
+    private var filteredContacts: [Contact] {
+        guard !searchText.isEmpty else { return contacts }
+        let lowercasedSearch = searchText.lowercased()
+        return contacts.filter { contact in
+            contact.fullName.lowercased().contains(lowercasedSearch) ||
+            (contact.companyName?.lowercased().contains(lowercasedSearch) ?? false) ||
+            (contact.email?.lowercased().contains(lowercasedSearch) ?? false)
+        }
+    }
+
     var body: some View {
         #if os(macOS)
         MainView(
-            selectedFilter: $selectedFilter,
+            selectedDestination: $selectedDestination,
             selectedApplication: $selectedApplication,
+            selectedContact: $selectedContact,
             showingAddApplication: $showingAddApplication,
+            showingAddContact: $showingAddContact,
             searchText: $searchText,
-            showingResume: $showingResume,
-            showingCostCenter: $showingCostCenter,
             settingsViewModel: settingsViewModel
         )
         .preferredColorScheme(settingsViewModel.getColorScheme())
@@ -42,25 +58,63 @@ struct ContentView: View {
         }
         #else
         NavigationStack {
-            ApplicationListView(
-                applications: filteredApplications,
-                selectedApplication: $selectedApplication,
-                searchText: $searchText
-            )
-            .navigationTitle("Pipeline")
+            Group {
+                switch selectedDestination {
+                case .dashboard:
+                    DashboardView(settingsViewModel: settingsViewModel)
+                case .contacts:
+                    ContactsListView(
+                        contacts: filteredContacts,
+                        selectedContact: $selectedContact,
+                        searchText: $searchText,
+                        onAddContact: {
+                            showingAddContact = true
+                        }
+                    )
+                case .resume:
+                    ResumeWorkspaceView()
+                case .costCenter:
+                    CostCenterView()
+                case .applications:
+                    ApplicationListView(
+                        applications: filteredApplications,
+                        selectedApplication: $selectedApplication,
+                        searchText: $searchText
+                    )
+                }
+            }
+            .navigationTitle(selectedDestination.title)
+            .searchable(text: $searchText)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu {
+                        Button("Dashboard") { selectedDestination = .dashboard }
+                        Divider()
+                        ForEach(SidebarFilter.allCases) { filter in
+                            Button(filter.displayName) {
+                                selectedDestination = .applications(filter)
+                            }
+                        }
+                        Divider()
+                        Button("Contacts") { selectedDestination = .contacts }
+                        Button("Resume") { selectedDestination = .resume }
+                        Button("Cost Center") { selectedDestination = .costCenter }
+                    } label: {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     HStack(spacing: 12) {
                         Button {
-                            showingResume = true
+                            if selectedDestination == .contacts {
+                                showingAddContact = true
+                            } else if selectedDestination.applicationFilter != nil {
+                                showingAddApplication = true
+                            } else {
+                                selectedDestination = .applications(.all)
+                            }
                         } label: {
-                            Image(systemName: "doc.text")
-                        }
-
-                        Button {
-                            showingAddApplication = true
-                        } label: {
-                            Image(systemName: "plus")
+                            Image(systemName: selectedDestination == .contacts ? "person.badge.plus" : "plus")
                         }
                     }
                 }
@@ -69,22 +123,23 @@ struct ContentView: View {
         .sheet(isPresented: $showingAddApplication) {
             AddApplicationView(settingsViewModel: settingsViewModel)
         }
-        .sheet(isPresented: $showingResume) {
-            NavigationStack {
-                ResumeWorkspaceView()
-                    .navigationTitle("Resume")
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Close") {
-                                showingResume = false
-                            }
-                        }
-                    }
-            }
+        .sheet(isPresented: $showingAddContact) {
+            ContactEditorView()
         }
         .sheet(item: $selectedApplication) { application in
             NavigationStack {
-                JobDetailView(application: application)
+                JobDetailView(
+                    application: application,
+                    onSelectContact: { contact in
+                        selectedDestination = .contacts
+                        selectedContact = contact
+                    }
+                )
+            }
+        }
+        .sheet(item: $selectedContact) { contact in
+            NavigationStack {
+                ContactDetailView(contact: contact)
             }
         }
         .task {
@@ -99,7 +154,13 @@ struct ContentView: View {
         .modelContainer(
             for: [
                 JobApplication.self,
+                JobSearchCycle.self,
+                SearchGoal.self,
                 InterviewLog.self,
+                Contact.self,
+                ApplicationContactLink.self,
+                ApplicationActivity.self,
+                ApplicationAttachment.self,
                 ResumeMasterRevision.self,
                 ResumeJobSnapshot.self,
                 AIUsageRecord.self,

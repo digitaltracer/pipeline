@@ -29,12 +29,13 @@ final class FollowUpDrafterViewModel {
 
     var hasResult: Bool { result != nil }
 
+    var applicationForLogging: JobApplication { application }
+
     var daysSinceLastContact: Int {
         let referenceDate: Date
-        if let latestLog = application.interviewLogs?
-            .sorted(by: { $0.date > $1.date })
+        if let latestActivity = application.sortedActivities
             .first {
-            referenceDate = latestLog.date
+            referenceDate = latestActivity.occurredAt
         } else {
             referenceDate = application.updatedAt
         }
@@ -73,20 +74,21 @@ final class FollowUpDrafterViewModel {
 
         // Gather current stage
         let stage: String
-        if let latestLog = application.interviewLogs?
-            .sorted(by: { $0.date > $1.date })
-            .first {
-            stage = latestLog.interviewType.displayName
+        if let latestInterview = application.sortedActivities
+            .first(where: { $0.kind == .interview }) {
+            stage = latestInterview.interviewStage?.displayName ?? latestInterview.kind.displayName
         } else {
             stage = application.status.displayName
         }
 
-        // Gather notes from interview logs
-        let notes = (application.interviewLogs ?? [])
-            .sorted { $0.date > $1.date }
-            .compactMap { log -> String? in
-                guard let n = log.notes, !n.isEmpty else { return nil }
-                return n
+        let notes = application.sortedActivities
+            .compactMap { activity -> String? in
+                switch activity.kind {
+                case .email:
+                    return activity.emailBodySnapshot ?? activity.notes
+                default:
+                    return activity.notes
+                }
             }
             .joined(separator: "\n")
 
@@ -164,7 +166,7 @@ final class FollowUpDrafterViewModel {
     var mailtoURL: URL? {
         var components = URLComponents()
         components.scheme = "mailto"
-        components.path = ""
+        components.path = application.primaryContactLink?.contact?.email ?? ""
         components.queryItems = [
             URLQueryItem(name: "subject", value: editableSubject),
             URLQueryItem(name: "body", value: editableBody)

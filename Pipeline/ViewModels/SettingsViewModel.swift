@@ -38,6 +38,7 @@ final class SettingsViewModel {
 
         static let notificationsEnabled = "notificationsEnabled"
         static let reminderTiming = "reminderTiming"
+        static let analyticsBaseCurrency = Constants.UserDefaultsKeys.analyticsBaseCurrency
     }
 
     private static let modelCatalogRefreshInterval: TimeInterval = 60 * 60 * 24
@@ -106,6 +107,12 @@ final class SettingsViewModel {
         }
     }
 
+    var analyticsBaseCurrency: Currency {
+        didSet {
+            UserDefaults.standard.set(analyticsBaseCurrency.rawValue, forKey: StorageKeys.analyticsBaseCurrency)
+        }
+    }
+
     // MARK: - Sync
 
     let cloudSyncSupported: Bool
@@ -164,6 +171,13 @@ final class SettingsViewModel {
             self.reminderTiming = timing
         } else {
             self.reminderTiming = .dayBefore
+        }
+
+        if let rawValue = UserDefaults.standard.string(forKey: StorageKeys.analyticsBaseCurrency),
+           let currency = Currency(rawValue: rawValue) {
+            self.analyticsBaseCurrency = currency
+        } else {
+            self.analyticsBaseCurrency = .usd
         }
 
         migrateLegacyCustomModelStorageIfNeeded()

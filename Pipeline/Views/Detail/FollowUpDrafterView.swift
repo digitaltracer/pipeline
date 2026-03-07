@@ -6,6 +6,7 @@ struct FollowUpDrafterView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
+    @State private var showingLogSentEmail = false
 
     var body: some View {
         NavigationStack {
@@ -29,6 +30,13 @@ struct FollowUpDrafterView: View {
                     Button("Close") { dismiss() }
                 }
                 if viewModel.hasResult {
+                    ToolbarItem(placement: .automatic) {
+                        Button {
+                            showingLogSentEmail = true
+                        } label: {
+                            Label("Log Sent", systemImage: "checkmark.circle")
+                        }
+                    }
                     ToolbarItem(placement: .automatic) {
                         Button {
                             viewModel.copyToClipboard()
@@ -58,6 +66,13 @@ struct FollowUpDrafterView: View {
                     .disabled(viewModel.isLoading)
                 }
             }
+        }
+        .sheet(isPresented: $showingLogSentEmail) {
+            LogSentEmailView(
+                application: viewModel.applicationForLogging,
+                suggestedSubject: viewModel.editableSubject,
+                suggestedBody: viewModel.editableBody
+            )
         }
     }
 
@@ -191,6 +206,14 @@ struct FollowUpDrafterView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(DesignSystem.Colors.accent)
                 }
+
+                Button {
+                    showingLogSentEmail = true
+                } label: {
+                    Label("Log Sent Email", systemImage: "checkmark.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
                 .padding(16)
             }
             .padding(20)

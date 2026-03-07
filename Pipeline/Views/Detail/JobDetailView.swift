@@ -6,11 +6,14 @@ struct JobDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Bindable var application: JobApplication
     var onClose: (() -> Void)? = nil
+    var onSelectContact: ((Contact) -> Void)? = nil
 
     @State private var viewModel = ApplicationDetailViewModel()
     @State private var showingEditSheet = false
-    @State private var showingAddInterviewLog = false
-    @State private var editingInterviewLog: InterviewLog?
+    @State private var showingManageContacts = false
+    @State private var showingActivityEditor = false
+    @State private var draftActivityKind: ApplicationActivityKind = .note
+    @State private var editingActivity: ApplicationActivity?
     @State private var showingDeleteAlert = false
     @State private var showingInterviewPrep = false
     @State private var showingFollowUpDrafter = false
@@ -44,10 +47,8 @@ struct JobDetailView: View {
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
-                    // Fields Grid
                     JobDetailFieldsView(application: application)
 
-                    // Job Posting Section
                     if let urlString = application.jobURL, !urlString.isEmpty {
                         JobPostingSection(urlString: urlString)
                     }
@@ -66,25 +67,32 @@ struct JobDetailView: View {
                         .padding(.horizontal, 6)
                     }
 
-                    // Job Description
                     if let description = application.jobDescription, !description.isEmpty {
                         JobDescriptionView(description: description)
                     }
 
+                    ApplicationContactsSection(
+                        application: application,
+                        onManageContacts: {
+                            showingManageContacts = true
+                        },
+                        onSelectContact: onSelectContact
+                    )
+
                     JobResumePanel(application: application)
 
-                    // Interview History
-                    InterviewHistoryView(
-                        logs: application.sortedInterviewLogs,
-                        onAddLog: {
-                            showingAddInterviewLog = true
+                    ApplicationTimelineView(
+                        activities: application.sortedActivities,
+                        onAddActivity: { kind in
+                            draftActivityKind = kind
+                            showingActivityEditor = true
                         },
-                        onEditLog: { log in
-                            editingInterviewLog = log
+                        onEditActivity: { activity in
+                            editingActivity = activity
                         },
-                        onDeleteLog: { log in
+                        onDeleteActivity: { activity in
                             do {
-                                try viewModel.deleteInterviewLog(log, from: application, context: modelContext)
+                                try viewModel.deleteActivity(activity, from: application, context: modelContext)
                             } catch {
                                 actionErrorMessage = error.localizedDescription
                             }
@@ -95,7 +103,6 @@ struct JobDetailView: View {
                 .padding(.bottom, 16)
             }
 
-            // Bottom Action Bar
             Divider().overlay(DesignSystem.Colors.divider(colorScheme))
             bottomActionBar
         }
@@ -103,11 +110,17 @@ struct JobDetailView: View {
         .sheet(isPresented: $showingEditSheet) {
             EditApplicationView(application: application)
         }
-        .sheet(isPresented: $showingAddInterviewLog) {
-            AddInterviewLogView(application: application)
+        .sheet(isPresented: $showingManageContacts) {
+            ManageApplicationContactsView(application: application)
         }
-        .sheet(item: $editingInterviewLog) { log in
-            AddInterviewLogView(application: application, logToEdit: log)
+        .sheet(isPresented: $showingActivityEditor) {
+            ActivityEditorView(
+                application: application,
+                defaultKind: draftActivityKind
+            )
+        }
+        .sheet(item: $editingActivity) { activity in
+            ActivityEditorView(application: application, activityToEdit: activity)
         }
         .sheet(isPresented: $showingInterviewPrep) {
             InterviewPrepView(
@@ -161,8 +174,15 @@ struct JobDetailView: View {
             .buttonStyle(.borderedProminent)
             .tint(DesignSystem.Colors.accent)
 
-            Button {
-                showingAddInterviewLog = true
+            Menu {
+                ForEach(ApplicationActivityKind.allCases) { kind in
+                    Button {
+                        draftActivityKind = kind
+                        showingActivityEditor = true
+                    } label: {
+                        Label(kind.displayName, systemImage: kind.icon)
+                    }
+                }
             } label: {
                 Label("Log", systemImage: "plus")
                     .frame(width: 110)
@@ -267,7 +287,13 @@ struct JobPostingSection: View {
     .modelContainer(
         for: [
             JobApplication.self,
+            JobSearchCycle.self,
+            SearchGoal.self,
             InterviewLog.self,
+            Contact.self,
+            ApplicationContactLink.self,
+            ApplicationActivity.self,
+            ApplicationAttachment.self,
             ResumeMasterRevision.self,
             ResumeJobSnapshot.self,
             AIUsageRecord.self,

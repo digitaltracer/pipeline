@@ -8,6 +8,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     case appearance
     case aiProvider
     case allApplications
+    case analytics
     case notifications
     case sync
     case about
@@ -19,6 +20,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .appearance: return "Appearance"
         case .aiProvider: return "AI Provider"
         case .allApplications: return "All Applications"
+        case .analytics: return "Analytics"
         case .notifications: return "Notifications"
         case .sync: return "iCloud Sync"
         case .about: return "About"
@@ -33,6 +35,8 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
             return "Provider, model, and API key"
         case .allApplications:
             return "Choose which status types appear in All Applications"
+        case .analytics:
+            return "Dashboard currency and planning preferences"
         case .notifications:
             return "Follow-up reminder behavior"
         case .sync:
@@ -47,6 +51,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .appearance: return "paintbrush.fill"
         case .aiProvider: return "brain.head.profile"
         case .allApplications: return "line.3.horizontal.decrease.circle.fill"
+        case .analytics: return "chart.xyaxis.line"
         case .notifications: return "bell.badge.fill"
         case .sync: return "icloud.fill"
         case .about: return "info.circle.fill"
@@ -97,6 +102,12 @@ struct SettingsView: View {
                         AllApplicationsSettingsView(viewModel: viewModel)
                     } label: {
                         Label("All Applications", systemImage: "line.3.horizontal.decrease.circle")
+                    }
+
+                    NavigationLink {
+                        AnalyticsSettingsView(viewModel: viewModel)
+                    } label: {
+                        Label("Analytics", systemImage: "chart.xyaxis.line")
                     }
 
                     NavigationLink {
@@ -265,6 +276,8 @@ struct SettingsView: View {
             AIProviderSettingsContent(viewModel: viewModel)
         case .allApplications:
             AllApplicationsSettingsContent(viewModel: viewModel)
+        case .analytics:
+            AnalyticsSettingsContent(viewModel: viewModel)
         case .notifications:
             NotificationSettingsContent(viewModel: viewModel)
         case .sync:
@@ -938,6 +951,48 @@ struct NotificationSettingsView: View {
         } else {
             NotificationService.shared.removeAllNotifications()
             permissionStatus = await NotificationService.shared.checkPermissionStatus()
+        }
+    }
+}
+
+struct AnalyticsSettingsView: View {
+    @Bindable var viewModel: SettingsViewModel
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("Base Currency", selection: $viewModel.analyticsBaseCurrency) {
+                    ForEach(Currency.allCases) { currency in
+                        Text("\(currency.displayName) (\(currency.symbol))").tag(currency)
+                    }
+                }
+            } header: {
+                Text("Dashboard")
+            } footer: {
+                Text("Salary analytics convert compensation into this currency using cached Frankfurter exchange rates.")
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Analytics")
+    }
+}
+
+struct AnalyticsSettingsContent: View {
+    @Bindable var viewModel: SettingsViewModel
+
+    var body: some View {
+        SettingsFormSectionCard(
+            title: "Dashboard Currency",
+            subtitle: "Salary analytics convert compensation into this currency using cached Frankfurter exchange rates.",
+            icon: "chart.xyaxis.line"
+        ) {
+            Picker("Base Currency", selection: $viewModel.analyticsBaseCurrency) {
+                ForEach(Currency.allCases) { currency in
+                    Text("\(currency.displayName) (\(currency.symbol))").tag(currency)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
         }
     }
 }

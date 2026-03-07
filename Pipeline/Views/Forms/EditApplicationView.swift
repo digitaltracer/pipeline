@@ -121,5 +121,17 @@ struct EditApplicationView: View {
             priority: .high
         )
     )
-    .modelContainer(for: [JobApplication.self, InterviewLog.self], inMemory: true)
+    .modelContainer(
+        for: [
+            JobApplication.self,
+            JobSearchCycle.self,
+            SearchGoal.self,
+            InterviewLog.self,
+            Contact.self,
+            ApplicationContactLink.self,
+            ApplicationActivity.self,
+            ApplicationAttachment.self
+        ],
+        inMemory: true
+    )
 }
