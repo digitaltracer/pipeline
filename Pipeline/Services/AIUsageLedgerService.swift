@@ -99,6 +99,7 @@ enum AIUsageLedgerService {
         usage: AIUsageMetrics?,
         status: AIUsageRequestStatus,
         applicationID: UUID? = nil,
+        companyID: UUID? = nil,
         startedAt: Date,
         finishedAt: Date = Date(),
         errorMessage: String? = nil,
@@ -133,6 +134,7 @@ enum AIUsageLedgerService {
             outputCostUSD: costs.outputCostUSD,
             totalCostUSD: costs.totalCostUSD,
             applicationID: applicationID,
+            companyID: companyID,
             startedAt: startedAt,
             finishedAt: finishedAt,
             errorMessage: errorMessage

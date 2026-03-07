@@ -209,6 +209,7 @@ final class AddEditApplicationViewModel {
                 let previousFollowUpDate = app.nextFollowUpDate
 
                 try updateApplication(app, context: context)
+                _ = try CompanyLinkingService.ensureCompanyLinked(for: app, in: context)
                 ApplicationTimelineRecorderService.recordStatusChange(
                     for: app,
                     from: previousStatus,
@@ -229,6 +230,7 @@ final class AddEditApplicationViewModel {
             } else {
                 let app = try createApplication(context: context)
                 context.insert(app)
+                _ = try CompanyLinkingService.ensureCompanyLinked(for: app, in: context)
                 ApplicationTimelineRecorderService.seedInitialHistory(
                     for: app,
                     occurredAt: saveTimestamp,

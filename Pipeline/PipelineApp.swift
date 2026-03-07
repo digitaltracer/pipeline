@@ -53,6 +53,7 @@ struct PipelineApp: App {
             let migrationContext = ModelContext(container)
             _ = try? ApplicationTimelineMigrationService.migrateLegacyInterviewLogs(in: migrationContext)
             _ = try? JobSearchCycleMigrationService.backfillImportedCycleIfNeeded(in: migrationContext)
+            _ = try? CompanyLinkingService.backfillApplicationsIfNeeded(in: migrationContext)
 
             _settingsViewModel = State(
                 initialValue: SettingsViewModel(

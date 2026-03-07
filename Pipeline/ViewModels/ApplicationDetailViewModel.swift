@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import SwiftData
 import PipelineKit
 
@@ -7,6 +8,7 @@ final class ApplicationDetailViewModel {
     enum SaveValidationError: LocalizedError {
         case emptyActivity
         case emptyTaskTitle
+        case emptySalaryRole
 
         var errorDescription: String? {
             switch self {
@@ -14,6 +16,8 @@ final class ApplicationDetailViewModel {
                 return "Add some notes or activity details before saving."
             case .emptyTaskTitle:
                 return "Enter a task title before saving."
+            case .emptySalaryRole:
+                return "Enter a role title before saving this salary snapshot."
             }
         }
     }
@@ -119,6 +123,155 @@ final class ApplicationDetailViewModel {
             try context.save()
         } catch {
             application.overviewMarkdown = previousMarkdown
+            throw error
+        }
+    }
+
+    @discardableResult
+    func ensureCompanyProfile(for application: JobApplication, context: ModelContext) throws -> CompanyProfile {
+        let company = try CompanyLinkingService.ensureCompanyLinked(for: application, in: context)
+        try context.save()
+        return company
+    }
+
+    func saveCompanyProfile(
+        _ company: CompanyProfile,
+        name: String,
+        websiteURL: String?,
+        linkedInURL: String?,
+        glassdoorURL: String?,
+        levelsFYIURL: String?,
+        teamBlindURL: String?,
+        industry: String?,
+        sizeBand: CompanySizeBand?,
+        headquarters: String?,
+        userRating: Int?,
+        notesMarkdown: String?,
+        context: ModelContext
+    ) throws {
+        let previousName = company.name
+        let previousNormalizedName = company.normalizedName
+        let previousWebsite = company.websiteURL
+        let previousLinkedIn = company.linkedInURL
+        let previousGlassdoor = company.glassdoorURL
+        let previousLevels = company.levelsFYIURL
+        let previousBlind = company.teamBlindURL
+        let previousIndustry = company.industry
+        let previousSizeBand = company.sizeBand
+        let previousHeadquarters = company.headquarters
+        let previousRating = company.userRating
+        let previousNotes = company.notesMarkdown
+
+        company.rename(name)
+        company.setWebsiteURL(websiteURL)
+        company.setLinkedInURL(linkedInURL)
+        company.setGlassdoorURL(glassdoorURL)
+        company.setLevelsFYIURL(levelsFYIURL)
+        company.setTeamBlindURL(teamBlindURL)
+        company.setIndustry(industry)
+        company.sizeBand = sizeBand
+        company.setHeadquarters(headquarters)
+        company.setUserRating(userRating)
+        company.setNotesMarkdown(notesMarkdown)
+
+        do {
+            try context.save()
+        } catch {
+            company.name = previousName
+            company.normalizedName = previousNormalizedName
+            company.websiteURL = previousWebsite
+            company.linkedInURL = previousLinkedIn
+            company.glassdoorURL = previousGlassdoor
+            company.levelsFYIURL = previousLevels
+            company.teamBlindURL = previousBlind
+            company.industry = previousIndustry
+            company.sizeBand = previousSizeBand
+            company.headquarters = previousHeadquarters
+            company.userRating = previousRating
+            company.notesMarkdown = previousNotes
+            throw error
+        }
+    }
+
+    func saveCompanySalarySnapshot(
+        _ existingSnapshot: CompanySalarySnapshot?,
+        company: CompanyProfile,
+        roleTitle: String,
+        location: String,
+        sourceName: String,
+        sourceURLString: String?,
+        notes: String?,
+        confidenceNotes: String?,
+        currency: Currency,
+        minBaseCompensation: Int?,
+        maxBaseCompensation: Int?,
+        minTotalCompensation: Int?,
+        maxTotalCompensation: Int?,
+        context: ModelContext
+    ) throws {
+        let trimmedRole = roleTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedRole.isEmpty else {
+            throw SaveValidationError.emptySalaryRole
+        }
+
+        let normalizedSourceName = sourceName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedSourceName = normalizedSourceName.isEmpty ? "Manual" : normalizedSourceName
+
+        if let existingSnapshot {
+            existingSnapshot.update(
+                roleTitle: trimmedRole,
+                location: location,
+                sourceName: resolvedSourceName,
+                sourceURLString: sourceURLString,
+                notes: notes,
+                confidenceNotes: confidenceNotes,
+                currency: currency,
+                minBaseCompensation: minBaseCompensation,
+                maxBaseCompensation: maxBaseCompensation,
+                minTotalCompensation: minTotalCompensation,
+                maxTotalCompensation: maxTotalCompensation,
+                isUserEdited: true
+            )
+            existingSnapshot.capturedAt = Date()
+        } else {
+            let snapshot = CompanySalarySnapshot(
+                roleTitle: trimmedRole,
+                location: location,
+                sourceName: resolvedSourceName,
+                sourceURLString: sourceURLString,
+                notes: notes,
+                confidenceNotes: confidenceNotes,
+                currency: currency,
+                minBaseCompensation: minBaseCompensation,
+                maxBaseCompensation: maxBaseCompensation,
+                minTotalCompensation: minTotalCompensation,
+                maxTotalCompensation: maxTotalCompensation,
+                isUserEdited: true,
+                capturedAt: Date(),
+                company: company
+            )
+            context.insert(snapshot)
+        }
+
+        company.touchSalaryResearch()
+
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
+    }
+
+    func deleteCompanySalarySnapshot(
+        _ snapshot: CompanySalarySnapshot,
+        context: ModelContext
+    ) throws {
+        context.delete(snapshot)
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
             throw error
         }
     }
@@ -520,5 +673,135 @@ final class ApplicationDetailViewModel {
                 in: context
             )
         }
+    }
+}
+
+@Observable
+final class CompanyResearchViewModel {
+    var isLoading = false
+    var isRefreshingComparison = false
+    var error: String?
+    var comparison: CompanyCompensationComparisonResult?
+    var lastCompletedAt: Date?
+
+    private let application: JobApplication
+    private let company: CompanyProfile
+    private let settingsViewModel: SettingsViewModel
+    private let modelContext: ModelContext?
+    private let comparisonService: CompanyCompensationComparisonService
+
+    init(
+        application: JobApplication,
+        company: CompanyProfile,
+        settingsViewModel: SettingsViewModel,
+        modelContext: ModelContext?,
+        comparisonService: CompanyCompensationComparisonService = CompanyCompensationComparisonService()
+    ) {
+        self.application = application
+        self.company = company
+        self.settingsViewModel = settingsViewModel
+        self.modelContext = modelContext
+        self.comparisonService = comparisonService
+    }
+
+    @MainActor
+    func generateResearch() async {
+        let provider = settingsViewModel.selectedAIProvider
+        let model = settingsViewModel.preferredModel(for: provider)
+
+        guard !model.isEmpty else {
+            error = "No AI model configured. Please check Settings."
+            return
+        }
+
+        let requestStartedAt = Date()
+        isLoading = true
+        error = nil
+        defer { isLoading = false }
+
+        do {
+            let result = try await settingsViewModel.withAPIKeyWaterfall(for: provider) { apiKey in
+                try await CompanyResearchService.generateResearch(
+                    provider: provider,
+                    apiKey: apiKey,
+                    model: model,
+                    company: company,
+                    application: application
+                )
+            }
+
+            if let modelContext {
+                _ = try CompanyResearchService.applyResearchResult(
+                    result,
+                    to: company,
+                    provider: provider,
+                    model: model,
+                    applicationID: application.id,
+                    requestStatus: .succeeded,
+                    startedAt: requestStartedAt,
+                    finishedAt: Date(),
+                    in: modelContext
+                )
+
+                _ = try? AIUsageLedgerService.record(
+                    feature: .companyResearch,
+                    provider: provider,
+                    model: model,
+                    usage: result.usage,
+                    status: .succeeded,
+                    applicationID: application.id,
+                    companyID: company.id,
+                    startedAt: requestStartedAt,
+                    finishedAt: Date(),
+                    errorMessage: nil,
+                    in: modelContext
+                )
+            }
+
+            lastCompletedAt = Date()
+            await refreshComparison(baseCurrency: settingsViewModel.analyticsBaseCurrency)
+        } catch let keyError as SettingsViewModel.APIKeyValidationError {
+            error = keyError.localizedDescription
+            recordFailure(provider: provider, model: model, startedAt: requestStartedAt, message: keyError.localizedDescription)
+        } catch let aiError as AIServiceError {
+            error = aiError.localizedDescription
+            recordFailure(provider: provider, model: model, startedAt: requestStartedAt, message: aiError.localizedDescription)
+        } catch let unexpectedError {
+            error = "Failed to research company: \(unexpectedError.localizedDescription)"
+            recordFailure(provider: provider, model: model, startedAt: requestStartedAt, message: unexpectedError.localizedDescription)
+        }
+    }
+
+    @MainActor
+    func refreshComparison(baseCurrency: Currency) async {
+        isRefreshingComparison = true
+        comparison = await comparisonService.makeComparison(
+            for: application,
+            company: company,
+            baseCurrency: baseCurrency
+        )
+        isRefreshingComparison = false
+    }
+
+    private func recordFailure(
+        provider: AIProvider,
+        model: String,
+        startedAt: Date,
+        message: String
+    ) {
+        guard let modelContext else { return }
+        _ = try? AIUsageLedgerService.record(
+            feature: .companyResearch,
+            provider: provider,
+            model: model,
+            usage: nil,
+            status: .failed,
+            applicationID: application.id,
+            companyID: company.id,
+            startedAt: startedAt,
+            finishedAt: Date(),
+            errorMessage: message,
+            in: modelContext
+        )
     }
 }

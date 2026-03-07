@@ -33,6 +33,7 @@ public final class JobApplication {
     public var nextFollowUpDate: Date?
 
     public var cycle: JobSearchCycle?
+    public var company: CompanyProfile?
 
     @Relationship(deleteRule: .cascade, inverse: \InterviewLog.application)
     public var interviewLogs: [InterviewLog]?
@@ -281,6 +282,11 @@ public final class JobApplication {
     }
 
     public var companyDomain: String? {
+        if let websiteURL = company?.websiteURL,
+           let domain = URLHelpers.extractDomain(from: websiteURL) {
+            return domain
+        }
+
         let cleaned = companyName.lowercased()
             .replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: ",", with: "")
@@ -333,6 +339,7 @@ public final class JobApplication {
         appliedDate: Date? = nil,
         nextFollowUpDate: Date? = nil,
         cycle: JobSearchCycle? = nil,
+        company: CompanyProfile? = nil,
         interviewLogs: [InterviewLog]? = nil,
         contactLinks: [ApplicationContactLink]? = nil,
         activities: [ApplicationActivity]? = nil,
@@ -371,6 +378,7 @@ public final class JobApplication {
         self.appliedDate = appliedDate
         self.nextFollowUpDate = nextFollowUpDate
         self.cycle = cycle
+        self.company = company
         self.interviewLogs = interviewLogs
         self.contactLinks = contactLinks
         self.activities = activities
@@ -392,6 +400,13 @@ public final class JobApplication {
         self.cycle = cycle
         updateTimestamp()
         cycle?.updateTimestamp()
+    }
+
+    public func assignCompany(_ company: CompanyProfile?) {
+        guard self.company?.id != company?.id else { return }
+        self.company = company
+        updateTimestamp()
+        company?.updateTimestamp()
     }
 
     public func addInterviewLog(_ log: InterviewLog) {

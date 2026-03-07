@@ -6,6 +6,7 @@ public enum AIUsageFeature: String, Codable, CaseIterable, Sendable, Identifiabl
     case interviewPrep = "interview_prep"
     case followUpDraft = "follow_up_draft"
     case jobParsing = "job_parsing"
+    case companyResearch = "company_research"
 
     public var id: String { rawValue }
 
@@ -19,6 +20,8 @@ public enum AIUsageFeature: String, Codable, CaseIterable, Sendable, Identifiabl
             return "Follow-up Draft"
         case .jobParsing:
             return "Job Parsing"
+        case .companyResearch:
+            return "Company Research"
         }
     }
 }
@@ -47,6 +50,7 @@ public final class AIUsageRecord {
     public var totalCostUSD: Double?
 
     public var applicationID: UUID?
+    public var companyID: UUID?
     public var startedAt: Date = Date()
     public var finishedAt: Date = Date()
     public var errorMessage: String?
@@ -64,6 +68,7 @@ public final class AIUsageRecord {
         outputCostUSD: Double? = nil,
         totalCostUSD: Double? = nil,
         applicationID: UUID? = nil,
+        companyID: UUID? = nil,
         startedAt: Date = Date(),
         finishedAt: Date = Date(),
         errorMessage: String? = nil
@@ -80,6 +85,7 @@ public final class AIUsageRecord {
         self.outputCostUSD = outputCostUSD
         self.totalCostUSD = totalCostUSD
         self.applicationID = applicationID
+        self.companyID = companyID
         self.startedAt = startedAt
         self.finishedAt = finishedAt
         self.errorMessage = errorMessage

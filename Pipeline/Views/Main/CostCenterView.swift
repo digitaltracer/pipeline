@@ -7,6 +7,8 @@ struct CostCenterView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
 
+    @Query(sort: \JobApplication.updatedAt, order: .reverse) private var applications: [JobApplication]
+    @Query(sort: \CompanyProfile.updatedAt, order: .reverse) private var companies: [CompanyProfile]
     @Query(sort: \AIUsageRecord.finishedAt, order: .reverse) private var usageRecords: [AIUsageRecord]
     @Query(sort: \AIModelRate.updatedAt, order: .reverse) private var modelRates: [AIModelRate]
 
@@ -549,6 +551,7 @@ struct CostCenterView: View {
                 Text("Provider").frame(width: 90, alignment: .leading)
                 Text("Model").frame(maxWidth: .infinity, alignment: .leading)
                 Text("Feature").frame(width: 120, alignment: .leading)
+                Text("Context").frame(width: 180, alignment: .leading)
                 Text("Tokens").frame(width: 90, alignment: .trailing)
                 Text("Cost").frame(width: 95, alignment: .trailing)
             }
@@ -584,6 +587,12 @@ struct CostCenterView: View {
                             .font(.caption)
                             .lineLimit(1)
                             .frame(width: 120, alignment: .leading)
+
+                        Text(contextLabel(for: record))
+                            .font(.caption2)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(width: 180, alignment: .leading)
 
                         Text(formatTokens(record.totalTokens ?? 0))
                             .font(.caption)
@@ -683,6 +692,20 @@ struct CostCenterView: View {
         formatter.groupingSeparator = ","
         return formatter.string(from: NSNumber(value: value)) ?? "0"
     }
+
+    private func contextLabel(for record: AIUsageRecord) -> String {
+        if let companyID = record.companyID,
+           let company = companies.first(where: { $0.id == companyID }) {
+            return company.name
+        }
+
+        if let applicationID = record.applicationID,
+           let application = applications.first(where: { $0.id == applicationID }) {
+            return "\(application.companyName) · \(application.role)"
+        }
+
+        return "—"
+    }
 }
 
 #Preview {
@@ -693,6 +716,10 @@ struct CostCenterView: View {
                 JobSearchCycle.self,
                 SearchGoal.self,
                 InterviewLog.self,
+                CompanyProfile.self,
+                CompanyResearchSnapshot.self,
+                CompanyResearchSource.self,
+                CompanySalarySnapshot.self,
                 Contact.self,
                 ApplicationContactLink.self,
                 ApplicationActivity.self,

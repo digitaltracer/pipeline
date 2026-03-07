@@ -2,6 +2,14 @@ import SwiftUI
 import SwiftData
 import PipelineKit
 
+private enum CompanyWorkspaceTab: String, CaseIterable, Identifiable {
+    case overview = "Overview"
+    case research = "Research"
+    case salary = "Salary"
+
+    var id: String { rawValue }
+}
+
 struct JobDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Bindable var application: JobApplication
@@ -19,6 +27,8 @@ struct JobDetailView: View {
     @State private var showingDeleteAlert = false
     @State private var showingInterviewPrep = false
     @State private var showingFollowUpDrafter = false
+    @State private var showingCompanyWorkspace = false
+    @State private var companyWorkspaceTab: CompanyWorkspaceTab = .overview
     @State private var actionErrorMessage: String?
     @Environment(\.colorScheme) private var colorScheme
 
@@ -50,6 +60,13 @@ struct JobDetailView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
                     JobDetailFieldsView(application: application)
+
+                    ApplicationCompanySection(
+                        application: application,
+                        onOpenWorkspace: { tab in
+                            openCompanyWorkspace(tab)
+                        }
+                    )
 
                     if let urlString = application.jobURL, !urlString.isEmpty {
                         JobPostingSection(urlString: urlString)
@@ -167,6 +184,24 @@ struct JobDetailView: View {
                 )
             )
         }
+        .sheet(isPresented: $showingCompanyWorkspace) {
+            if let company = application.company {
+                CompanyWorkspaceView(
+                    application: application,
+                    company: company,
+                    initialTab: companyWorkspaceTab,
+                    detailViewModel: viewModel,
+                    settingsViewModel: SettingsViewModel()
+                )
+            } else {
+                ContentUnavailableView(
+                    "Company unavailable",
+                    systemImage: "building.2",
+                    description: Text("Pipeline could not load the shared company profile for this application.")
+                )
+                .padding()
+            }
+        }
         .alert("Delete Application", isPresented: $showingDeleteAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
@@ -187,6 +222,25 @@ struct JobDetailView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(actionErrorMessage ?? "An unknown error occurred.")
+        }
+        .task(id: application.id) {
+            if application.company == nil {
+                do {
+                    _ = try viewModel.ensureCompanyProfile(for: application, context: modelContext)
+                } catch {
+                    actionErrorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func openCompanyWorkspace(_ tab: CompanyWorkspaceTab) {
+        do {
+            _ = try viewModel.ensureCompanyProfile(for: application, context: modelContext)
+            companyWorkspaceTab = tab
+            showingCompanyWorkspace = true
+        } catch {
+            actionErrorMessage = error.localizedDescription
         }
     }
 
@@ -250,6 +304,887 @@ struct JobDetailView: View {
         }
         .padding(16)
         .background(DesignSystem.Colors.surfaceElevated(colorScheme))
+    }
+}
+
+private struct ApplicationCompanySection: View {
+    @Environment(\.openURL) private var openURL
+    @Bindable var application: JobApplication
+    let onOpenWorkspace: (CompanyWorkspaceTab) -> Void
+
+    private var company: CompanyProfile? {
+        application.company
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: 12) {
+                    Label("Company", systemImage: "building.2")
+                        .font(.headline)
+
+                    Spacer()
+
+                    actionButtons
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Company", systemImage: "building.2")
+                        .font(.headline)
+
+                    actionButtons
+                }
+            }
+
+            if let company {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        if let rating = company.userRating {
+                            HStack(spacing: 6) {
+                                StarRatingDisplay(rating: rating, size: 12)
+                                Text("\(rating)/5")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        capsuleLabel("\(company.sortedApplications.count) application\(company.sortedApplications.count == 1 ? "" : "s")")
+
+                        if let industry = company.industry {
+                            capsuleLabel(industry)
+                        }
+
+                        if let sizeBand = company.sizeBand {
+                            capsuleLabel(sizeBand.title)
+                        }
+                    }
+
+                    if let summary = preferredSummary(company) {
+                        Text(summary)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .lineLimit(4)
+                    } else {
+                        Text("No company summary yet. Run Research to gather a reusable company overview, source links, and salary signals.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+
+                    HStack(spacing: 16) {
+                        if let headquarters = company.headquarters {
+                            Label(headquarters, systemImage: "mappin.and.ellipse")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        if let websiteURL = company.websiteURL,
+                           let domain = URLHelpers.extractDomain(from: websiteURL) {
+                            Label(domain, systemImage: "globe")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        if let lastResearchedAt = company.lastResearchedAt {
+                            Label(lastResearchedAt.formatted(date: .abbreviated, time: .omitted), systemImage: "clock")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .appCard(cornerRadius: 14, elevated: true, shadow: false)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("No shared company profile yet")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    Text("Pipeline will create one automatically so notes, ratings, research, and salary comparisons can be reused across multiple applications at the same company.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .appCard(cornerRadius: 14, elevated: true, shadow: false)
+            }
+        }
+    }
+
+    private func preferredSummary(_ company: CompanyProfile) -> String? {
+        if let summary = company.lastResearchSummary?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !summary.isEmpty {
+            return summary
+        }
+
+        if let notes = company.notesMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !notes.isEmpty {
+            return notes
+        }
+
+        return nil
+    }
+
+    private func openSources() {
+        if let url = company?.sortedResearchSources.first?.normalizedURL {
+            openURL(url)
+            return
+        }
+
+        if let link = company?.sourceLinks.first,
+           let url = URL(string: link) {
+            openURL(url)
+            return
+        }
+
+        onOpenWorkspace(.research)
+    }
+
+    private var actionButtons: some View {
+        HStack(spacing: 10) {
+            Button {
+                onOpenWorkspace(.overview)
+            } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            Button {
+                onOpenWorkspace(.research)
+            } label: {
+                Label("Research", systemImage: "sparkles")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(DesignSystem.Colors.accent)
+            .controlSize(.small)
+
+            Button {
+                openSources()
+            } label: {
+                Label("Open Sources", systemImage: "arrow.up.right.square")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .labelStyle(.titleAndIcon)
+    }
+
+    private func capsuleLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.caption.weight(.medium))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.secondary.opacity(0.12))
+            .clipShape(Capsule())
+    }
+}
+
+private struct CompanyProfileDraft {
+    var name: String
+    var websiteURL: String
+    var linkedInURL: String
+    var glassdoorURL: String
+    var levelsFYIURL: String
+    var teamBlindURL: String
+    var industry: String
+    var headquarters: String
+    var notesMarkdown: String
+    var hasRating: Bool
+    var rating: Int
+    var sizeBand: CompanySizeBand?
+
+    init(company: CompanyProfile) {
+        name = company.name
+        websiteURL = company.websiteURL ?? ""
+        linkedInURL = company.linkedInURL ?? ""
+        glassdoorURL = company.glassdoorURL ?? ""
+        levelsFYIURL = company.levelsFYIURL ?? ""
+        teamBlindURL = company.teamBlindURL ?? ""
+        industry = company.industry ?? ""
+        headquarters = company.headquarters ?? ""
+        notesMarkdown = company.notesMarkdown ?? ""
+        hasRating = company.userRating != nil
+        rating = max(company.userRating ?? 3, 1)
+        sizeBand = company.sizeBand
+    }
+
+    var userRating: Int? {
+        hasRating ? rating : nil
+    }
+}
+
+private struct CompanyWorkspaceView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.openURL) private var openURL
+    @Environment(\.colorScheme) private var colorScheme
+
+    let application: JobApplication
+    @Bindable var company: CompanyProfile
+    let detailViewModel: ApplicationDetailViewModel
+    let settingsViewModel: SettingsViewModel
+
+    @State private var selectedTab: CompanyWorkspaceTab
+    @State private var draft: CompanyProfileDraft
+    @State private var researchViewModel: CompanyResearchViewModel
+    @State private var showingSalaryEditor = false
+    @State private var editingSalarySnapshot: CompanySalarySnapshot?
+    @State private var saveErrorMessage: String?
+
+    init(
+        application: JobApplication,
+        company: CompanyProfile,
+        initialTab: CompanyWorkspaceTab,
+        detailViewModel: ApplicationDetailViewModel,
+        settingsViewModel: SettingsViewModel
+    ) {
+        self.application = application
+        self.company = company
+        self.detailViewModel = detailViewModel
+        self.settingsViewModel = settingsViewModel
+        _selectedTab = State(initialValue: initialTab)
+        _draft = State(initialValue: CompanyProfileDraft(company: company))
+        _researchViewModel = State(initialValue: CompanyResearchViewModel(
+            application: application,
+            company: company,
+            settingsViewModel: settingsViewModel,
+            modelContext: nil
+        ))
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Picker("Company Tab", selection: $selectedTab) {
+                        ForEach(CompanyWorkspaceTab.allCases) { tab in
+                            Text(tab.rawValue).tag(tab)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    switch selectedTab {
+                    case .overview:
+                        overviewTab
+                    case .research:
+                        researchTab
+                    case .salary:
+                        salaryTab
+                    }
+                }
+                .padding(20)
+            }
+            .navigationTitle(company.name)
+            #if os(macOS)
+            .frame(minWidth: 720, idealWidth: 860, minHeight: 640, idealHeight: 760)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+                ToolbarItem(placement: .automatic) {
+                    Button("Save") {
+                        saveProfile()
+                    }
+                    .disabled(selectedTab != .overview)
+                }
+            }
+        }
+        .sheet(isPresented: $showingSalaryEditor, onDismiss: {
+            Task {
+                await researchViewModel.refreshComparison(baseCurrency: settingsViewModel.analyticsBaseCurrency)
+            }
+        }) {
+            CompanySalarySnapshotEditorView(
+                company: company,
+                detailViewModel: detailViewModel,
+                snapshot: editingSalarySnapshot
+            )
+        }
+        .task {
+            researchViewModel = CompanyResearchViewModel(
+                application: application,
+                company: company,
+                settingsViewModel: settingsViewModel,
+                modelContext: modelContext
+            )
+            await researchViewModel.refreshComparison(baseCurrency: settingsViewModel.analyticsBaseCurrency)
+        }
+        .task(id: settingsViewModel.analyticsBaseCurrency.rawValue) {
+            await researchViewModel.refreshComparison(baseCurrency: settingsViewModel.analyticsBaseCurrency)
+        }
+        .alert("Company Workspace Error", isPresented: Binding(
+            get: { saveErrorMessage != nil || researchViewModel.error != nil },
+            set: { if !$0 { saveErrorMessage = nil; researchViewModel.error = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveErrorMessage ?? researchViewModel.error ?? "Unknown error")
+        }
+    }
+
+    private var overviewTab: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            companyCard(title: "Company Profile", subtitle: "Manual edits are authoritative. AI only fills in gaps.") {
+                VStack(alignment: .leading, spacing: 12) {
+                    TextField("Company Name", text: $draft.name)
+                        .textFieldStyle(.roundedBorder)
+
+                    TextField("Website", text: $draft.websiteURL)
+                        .textFieldStyle(.roundedBorder)
+
+                    TextField("Industry", text: $draft.industry)
+                        .textFieldStyle(.roundedBorder)
+
+                    Picker("Size", selection: Binding(
+                        get: { draft.sizeBand },
+                        set: { draft.sizeBand = $0 }
+                    )) {
+                        Text("Unknown").tag(CompanySizeBand?.none)
+                        ForEach(CompanySizeBand.allCases) { band in
+                            Text(band.title).tag(CompanySizeBand?.some(band))
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    TextField("Headquarters", text: $draft.headquarters)
+                        .textFieldStyle(.roundedBorder)
+
+                    Toggle("Personal Rating", isOn: $draft.hasRating)
+                    if draft.hasRating {
+                        StarRating(rating: $draft.rating)
+                    }
+                }
+            }
+
+            companyCard(title: "Research Links", subtitle: "Store source URLs you trust. Research runs will reuse them.") {
+                VStack(alignment: .leading, spacing: 12) {
+                    TextField("LinkedIn URL", text: $draft.linkedInURL)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Glassdoor URL", text: $draft.glassdoorURL)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Levels.fyi URL", text: $draft.levelsFYIURL)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("TeamBlind URL", text: $draft.teamBlindURL)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+
+            companyCard(title: "Notes", subtitle: "These stay pinned for the company across applications.") {
+                TextEditor(text: $draft.notesMarkdown)
+                    .frame(minHeight: 180)
+            }
+
+            HStack {
+                Spacer()
+                Button {
+                    saveProfile()
+                } label: {
+                    Label("Save Company", systemImage: "checkmark.circle")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DesignSystem.Colors.accent)
+            }
+        }
+    }
+
+    private var researchTab: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            companyCard(
+                title: "Research Run",
+                subtitle: company.lastResearchedAt.map { "Last refreshed \($0.formatted(date: .abbreviated, time: .shortened))" } ?? "Run structured AI research against the company profile and saved links."
+            ) {
+                VStack(alignment: .leading, spacing: 12) {
+                    if researchViewModel.isLoading {
+                        ProgressView("Researching company…")
+                    }
+
+                    HStack(spacing: 12) {
+                        Button {
+                            Task { await researchViewModel.generateResearch() }
+                        } label: {
+                            Label(company.lastResearchedAt == nil ? "Run Research" : "Refresh Research", systemImage: "sparkles")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(DesignSystem.Colors.accent)
+                        .disabled(researchViewModel.isLoading)
+
+                        if let lastCompletedAt = researchViewModel.lastCompletedAt {
+                            Text("Updated \(lastCompletedAt.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+
+            companyCard(title: "Summary", subtitle: "The latest saved company overview.") {
+                if let summary = company.lastResearchSummary, !summary.isEmpty {
+                    Text(summary)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .textSelection(.enabled)
+                } else {
+                    Text("No AI research summary yet.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            companyCard(title: "Sources", subtitle: "Fetched and manual links retained on the company profile.") {
+                if company.sortedResearchSources.isEmpty && company.sourceLinks.isEmpty {
+                    Text("No sources saved yet.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(company.sortedResearchSources) { source in
+                            sourceRow(source)
+                        }
+
+                        ForEach(company.sourceLinks.filter { link in
+                            !company.sortedResearchSources.contains(where: { $0.urlString == link })
+                        }, id: \.self) { link in
+                            if let url = URL(string: link) {
+                                Link(destination: url) {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(URLHelpers.displayURL(link))
+                                                .font(.subheadline.weight(.medium))
+                                            Text("Manual link")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        Spacer()
+                                        Image(systemName: "arrow.up.right.square")
+                                            .foregroundColor(DesignSystem.Colors.accent)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+            }
+
+            companyCard(title: "Research History", subtitle: "Recent company research runs.") {
+                if company.sortedResearchSnapshots.isEmpty {
+                    Text("No research snapshots yet.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(company.sortedResearchSnapshots.prefix(5)) { snapshot in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(snapshot.finishedAt.formatted(date: .abbreviated, time: .shortened))
+                                        .font(.subheadline.weight(.medium))
+                                    Text("\(snapshot.providerID.capitalized) · \(snapshot.model)")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                Text(snapshot.requestStatus == .succeeded ? "Succeeded" : "Failed")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundColor(snapshot.requestStatus == .succeeded ? .green : .red)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var salaryTab: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            companyCard(
+                title: "Comparison",
+                subtitle: "Compares this role against your own same-company applications and external salary snapshots."
+            ) {
+                if researchViewModel.isRefreshingComparison {
+                    ProgressView("Refreshing salary comparison…")
+                } else if let comparison = researchViewModel.comparison {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if let currentRangeText = comparison.currentApplicationRangeText {
+                            Label("Current application: \(currentRangeText) \(comparison.baseCurrency.rawValue)", systemImage: "flag")
+                                .font(.subheadline)
+                        }
+
+                        if !comparison.internalRows.isEmpty {
+                            comparisonGroup(title: "Same Company in Pipeline", rows: comparison.internalRows)
+                        }
+
+                        if !comparison.externalRows.isEmpty {
+                            comparisonGroup(title: "External Research", rows: comparison.externalRows)
+                        }
+
+                        if comparison.internalRows.isEmpty && comparison.externalRows.isEmpty {
+                            Text("No salary comparisons yet. Add a market snapshot manually or run Research.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+
+                        if comparison.missingConversionCount > 0 {
+                            Text("\(comparison.missingConversionCount) row(s) could not be converted into \(comparison.baseCurrency.rawValue).")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                } else {
+                    Text("No salary comparison available yet.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            companyCard(title: "Market Snapshots", subtitle: "Editable salary data stored against the company profile.") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Button {
+                        editingSalarySnapshot = nil
+                        showingSalaryEditor = true
+                    } label: {
+                        Label("Add Snapshot", systemImage: "plus")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(DesignSystem.Colors.accent)
+
+                    if company.sortedSalarySnapshots.isEmpty {
+                        Text("No salary snapshots yet.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(company.sortedSalarySnapshots) { snapshot in
+                            salarySnapshotRow(snapshot)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func companyCard<Content: View>(
+        title: String,
+        subtitle: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            content()
+        }
+        .padding(16)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+    }
+
+    private func sourceRow(_ source: CompanyResearchSource) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(source.title)
+                    .font(.subheadline.weight(.medium))
+                Text(source.sourceKind.title)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                if let excerpt = source.contentExcerpt, !excerpt.isEmpty {
+                    Text(excerpt)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(3)
+                }
+                if let errorMessage = source.errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 8) {
+                Text(source.fetchStatus.rawValue.capitalized)
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(source.fetchStatus == .fetched ? .green : .secondary)
+
+                if let url = source.normalizedURL {
+                    Button("Open") {
+                        openURL(url)
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+        )
+    }
+
+    private func comparisonGroup(title: String, rows: [CompanyCompensationComparisonRow]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+
+            ForEach(rows) { row in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(row.label)
+                            .font(.subheadline.weight(.medium))
+                        Spacer()
+                        Text(row.rangeText)
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    Text(row.sourceLabel)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    if let secondaryText = row.secondaryText {
+                        Text(secondaryText)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+                )
+            }
+        }
+    }
+
+    private func salarySnapshotRow(_ snapshot: CompanySalarySnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(snapshot.roleTitle) · \(snapshot.location)")
+                        .font(.subheadline.weight(.semibold))
+                    Text(snapshot.sourceName)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 8) {
+                    if let totalRange = snapshot.totalRangeText ?? snapshot.baseRangeText {
+                        Text(totalRange)
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    HStack(spacing: 10) {
+                        Button("Edit") {
+                            editingSalarySnapshot = snapshot
+                            showingSalaryEditor = true
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(DesignSystem.Colors.accent)
+
+                        Button("Delete", role: .destructive) {
+                            deleteSalarySnapshot(snapshot)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .font(.caption)
+                }
+            }
+
+            if let confidenceNotes = snapshot.confidenceNotes {
+                Text(confidenceNotes)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            if let sourceURLString = snapshot.sourceURLString,
+               let url = URL(string: sourceURLString) {
+                Button {
+                    openURL(url)
+                } label: {
+                    Label(URLHelpers.displayURL(sourceURLString), systemImage: "arrow.up.right.square")
+                }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundColor(DesignSystem.Colors.accent)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+        )
+    }
+
+    private func saveProfile() {
+        do {
+            try detailViewModel.saveCompanyProfile(
+                company,
+                name: draft.name,
+                websiteURL: normalized(draft.websiteURL),
+                linkedInURL: normalized(draft.linkedInURL),
+                glassdoorURL: normalized(draft.glassdoorURL),
+                levelsFYIURL: normalized(draft.levelsFYIURL),
+                teamBlindURL: normalized(draft.teamBlindURL),
+                industry: normalized(draft.industry),
+                sizeBand: draft.sizeBand,
+                headquarters: normalized(draft.headquarters),
+                userRating: draft.userRating,
+                notesMarkdown: normalized(draft.notesMarkdown),
+                context: modelContext
+            )
+            draft = CompanyProfileDraft(company: company)
+        } catch {
+            saveErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func deleteSalarySnapshot(_ snapshot: CompanySalarySnapshot) {
+        do {
+            try detailViewModel.deleteCompanySalarySnapshot(snapshot, context: modelContext)
+            Task {
+                await researchViewModel.refreshComparison(baseCurrency: settingsViewModel.analyticsBaseCurrency)
+            }
+        } catch {
+            saveErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func normalized(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+private struct CompanySalarySnapshotEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+
+    let company: CompanyProfile
+    let detailViewModel: ApplicationDetailViewModel
+    let snapshot: CompanySalarySnapshot?
+
+    @State private var roleTitle: String
+    @State private var location: String
+    @State private var sourceName: String
+    @State private var sourceURLString: String
+    @State private var notes: String
+    @State private var confidenceNotes: String
+    @State private var currency: Currency
+    @State private var minBaseCompensation: String
+    @State private var maxBaseCompensation: String
+    @State private var minTotalCompensation: String
+    @State private var maxTotalCompensation: String
+    @State private var saveErrorMessage: String?
+
+    init(
+        company: CompanyProfile,
+        detailViewModel: ApplicationDetailViewModel,
+        snapshot: CompanySalarySnapshot? = nil
+    ) {
+        self.company = company
+        self.detailViewModel = detailViewModel
+        self.snapshot = snapshot
+        _roleTitle = State(initialValue: snapshot?.roleTitle ?? "")
+        _location = State(initialValue: snapshot?.location ?? "")
+        _sourceName = State(initialValue: snapshot?.sourceName ?? "Manual")
+        _sourceURLString = State(initialValue: snapshot?.sourceURLString ?? "")
+        _notes = State(initialValue: snapshot?.notes ?? "")
+        _confidenceNotes = State(initialValue: snapshot?.confidenceNotes ?? "")
+        _currency = State(initialValue: snapshot?.currency ?? .usd)
+        _minBaseCompensation = State(initialValue: snapshot?.minBaseCompensation.map(String.init) ?? "")
+        _maxBaseCompensation = State(initialValue: snapshot?.maxBaseCompensation.map(String.init) ?? "")
+        _minTotalCompensation = State(initialValue: snapshot?.minTotalCompensation.map(String.init) ?? "")
+        _maxTotalCompensation = State(initialValue: snapshot?.maxTotalCompensation.map(String.init) ?? "")
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Role") {
+                    TextField("Role Title", text: $roleTitle)
+                    TextField("Location", text: $location)
+                }
+
+                Section("Source") {
+                    TextField("Source Name", text: $sourceName)
+                    TextField("Source URL", text: $sourceURLString)
+                    Picker("Currency", selection: $currency) {
+                        ForEach(Currency.allCases) { currency in
+                            Text(currency.rawValue).tag(currency)
+                        }
+                    }
+                }
+
+                Section("Compensation") {
+                    TextField("Min Base", text: $minBaseCompensation)
+                    TextField("Max Base", text: $maxBaseCompensation)
+                    TextField("Min Total", text: $minTotalCompensation)
+                    TextField("Max Total", text: $maxTotalCompensation)
+                }
+
+                Section {
+                    TextEditor(text: $notes)
+                        .frame(minHeight: 120)
+                    TextEditor(text: $confidenceNotes)
+                        .frame(minHeight: 100)
+                } header: {
+                    Text("Notes / Confidence")
+                }
+            }
+            .navigationTitle(snapshot == nil ? "Add Salary Snapshot" : "Edit Salary Snapshot")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(snapshot == nil ? "Save" : "Update") {
+                        save()
+                    }
+                }
+            }
+            #if os(macOS)
+            .frame(minWidth: 520, idealWidth: 620, minHeight: 560, idealHeight: 640)
+            #endif
+        }
+        .alert("Unable to Save Salary Snapshot", isPresented: Binding(
+            get: { saveErrorMessage != nil },
+            set: { if !$0 { saveErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveErrorMessage ?? "Unknown error")
+        }
+    }
+
+    private func save() {
+        do {
+            try detailViewModel.saveCompanySalarySnapshot(
+                snapshot,
+                company: company,
+                roleTitle: roleTitle,
+                location: location,
+                sourceName: sourceName,
+                sourceURLString: normalized(sourceURLString),
+                notes: normalized(notes),
+                confidenceNotes: normalized(confidenceNotes),
+                currency: currency,
+                minBaseCompensation: parseInteger(minBaseCompensation),
+                maxBaseCompensation: parseInteger(maxBaseCompensation),
+                minTotalCompensation: parseInteger(minTotalCompensation),
+                maxTotalCompensation: parseInteger(maxTotalCompensation),
+                context: modelContext
+            )
+            dismiss()
+        } catch {
+            saveErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func parseInteger(_ value: String) -> Int? {
+        let trimmed = value.replacingOccurrences(of: ",", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : Int(trimmed)
+    }
+
+    private func normalized(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
@@ -726,6 +1661,10 @@ struct JobPostingSection: View {
             JobSearchCycle.self,
             SearchGoal.self,
             InterviewLog.self,
+            CompanyProfile.self,
+            CompanyResearchSnapshot.self,
+            CompanyResearchSource.self,
+            CompanySalarySnapshot.self,
             Contact.self,
             ApplicationContactLink.self,
             ApplicationActivity.self,
