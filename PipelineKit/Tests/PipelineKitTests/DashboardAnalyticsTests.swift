@@ -46,7 +46,11 @@ import Testing
         isActive: true
     )
 
-    let submittedDate = Calendar.current.date(byAdding: .day, value: -2, to: Date()) ?? Date()
+    let submittedDate = Calendar.current.date(
+        byAdding: .day,
+        value: 1,
+        to: Calendar.current.dateInterval(of: .weekOfYear, for: Date())?.start ?? Date()
+    ) ?? Date()
 
     let activeApplication = JobApplication(
         companyName: "Anthropic",

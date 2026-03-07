@@ -269,6 +269,37 @@ final class ApplicationDetailViewModel {
     ) throws {
         context.delete(snapshot)
         do {
+            refreshDerivedResearchState(for: snapshot.company)
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
+    }
+
+    func deleteCompanyResearchSource(
+        _ source: CompanyResearchSource,
+        context: ModelContext
+    ) throws {
+        let company = source.company
+        context.delete(source)
+        do {
+            refreshDerivedResearchState(for: company)
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
+    }
+
+    func deleteCompanyResearchSnapshot(
+        _ snapshot: CompanyResearchSnapshot,
+        context: ModelContext
+    ) throws {
+        let company = snapshot.company
+        context.delete(snapshot)
+        do {
+            refreshDerivedResearchState(for: company)
             try context.save()
         } catch {
             context.rollback()
@@ -674,6 +705,18 @@ final class ApplicationDetailViewModel {
             )
         }
     }
+
+    private func refreshDerivedResearchState(for company: CompanyProfile?) {
+        guard let company else { return }
+
+        let latestSnapshot = company.sortedResearchSnapshots.first
+        company.lastResearchSummary = latestSnapshot?.summaryText
+        company.lastResearchedAt = latestSnapshot?.finishedAt
+
+        let latestSalarySnapshot = company.sortedSalarySnapshots.first
+        company.lastSalaryResearchAt = latestSalarySnapshot?.capturedAt
+        company.updateTimestamp()
+    }
 }
 
 @Observable
@@ -720,15 +763,19 @@ final class CompanyResearchViewModel {
         defer { isLoading = false }
 
         do {
+            let webContentProvider = WKWebViewContentProvider(serviceName: "CompanyResearch")
             let result = try await settingsViewModel.withAPIKeyWaterfall(for: provider) { apiKey in
                 try await CompanyResearchService.generateResearch(
                     provider: provider,
                     apiKey: apiKey,
                     model: model,
                     company: company,
-                    application: application
+                    application: application,
+                    webContentProvider: webContentProvider
                 )
             }
+
+            let requestStatus = usageStatus(for: result.runStatus)
 
             if let modelContext {
                 _ = try CompanyResearchService.applyResearchResult(
@@ -737,7 +784,7 @@ final class CompanyResearchViewModel {
                     provider: provider,
                     model: model,
                     applicationID: application.id,
-                    requestStatus: .succeeded,
+                    requestStatus: requestStatus,
                     startedAt: requestStartedAt,
                     finishedAt: Date(),
                     in: modelContext
@@ -748,17 +795,18 @@ final class CompanyResearchViewModel {
                     provider: provider,
                     model: model,
                     usage: result.usage,
-                    status: .succeeded,
+                    status: requestStatus,
                     applicationID: application.id,
                     companyID: company.id,
                     startedAt: requestStartedAt,
                     finishedAt: Date(),
-                    errorMessage: nil,
+                    errorMessage: result.failureMessage,
                     in: modelContext
                 )
             }
 
             lastCompletedAt = Date()
+            error = result.runStatus == .failed ? (result.failureMessage ?? "Failed to research company.") : nil
             await refreshComparison(baseCurrency: settingsViewModel.analyticsBaseCurrency)
         } catch let keyError as SettingsViewModel.APIKeyValidationError {
             error = keyError.localizedDescription
@@ -781,6 +829,55 @@ final class CompanyResearchViewModel {
             baseCurrency: baseCurrency
         )
         isRefreshingComparison = false
+    }
+
+    func retryResearch(for _: CompanyResearchSource? = nil) async {
+        await generateResearch()
+    }
+
+    func setExcluded(_ excluded: Bool, for source: CompanyResearchSource) {
+        guard let modelContext else { return }
+        source.isExcludedFromResearch = excluded
+        source.updateTimestamp()
+        do {
+            try modelContext.save()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func useManualNote(for source: CompanyResearchSource) {
+        guard let modelContext else { return }
+
+        let template = """
+        Manual note for \(source.title)
+        URL: \(source.resolvedURLString ?? source.urlString)
+        Notes:
+        - Add your own findings here.
+        """
+
+        let existing = company.notesMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if existing?.contains(source.urlString) == true {
+            return
+        }
+
+        company.setNotesMarkdown([existing, template].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n\n"))
+        do {
+            try modelContext.save()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func usageStatus(for runStatus: ResearchRunStatus) -> AIUsageRequestStatus {
+        switch runStatus {
+        case .succeeded:
+            return .succeeded
+        case .partial:
+            return .partial
+        case .failed:
+            return .failed
+        }
     }
 
     private func recordFailure(

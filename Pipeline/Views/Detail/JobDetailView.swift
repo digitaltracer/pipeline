@@ -30,7 +30,24 @@ struct JobDetailView: View {
     @State private var showingCompanyWorkspace = false
     @State private var companyWorkspaceTab: CompanyWorkspaceTab = .overview
     @State private var actionErrorMessage: String?
+    @State private var descriptionDenoiseViewModel: JobDescriptionDenoiseViewModel
     @Environment(\.colorScheme) private var colorScheme
+
+    init(
+        application: JobApplication,
+        onClose: (() -> Void)? = nil,
+        onSelectContact: ((Contact) -> Void)? = nil
+    ) {
+        self.application = application
+        self.onClose = onClose
+        self.onSelectContact = onSelectContact
+        _descriptionDenoiseViewModel = State(
+            initialValue: JobDescriptionDenoiseViewModel(
+                application: application,
+                settingsViewModel: SettingsViewModel()
+            )
+        )
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -87,7 +104,15 @@ struct JobDetailView: View {
                     }
 
                     if let description = application.jobDescription, !description.isEmpty {
-                        JobDescriptionView(description: description)
+                        JobDescriptionView(
+                            description: description,
+                            isDenoising: descriptionDenoiseViewModel.isLoading,
+                            onDenoise: {
+                                Task {
+                                    await descriptionDenoiseViewModel.generateProposal()
+                                }
+                            }
+                        )
                     }
 
                     ApplicationContactsSection(
@@ -202,6 +227,27 @@ struct JobDetailView: View {
                 .padding()
             }
         }
+        .sheet(
+            isPresented: Binding(
+                get: { descriptionDenoiseViewModel.isShowingReview },
+                set: { isPresented in
+                    if !isPresented {
+                        descriptionDenoiseViewModel.dismissReview()
+                    }
+                }
+            )
+        ) {
+            JobDescriptionDenoiseReviewSheet(
+                originalDescription: descriptionDenoiseViewModel.originalDescription ?? "",
+                cleanedDescription: descriptionDenoiseViewModel.cleanedDescription ?? "",
+                onCancel: {
+                    descriptionDenoiseViewModel.dismissReview()
+                },
+                onReplace: {
+                    descriptionDenoiseViewModel.applyReplacement()
+                }
+            )
+        }
         .alert("Delete Application", isPresented: $showingDeleteAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
@@ -223,7 +269,13 @@ struct JobDetailView: View {
         } message: {
             Text(actionErrorMessage ?? "An unknown error occurred.")
         }
+        .onChange(of: descriptionDenoiseViewModel.error) { _, newValue in
+            guard let newValue else { return }
+            actionErrorMessage = newValue
+            descriptionDenoiseViewModel.clearError()
+        }
         .task(id: application.id) {
+            descriptionDenoiseViewModel.setModelContext(modelContext)
             if application.company == nil {
                 do {
                     _ = try viewModel.ensureCompanyProfile(for: application, context: modelContext)
@@ -690,12 +742,19 @@ private struct CompanyWorkspaceView: View {
     }
 
     private var researchTab: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let latestSnapshot = company.sortedResearchSnapshots.first
+        let latestSources = latestSnapshot?.sortedSources ?? company.sortedResearchSources
+
+        return VStack(alignment: .leading, spacing: 16) {
             companyCard(
                 title: "Research Run",
                 subtitle: company.lastResearchedAt.map { "Last refreshed \($0.formatted(date: .abbreviated, time: .shortened))" } ?? "Run structured AI research against the company profile and saved links."
             ) {
                 VStack(alignment: .leading, spacing: 12) {
+                    if let latestSnapshot {
+                        researchRunBanner(snapshot: latestSnapshot)
+                    }
+
                     if researchViewModel.isLoading {
                         ProgressView("Researching company…")
                     }
@@ -720,11 +779,21 @@ private struct CompanyWorkspaceView: View {
             }
 
             companyCard(title: "Summary", subtitle: "The latest saved company overview.") {
-                if let summary = company.lastResearchSummary, !summary.isEmpty {
-                    Text(summary)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .textSelection(.enabled)
+                if let latestSnapshot,
+                   let summary = latestSnapshot.summaryText,
+                   !summary.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(summary)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .textSelection(.enabled)
+
+                        if let confidenceNote = latestSnapshot.summaryConfidenceNote, !confidenceNote.isEmpty {
+                            Text(confidenceNote)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 } else {
                     Text("No AI research summary yet.")
                         .font(.subheadline)
@@ -733,18 +802,18 @@ private struct CompanyWorkspaceView: View {
             }
 
             companyCard(title: "Sources", subtitle: "Fetched and manual links retained on the company profile.") {
-                if company.sortedResearchSources.isEmpty && company.sourceLinks.isEmpty {
+                if latestSources.isEmpty && company.sourceLinks.isEmpty {
                     Text("No sources saved yet.")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 } else {
                     VStack(alignment: .leading, spacing: 10) {
-                        ForEach(company.sortedResearchSources) { source in
+                        ForEach(latestSources) { source in
                             sourceRow(source)
                         }
 
                         ForEach(company.sourceLinks.filter { link in
-                            !company.sortedResearchSources.contains(where: { $0.urlString == link })
+                            !latestSources.contains(where: { $0.urlString == link || $0.resolvedURLString == link })
                         }, id: \.self) { link in
                             if let url = URL(string: link) {
                                 Link(destination: url) {
@@ -785,9 +854,17 @@ private struct CompanyWorkspaceView: View {
                                         .foregroundColor(.secondary)
                                 }
                                 Spacer()
-                                Text(snapshot.requestStatus == .succeeded ? "Succeeded" : "Failed")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundColor(snapshot.requestStatus == .succeeded ? .green : .red)
+                                VStack(alignment: .trailing, spacing: 8) {
+                                    Text(snapshot.runStatus.title)
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundColor(runStatusColor(snapshot.runStatus))
+
+                                    Button("Delete", role: .destructive) {
+                                        deleteResearchSnapshot(snapshot)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .font(.caption)
+                                }
                             }
                         }
                     }
@@ -863,6 +940,30 @@ private struct CompanyWorkspaceView: View {
         }
     }
 
+    private func researchRunBanner(snapshot: CompanyResearchSnapshot) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: bannerIcon(for: snapshot.runStatus))
+                .foregroundColor(runStatusColor(snapshot.runStatus))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(snapshot.runStatus.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(runStatusColor(snapshot.runStatus))
+
+                Text(snapshot.errorMessage ?? snapshot.summaryConfidenceNote ?? "Research completed without additional notes.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+        )
+    }
+
     private func companyCard<Content: View>(
         title: String,
         subtitle: String,
@@ -883,36 +984,59 @@ private struct CompanyWorkspaceView: View {
     }
 
     private func sourceRow(_ source: CompanyResearchSource) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(source.title)
-                    .font(.subheadline.weight(.medium))
-                Text(source.sourceKind.title)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                if let excerpt = source.contentExcerpt, !excerpt.isEmpty {
-                    Text(excerpt)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(source.title)
+                        .font(.subheadline.weight(.medium))
+                    Text("\(source.sourceKind.title) · \(source.acquisitionMethod.title)")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                        .lineLimit(3)
+                    if let reason = source.validationReason, !reason.isEmpty {
+                        Text(reason)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    if let excerpt = source.contentExcerpt, !excerpt.isEmpty {
+                        Text(excerpt)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(3)
+                    }
+                    if let errorMessage = source.errorMessage, !errorMessage.isEmpty {
+                        Text(errorMessage)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
                 }
-                if let errorMessage = source.errorMessage {
-                    Text(errorMessage)
-                        .font(.caption)
-                        .foregroundColor(.red)
+                Spacer(minLength: 12)
+                VStack(alignment: .trailing, spacing: 8) {
+                    Text(source.validationStatus.title)
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(statusBackgroundColor(for: source.validationStatus))
+                        )
+                        .foregroundColor(statusForegroundColor(for: source.validationStatus))
+
+                    if let confidence = source.confidence {
+                        Text(confidence.title)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 8) {
-                Text(source.fetchStatus.rawValue.capitalized)
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(source.fetchStatus == .fetched ? .green : .secondary)
 
-                if let url = source.normalizedURL {
-                    Button("Open") {
-                        openURL(url)
-                    }
-                    .buttonStyle(.bordered)
+            ViewThatFits(in: .vertical) {
+                HStack(spacing: 8) {
+                    sourceActionButtons(source)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    sourceActionButtons(source)
                 }
             }
         }
@@ -921,6 +1045,87 @@ private struct CompanyWorkspaceView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
         )
+    }
+
+    @ViewBuilder
+    private func sourceActionButtons(_ source: CompanyResearchSource) -> some View {
+        Button("Retry") {
+            Task { await researchViewModel.retryResearch(for: source) }
+        }
+        .buttonStyle(.bordered)
+
+        if let url = source.resolvedURL ?? source.normalizedURL {
+            Button("Open") {
+                openURL(url)
+            }
+            .buttonStyle(.bordered)
+        }
+
+        Button(source.isExcludedFromResearch ? "Include" : "Exclude") {
+            researchViewModel.setExcluded(!source.isExcludedFromResearch, for: source)
+        }
+        .buttonStyle(.bordered)
+
+        Button("Delete", role: .destructive) {
+            deleteResearchSource(source)
+        }
+        .buttonStyle(.bordered)
+
+        if source.sourceKind != .manual &&
+            (source.validationStatus == .blocked || source.validationStatus == .invalid) {
+            Button("Use Manual Note") {
+                researchViewModel.useManualNote(for: source)
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    private func bannerIcon(for runStatus: ResearchRunStatus) -> String {
+        switch runStatus {
+        case .succeeded:
+            return "checkmark.seal.fill"
+        case .partial:
+            return "exclamationmark.triangle.fill"
+        case .failed:
+            return "xmark.octagon.fill"
+        }
+    }
+
+    private func runStatusColor(_ runStatus: ResearchRunStatus) -> Color {
+        switch runStatus {
+        case .succeeded:
+            return .green
+        case .partial:
+            return .orange
+        case .failed:
+            return .red
+        }
+    }
+
+    private func statusForegroundColor(for status: ResearchValidationStatus) -> Color {
+        switch status {
+        case .verified, .manual:
+            return .green
+        case .partial:
+            return .orange
+        case .blocked, .invalid:
+            return .red
+        case .skipped:
+            return .secondary
+        }
+    }
+
+    private func statusBackgroundColor(for status: ResearchValidationStatus) -> Color {
+        switch status {
+        case .verified, .manual:
+            return Color.green.opacity(0.12)
+        case .partial:
+            return Color.orange.opacity(0.14)
+        case .blocked, .invalid:
+            return Color.red.opacity(0.12)
+        case .skipped:
+            return Color.secondary.opacity(0.12)
+        }
     }
 
     private func comparisonGroup(title: String, rows: [CompanyCompensationComparisonRow]) -> some View {
@@ -1038,6 +1243,25 @@ private struct CompanyWorkspaceView: View {
     private func deleteSalarySnapshot(_ snapshot: CompanySalarySnapshot) {
         do {
             try detailViewModel.deleteCompanySalarySnapshot(snapshot, context: modelContext)
+            Task {
+                await researchViewModel.refreshComparison(baseCurrency: settingsViewModel.analyticsBaseCurrency)
+            }
+        } catch {
+            saveErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func deleteResearchSource(_ source: CompanyResearchSource) {
+        do {
+            try detailViewModel.deleteCompanyResearchSource(source, context: modelContext)
+        } catch {
+            saveErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func deleteResearchSnapshot(_ snapshot: CompanyResearchSnapshot) {
+        do {
+            try detailViewModel.deleteCompanyResearchSnapshot(snapshot, context: modelContext)
             Task {
                 await researchViewModel.refreshComparison(baseCurrency: settingsViewModel.analyticsBaseCurrency)
             }
@@ -1629,6 +1853,142 @@ struct JobPostingSection: View {
                 .truncationMode(.middle)
         }
         .padding(16)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+    }
+}
+
+private struct JobDescriptionDenoiseReviewSheet: View {
+    let originalDescription: String
+    let cleanedDescription: String
+    let onCancel: () -> Void
+    let onReplace: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Group {
+            #if os(macOS)
+            VStack(spacing: 0) {
+                header
+                Divider().overlay(DesignSystem.Colors.divider(colorScheme))
+                comparisonBody
+                Divider().overlay(DesignSystem.Colors.divider(colorScheme))
+                footer
+            }
+            .frame(width: 980, height: 680)
+            .background(DesignSystem.Colors.contentBackground(colorScheme))
+            #else
+            NavigationStack {
+                comparisonBody
+                    .navigationTitle("Review Denoised Description")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") {
+                                onCancel()
+                                dismiss()
+                            }
+                        }
+
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Replace") {
+                                onReplace()
+                            }
+                        }
+                    }
+            }
+            .presentationDetents([.large])
+            #endif
+        }
+    }
+
+    #if os(macOS)
+    private var header: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Review Denoised Description")
+                    .font(.title3.weight(.semibold))
+                Text("Compare the original import against the cleaned version before replacing it.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button {
+                onCancel()
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 28, height: 28)
+                    .foregroundColor(.secondary)
+                    .background(DesignSystem.Colors.surfaceElevated(colorScheme))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 16)
+    }
+
+    private var footer: some View {
+        HStack(spacing: 12) {
+            Spacer()
+
+            Button("Cancel") {
+                onCancel()
+                dismiss()
+            }
+            .buttonStyle(.bordered)
+
+            Button("Replace Description") {
+                onReplace()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(DesignSystem.Colors.accent)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 16)
+        .background(DesignSystem.Colors.surfaceElevated(colorScheme))
+    }
+    #endif
+
+    private var comparisonBody: some View {
+        ScrollView {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 16) {
+                    comparisonPane(title: "Original", description: originalDescription)
+                    comparisonPane(title: "Cleaned", description: cleanedDescription)
+                }
+
+                VStack(spacing: 16) {
+                    comparisonPane(title: "Original", description: originalDescription)
+                    comparisonPane(title: "Cleaned", description: cleanedDescription)
+                }
+            }
+            .padding(20)
+        }
+        .background(DesignSystem.Colors.contentBackground(colorScheme))
+    }
+
+    private func comparisonPane(title: String, description: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.headline)
+
+            ScrollView {
+                Text(description)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(4)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, minHeight: 260, maxHeight: .infinity, alignment: .topLeading)
         .appCard(cornerRadius: 14, elevated: true, shadow: false)
     }
 }

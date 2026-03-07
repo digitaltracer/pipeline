@@ -87,6 +87,7 @@
 		000000000000000000000088 /* AppLockRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000088 /* AppLockRootView.swift */; };
 		000000000000000000000089 /* SecuritySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000089 /* SecuritySettingsView.swift */; };
 		000000000000000000000090 /* PrivacyPolicy.md in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000090 /* PrivacyPolicy.md */; };
+		000000000000000000000091 /* JobDescriptionDenoiseViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000091 /* JobDescriptionDenoiseViewModel.swift */; };
 		000000000000000000000074 /* tectonic in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000074 /* tectonic */; };
 		000000000000000000000075 /* ResumeTemplate.tex in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000075 /* ResumeTemplate.tex */; };
 		800000000000000000000001 /* PipelineKit in Frameworks */ = {isa = PBXBuildFile; productRef = 900000000000000000000001 /* PipelineKit */; };
@@ -236,6 +237,7 @@
 		100000000000000000000088 /* AppLockRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockRootView.swift; sourceTree = "<group>"; };
 		100000000000000000000089 /* SecuritySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecuritySettingsView.swift; sourceTree = "<group>"; };
 		100000000000000000000090 /* PrivacyPolicy.md */ = {isa = PBXFileReference; lastKnownFileType = text; path = PrivacyPolicy.md; sourceTree = "<group>"; };
+		100000000000000000000091 /* JobDescriptionDenoiseViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobDescriptionDenoiseViewModel.swift; sourceTree = "<group>"; };
 		A01000000000000000000010 /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
 		A01000000000000000000020 /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = manifest.json; sourceTree = "<group>"; };
 		A01000000000000000000030 /* content.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = content.js; sourceTree = "<group>"; };
@@ -346,6 +348,7 @@
 				100000000000000000000064 /* DashboardViewModel.swift */,
 				100000000000000000000077 /* ContactsListViewModel.swift */,
 				100000000000000000000087 /* AppLockCoordinator.swift */,
+				100000000000000000000091 /* JobDescriptionDenoiseViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -745,6 +748,7 @@
 				000000000000000000000062 /* FollowUpDrafterViewModel.swift in Sources */,
 				000000000000000000000064 /* DashboardViewModel.swift in Sources */,
 				000000000000000000000077 /* ContactsListViewModel.swift in Sources */,
+				000000000000000000000091 /* JobDescriptionDenoiseViewModel.swift in Sources */,
 				000000000000000000000018 /* MainView.swift in Sources */,
 				000000000000000000000019 /* SidebarView.swift in Sources */,
 				000000000000000000000020 /* ApplicationListView.swift in Sources */,

@@ -7,7 +7,9 @@ public final class CompanyResearchSnapshot {
     public var providerID: String = ""
     public var model: String = ""
     public var requestStatusRawValue: String = AIUsageRequestStatus.succeeded.rawValue
+    public var runStatusRawValue: String = ResearchRunStatus.succeeded.rawValue
     public var summaryText: String?
+    public var summaryConfidenceNote: String?
     public var rawResponseText: String?
     public var errorMessage: String?
     public var startedAt: Date = Date()
@@ -28,7 +30,9 @@ public final class CompanyResearchSnapshot {
         providerID: String,
         model: String,
         requestStatus: AIUsageRequestStatus,
+        runStatus: ResearchRunStatus = .succeeded,
         summaryText: String? = nil,
+        summaryConfidenceNote: String? = nil,
         rawResponseText: String? = nil,
         errorMessage: String? = nil,
         startedAt: Date = Date(),
@@ -43,7 +47,9 @@ public final class CompanyResearchSnapshot {
         self.providerID = providerID
         self.model = model
         self.requestStatusRawValue = requestStatus.rawValue
+        self.runStatusRawValue = runStatus.rawValue
         self.summaryText = CompanyProfile.normalizedText(summaryText)
+        self.summaryConfidenceNote = CompanyProfile.normalizedText(summaryConfidenceNote)
         self.rawResponseText = CompanyProfile.normalizedText(rawResponseText)
         self.errorMessage = CompanyProfile.normalizedText(errorMessage)
         self.startedAt = startedAt
@@ -58,6 +64,23 @@ public final class CompanyResearchSnapshot {
     public var requestStatus: AIUsageRequestStatus {
         get { AIUsageRequestStatus(rawValue: requestStatusRawValue) ?? .succeeded }
         set { requestStatusRawValue = newValue.rawValue }
+    }
+
+    public var runStatus: ResearchRunStatus {
+        get {
+            if let runStatus = ResearchRunStatus(rawValue: runStatusRawValue) {
+                return runStatus
+            }
+            switch requestStatus {
+            case .succeeded:
+                return .succeeded
+            case .partial:
+                return .partial
+            case .failed:
+                return .failed
+            }
+        }
+        set { runStatusRawValue = newValue.rawValue }
     }
 
     public var sortedSources: [CompanyResearchSource] {

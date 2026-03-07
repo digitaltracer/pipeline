@@ -7,6 +7,7 @@ public enum AIUsageFeature: String, Codable, CaseIterable, Sendable, Identifiabl
     case followUpDraft = "follow_up_draft"
     case jobParsing = "job_parsing"
     case companyResearch = "company_research"
+    case jobDescriptionDenoise = "job_description_denoise"
 
     public var id: String { rawValue }
 
@@ -22,12 +23,15 @@ public enum AIUsageFeature: String, Codable, CaseIterable, Sendable, Identifiabl
             return "Job Parsing"
         case .companyResearch:
             return "Company Research"
+        case .jobDescriptionDenoise:
+            return "Job Description Denoise"
         }
     }
 }
 
 public enum AIUsageRequestStatus: String, Codable, CaseIterable, Sendable, Identifiable {
     case succeeded = "succeeded"
+    case partial = "partial"
     case failed = "failed"
 
     public var id: String { rawValue }

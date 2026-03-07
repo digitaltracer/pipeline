@@ -10,6 +10,14 @@ public struct CompanyResearchSourcePayload: Sendable, Equatable {
     public let fetchedText: String?
     public let errorMessage: String?
     public let orderIndex: Int
+    public let resolvedURLString: String?
+    public let validationStatus: ResearchValidationStatus
+    public let acquisitionMethod: ResearchAcquisitionMethod
+    public let validationReason: String?
+    public let confidence: ResearchConfidence?
+    public let citationPayload: String?
+    public let fetchedAt: Date?
+    public let validatedAt: Date?
 
     public init(
         title: String,
@@ -19,7 +27,15 @@ public struct CompanyResearchSourcePayload: Sendable, Equatable {
         contentExcerpt: String?,
         fetchedText: String?,
         errorMessage: String?,
-        orderIndex: Int
+        orderIndex: Int,
+        resolvedURLString: String? = nil,
+        validationStatus: ResearchValidationStatus = .skipped,
+        acquisitionMethod: ResearchAcquisitionMethod = .none,
+        validationReason: String? = nil,
+        confidence: ResearchConfidence? = nil,
+        citationPayload: String? = nil,
+        fetchedAt: Date? = nil,
+        validatedAt: Date? = nil
     ) {
         self.title = title
         self.urlString = urlString
@@ -29,6 +45,23 @@ public struct CompanyResearchSourcePayload: Sendable, Equatable {
         self.fetchedText = fetchedText
         self.errorMessage = errorMessage
         self.orderIndex = orderIndex
+        self.resolvedURLString = resolvedURLString
+        self.validationStatus = validationStatus
+        self.acquisitionMethod = acquisitionMethod
+        self.validationReason = validationReason
+        self.confidence = confidence
+        self.citationPayload = citationPayload
+        self.fetchedAt = fetchedAt
+        self.validatedAt = validatedAt
+    }
+
+    public var synthesisEligible: Bool {
+        switch validationStatus {
+        case .verified, .partial, .manual:
+            return fetchedText?.isEmpty == false || contentExcerpt?.isEmpty == false
+        case .blocked, .invalid, .skipped:
+            return false
+        }
     }
 }
 
@@ -82,6 +115,9 @@ public struct CompanyResearchResult: Sendable, Equatable {
     public let sizeBand: CompanySizeBand?
     public let headquarters: String?
     public let summary: String?
+    public let summaryConfidenceNote: String?
+    public let runStatus: ResearchRunStatus
+    public let failureMessage: String?
     public let sources: [CompanyResearchSourcePayload]
     public let salaryFindings: [CompanyResearchSalaryFinding]
     public let usage: AIUsageMetrics?
@@ -97,6 +133,9 @@ public struct CompanyResearchResult: Sendable, Equatable {
         sizeBand: CompanySizeBand?,
         headquarters: String?,
         summary: String?,
+        summaryConfidenceNote: String? = nil,
+        runStatus: ResearchRunStatus = .succeeded,
+        failureMessage: String? = nil,
         sources: [CompanyResearchSourcePayload],
         salaryFindings: [CompanyResearchSalaryFinding],
         usage: AIUsageMetrics?,
@@ -111,10 +150,49 @@ public struct CompanyResearchResult: Sendable, Equatable {
         self.sizeBand = sizeBand
         self.headquarters = headquarters
         self.summary = summary
+        self.summaryConfidenceNote = summaryConfidenceNote
+        self.runStatus = runStatus
+        self.failureMessage = failureMessage
         self.sources = sources
         self.salaryFindings = salaryFindings
         self.usage = usage
         self.rawResponseText = rawResponseText
+    }
+}
+
+public protocol CompanyResearchSearchProviding: Sendable {
+    func groundedWebSearch(
+        provider: AIProvider,
+        apiKey: String,
+        model: String,
+        query: String,
+        systemPrompt: String?,
+        domains: [String],
+        maxTokens: Int
+    ) async throws -> AIWebSearchResponse
+}
+
+public struct DefaultCompanyResearchSearchProvider: CompanyResearchSearchProviding {
+    public init() {}
+
+    public func groundedWebSearch(
+        provider: AIProvider,
+        apiKey: String,
+        model: String,
+        query: String,
+        systemPrompt: String?,
+        domains: [String],
+        maxTokens: Int
+    ) async throws -> AIWebSearchResponse {
+        try await AICompletionClient.groundedWebSearch(
+            provider: provider,
+            apiKey: apiKey,
+            model: model,
+            query: query,
+            systemPrompt: systemPrompt,
+            domains: domains,
+            maxTokens: maxTokens
+        )
     }
 }
 
@@ -125,32 +203,92 @@ public enum CompanyResearchService {
         let sourceKind: CompanyResearchSourceKind
     }
 
+    private struct SearchIntent: Sendable {
+        let title: String
+        let query: String
+        let domains: [String]
+        let sourceKind: CompanyResearchSourceKind
+    }
+
     public static func generateResearch(
         provider: AIProvider,
         apiKey: String,
         model: String,
         company: CompanyProfile,
         application: JobApplication? = nil,
-        webContentProvider: WebContentProvider = BasicWebContentProvider(serviceName: "CompanyResearch")
+        webContentProvider: WebContentProvider = BasicWebContentProvider(serviceName: "CompanyResearch"),
+        searchProvider: CompanyResearchSearchProviding = DefaultCompanyResearchSearchProvider()
     ) async throws -> CompanyResearchResult {
-        let candidates = candidateSources(company: company, application: application)
-        let collectedSources = await collectSourcePayloads(from: candidates, via: webContentProvider)
-        let prompt = makePrompt(company: company, application: application, sources: collectedSources)
+        let excludedURLs = Set(company.sortedResearchSources.filter(\.isExcludedFromResearch).map(\.urlString))
+        let directCandidates = candidateSources(
+            company: company,
+            application: application,
+            excludedURLs: excludedURLs
+        )
 
+        var sourcePayloads = await collectDirectSourcePayloads(
+            from: directCandidates,
+            company: company,
+            application: application,
+            via: webContentProvider
+        )
+
+        if let manualSource = manualSourcePayload(company: company, orderIndex: sourcePayloads.count) {
+            sourcePayloads.append(manualSource)
+        }
+
+        if AICompletionClient.supportsWebSearch(provider: provider, model: model) {
+            let searchPayloads = await collectProviderSearchPayloads(
+                provider: provider,
+                apiKey: apiKey,
+                model: model,
+                company: company,
+                application: application,
+                via: searchProvider,
+                startIndex: sourcePayloads.count
+            )
+            sourcePayloads.append(contentsOf: searchPayloads)
+        }
+
+        let dedupedPayloads = deduplicateSourcePayloads(sourcePayloads)
+        let usableSources = dedupedPayloads.filter(\.synthesisEligible)
+
+        guard !usableSources.isEmpty else {
+            return CompanyResearchResult(
+                websiteURL: verifiedSourceURL(of: .companyWebsite, in: dedupedPayloads) ?? company.websiteURL,
+                linkedInURL: verifiedSourceURL(of: .linkedIn, in: dedupedPayloads) ?? company.linkedInURL,
+                glassdoorURL: verifiedSourceURL(of: .glassdoor, in: dedupedPayloads) ?? company.glassdoorURL,
+                levelsFYIURL: verifiedSourceURL(of: .levelsFYI, in: dedupedPayloads) ?? company.levelsFYIURL,
+                teamBlindURL: verifiedSourceURL(of: .teamBlind, in: dedupedPayloads) ?? company.teamBlindURL,
+                industry: company.industry,
+                sizeBand: company.sizeBand,
+                headquarters: company.headquarters,
+                summary: nil,
+                summaryConfidenceNote: "No verified source content was available. Add a company link or manual note and retry.",
+                runStatus: .failed,
+                failureMessage: "No verified evidence was available for this company.",
+                sources: dedupedPayloads,
+                salaryFindings: [],
+                usage: nil,
+                rawResponseText: ""
+            )
+        }
+
+        let prompt = makePrompt(company: company, application: application, sources: usableSources)
         let response = try await AICompletionClient.completeWithUsage(
             provider: provider,
             apiKey: apiKey,
             model: model,
             systemPrompt: systemPrompt,
             userPrompt: prompt,
-            maxTokens: 3500,
+            maxTokens: 40_000,
             temperature: 0.2
         )
 
         return try parseResponse(
             response.text,
             usage: response.usage,
-            sourcePayloads: collectedSources
+            sourcePayloads: dedupedPayloads
         )
     }
 
@@ -191,6 +329,7 @@ public enum CompanyResearchService {
         if company.sizeBand == nil {
             company.sizeBand = result.sizeBand
         }
+
         company.touchResearch(at: finishedAt, summary: result.summary)
         if !result.salaryFindings.isEmpty {
             company.touchSalaryResearch(at: finishedAt)
@@ -200,9 +339,11 @@ public enum CompanyResearchService {
             providerID: provider.providerID,
             model: model,
             requestStatus: requestStatus,
+            runStatus: result.runStatus,
             summaryText: result.summary,
+            summaryConfidenceNote: result.summaryConfidenceNote,
             rawResponseText: result.rawResponseText,
-            errorMessage: errorMessage,
+            errorMessage: errorMessage ?? result.failureMessage,
             startedAt: startedAt,
             finishedAt: finishedAt,
             applicationID: applicationID,
@@ -211,14 +352,27 @@ public enum CompanyResearchService {
         modelContext.insert(snapshot)
 
         for sourcePayload in result.sources {
+            let excluded = company.sortedResearchSources.first(where: {
+                $0.urlString == sourcePayload.urlString || $0.resolvedURLString == sourcePayload.resolvedURLString
+            })?.isExcludedFromResearch ?? false
+
             let source = CompanyResearchSource(
                 title: sourcePayload.title,
                 urlString: sourcePayload.urlString,
                 sourceKind: sourcePayload.sourceKind,
                 fetchStatus: sourcePayload.fetchStatus,
                 contentExcerpt: sourcePayload.contentExcerpt,
+                resolvedURLString: sourcePayload.resolvedURLString,
                 errorMessage: sourcePayload.errorMessage,
+                validationStatus: sourcePayload.validationStatus,
+                acquisitionMethod: sourcePayload.acquisitionMethod,
+                validationReason: sourcePayload.validationReason,
+                confidence: sourcePayload.confidence,
+                citationPayload: sourcePayload.citationPayload,
                 orderIndex: sourcePayload.orderIndex,
+                fetchedAt: sourcePayload.fetchedAt,
+                validatedAt: sourcePayload.validatedAt,
+                isExcludedFromResearch: excluded,
                 company: company,
                 snapshot: snapshot
             )
@@ -273,99 +427,289 @@ public enum CompanyResearchService {
         return snapshot
     }
 
-    private static func candidateSources(company: CompanyProfile, application: JobApplication?) -> [CandidateSource] {
+    private static func candidateSources(
+        company: CompanyProfile,
+        application: JobApplication?,
+        excludedURLs: Set<String>
+    ) -> [CandidateSource] {
         var sources: [CandidateSource] = []
 
         func append(_ title: String, _ urlString: String?, _ kind: CompanyResearchSourceKind) {
-            guard let normalizedURL = CompanyProfile.normalizedURLString(urlString) else { return }
+            guard let normalizedURL = CompanyProfile.normalizedURLString(urlString),
+                  !excludedURLs.contains(normalizedURL) else { return }
             sources.append(CandidateSource(title: title, urlString: normalizedURL, sourceKind: kind))
         }
 
         append("Company Website", company.websiteURL, .companyWebsite)
         append("Job Posting", application?.jobURL, .jobPosting)
-        append("LinkedIn", company.linkedInURL ?? URLHelpers.linkedInCompanyURL(companyName: company.name)?.absoluteString, .linkedIn)
+        append(
+            "LinkedIn",
+            company.linkedInURL ?? URLHelpers.linkedInCompanyURL(companyName: company.name)?.absoluteString,
+            .linkedIn
+        )
         append("Glassdoor", company.glassdoorURL, .glassdoor)
         append("Levels.fyi", company.levelsFYIURL, .levelsFYI)
         append("TeamBlind", company.teamBlindURL, .teamBlind)
 
-        if let searchURL = googleSearchURL(
-            companyName: company.name,
-            role: application?.role,
-            location: application?.location,
-            site: nil
-        ) {
-            append("Company Search", searchURL.absoluteString, .search)
-        }
-
-        if let levelsSearch = googleSearchURL(
-            companyName: company.name,
-            role: application?.role,
-            location: application?.location,
-            site: "levels.fyi"
-        ) {
-            append("Levels.fyi Search", levelsSearch.absoluteString, .search)
-        }
-
-        if let blindSearch = googleSearchURL(
-            companyName: company.name,
-            role: application?.role,
-            location: application?.location,
-            site: "teamblind.com"
-        ) {
-            append("TeamBlind Search", blindSearch.absoluteString, .search)
-        }
-
-        if let glassdoorSearch = googleSearchURL(
-            companyName: company.name,
-            role: application?.role,
-            location: application?.location,
-            site: "glassdoor.com"
-        ) {
-            append("Glassdoor Search", glassdoorSearch.absoluteString, .search)
-        }
-
-        return sources.uniquedPreservingOrder(by: \.urlString).prefix(8).map { $0 }
+        return sources.uniquedPreservingOrder(by: \.urlString)
     }
 
-    private static func collectSourcePayloads(
+    private static func searchIntents(
+        company: CompanyProfile,
+        application: JobApplication?
+    ) -> [SearchIntent] {
+        let roleFragment = application?.role.trimmingCharacters(in: .whitespacesAndNewlines)
+        let locationFragment = application?.location.trimmingCharacters(in: .whitespacesAndNewlines)
+        let scope = [roleFragment, locationFragment]
+            .compactMap { value in
+                guard let value, !value.isEmpty else { return nil }
+                return value
+            }
+            .joined(separator: " ")
+
+        func query(_ suffix: String) -> String {
+            if scope.isEmpty {
+                return "\(company.name) \(suffix)"
+            }
+            return "\(company.name) \(scope) \(suffix)"
+        }
+
+        return [
+            SearchIntent(
+                title: "Company Search",
+                query: query("official website products company overview recent news"),
+                domains: [],
+                sourceKind: .companyWebsite
+            ),
+            SearchIntent(
+                title: "Glassdoor Search",
+                query: query("glassdoor reviews compensation"),
+                domains: ["glassdoor.com"],
+                sourceKind: .glassdoor
+            ),
+            SearchIntent(
+                title: "Levels.fyi Search",
+                query: query("levels.fyi compensation"),
+                domains: ["levels.fyi"],
+                sourceKind: .levelsFYI
+            ),
+            SearchIntent(
+                title: "TeamBlind Search",
+                query: query("teamblind culture interview experience"),
+                domains: ["teamblind.com"],
+                sourceKind: .teamBlind
+            ),
+            SearchIntent(
+                title: "LinkedIn Search",
+                query: query("linkedin company hiring"),
+                domains: ["linkedin.com"],
+                sourceKind: .linkedIn
+            )
+        ]
+    }
+
+    private static func collectDirectSourcePayloads(
         from candidates: [CandidateSource],
+        company: CompanyProfile,
+        application: JobApplication?,
         via provider: WebContentProvider
     ) async -> [CompanyResearchSourcePayload] {
         var payloads: [CompanyResearchSourcePayload] = []
 
         for (index, candidate) in candidates.enumerated() {
+            let fetchedAt = Date()
             do {
-                let text = try await provider.fetchText(from: candidate.urlString)
-                let excerpt = String(text.prefix(500))
+                let result = try await provider.fetchContent(from: candidate.urlString)
+                let normalizedText = normalizeEvidenceText(result.text)
+                let validation = validateEvidence(
+                    text: normalizedText,
+                    company: company,
+                    sourceKind: candidate.sourceKind,
+                    requestedURLString: candidate.urlString,
+                    resolvedURLString: result.resolvedURLString,
+                    acquisitionMethod: result.acquisitionMethod,
+                    fallbackTitle: candidate.title
+                )
+
                 payloads.append(
-                    CompanyResearchSourcePayload(
+                    makePayload(
                         title: candidate.title,
                         urlString: candidate.urlString,
-                        sourceKind: candidate.sourceKind,
-                        fetchStatus: .fetched,
-                        contentExcerpt: excerpt,
-                        fetchedText: String(text.prefix(5000)),
+                        resolvedURLString: result.resolvedURLString,
+                        sourceKind: validation.sourceKind,
+                        acquisitionMethod: result.acquisitionMethod,
+                        fetchStatus: validation.fetchStatus,
+                        validationStatus: validation.validationStatus,
+                        validationReason: validation.reason,
+                        confidence: validation.confidence,
+                        excerptText: normalizedText,
+                        fetchedText: normalizedText,
                         errorMessage: nil,
-                        orderIndex: index
+                        citationPayload: nil,
+                        orderIndex: index,
+                        fetchedAt: fetchedAt
                     )
                 )
             } catch {
                 payloads.append(
-                    CompanyResearchSourcePayload(
+                    makePayload(
                         title: candidate.title,
                         urlString: candidate.urlString,
+                        resolvedURLString: nil,
                         sourceKind: candidate.sourceKind,
-                        fetchStatus: .failed,
-                        contentExcerpt: nil,
+                        acquisitionMethod: .none,
+                        fetchStatus: blockedFetchStatus(for: error),
+                        validationStatus: blockedValidationStatus(for: error),
+                        validationReason: error.localizedDescription,
+                        confidence: .low,
+                        excerptText: nil,
                         fetchedText: nil,
                         errorMessage: error.localizedDescription,
-                        orderIndex: index
+                        citationPayload: nil,
+                        orderIndex: index,
+                        fetchedAt: fetchedAt
                     )
                 )
             }
         }
 
         return payloads
+    }
+
+    private static func collectProviderSearchPayloads(
+        provider: AIProvider,
+        apiKey: String,
+        model: String,
+        company: CompanyProfile,
+        application: JobApplication?,
+        via searchProvider: CompanyResearchSearchProviding,
+        startIndex: Int
+    ) async -> [CompanyResearchSourcePayload] {
+        var payloads: [CompanyResearchSourcePayload] = []
+        var nextIndex = startIndex
+
+        for intent in searchIntents(company: company, application: application) {
+            let fetchedAt = Date()
+
+            do {
+                let response = try await searchProvider.groundedWebSearch(
+                    provider: provider,
+                    apiKey: apiKey,
+                    model: model,
+                    query: intent.query,
+                    systemPrompt: providerSearchSystemPrompt,
+                    domains: intent.domains,
+                    maxTokens: 900
+                )
+
+                let citations = response.citations.isEmpty
+                    ? [AIWebSearchCitation(
+                        title: intent.title,
+                        urlString: siteRootURL(for: intent.domains.first) ?? "pipeline://search/\(intent.sourceKind.rawValue)",
+                        snippet: response.text,
+                        sourceDomain: intent.domains.first,
+                        rawPayload: nil
+                    )]
+                    : response.citations
+
+                for citation in citations.prefix(3) {
+                    let combinedText = [citation.snippet, response.text]
+                        .compactMap { value in
+                            guard let value, !value.isEmpty else { return nil }
+                            return value
+                        }
+                        .joined(separator: "\n")
+                    let normalizedText = normalizeEvidenceText(combinedText)
+                    let inferredKind = inferSourceKind(
+                        from: citation.urlString,
+                        fallback: intent.sourceKind
+                    )
+                    let validation = validateEvidence(
+                        text: normalizedText,
+                        company: company,
+                        sourceKind: inferredKind,
+                        requestedURLString: citation.urlString,
+                        resolvedURLString: citation.urlString,
+                        acquisitionMethod: .providerSearch,
+                        fallbackTitle: citation.title
+                    )
+
+                    payloads.append(
+                        makePayload(
+                            title: citation.title,
+                            urlString: citation.urlString,
+                            resolvedURLString: citation.urlString,
+                            sourceKind: validation.sourceKind,
+                            acquisitionMethod: .providerSearch,
+                            fetchStatus: validation.fetchStatus,
+                            validationStatus: validation.validationStatus,
+                            validationReason: validation.reason,
+                            confidence: validation.confidence,
+                            excerptText: normalizedText,
+                            fetchedText: normalizedText,
+                            errorMessage: nil,
+                            citationPayload: citation.rawPayload,
+                            orderIndex: nextIndex,
+                            fetchedAt: fetchedAt
+                        )
+                    )
+                    nextIndex += 1
+                }
+            } catch {
+                let fallbackURL = siteRootURL(for: intent.domains.first) ?? "pipeline://search/\(intent.sourceKind.rawValue)"
+                payloads.append(
+                    makePayload(
+                        title: intent.title,
+                        urlString: fallbackURL,
+                        resolvedURLString: nil,
+                        sourceKind: intent.sourceKind,
+                        acquisitionMethod: .providerSearch,
+                        fetchStatus: .blocked,
+                        validationStatus: .blocked,
+                        validationReason: error.localizedDescription,
+                        confidence: .low,
+                        excerptText: nil,
+                        fetchedText: nil,
+                        errorMessage: error.localizedDescription,
+                        citationPayload: nil,
+                        orderIndex: nextIndex,
+                        fetchedAt: fetchedAt
+                    )
+                )
+                nextIndex += 1
+            }
+        }
+
+        return payloads
+    }
+
+    private static func manualSourcePayload(
+        company: CompanyProfile,
+        orderIndex: Int
+    ) -> CompanyResearchSourcePayload? {
+        guard let notes = company.notesMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !notes.isEmpty else {
+            return nil
+        }
+
+        let normalizedText = normalizeEvidenceText(notes)
+        return makePayload(
+            title: "Manual Research Notes",
+            urlString: "pipeline://manual/company-notes",
+            resolvedURLString: nil,
+            sourceKind: .manual,
+            acquisitionMethod: .manual,
+            fetchStatus: .manual,
+            validationStatus: .manual,
+            validationReason: "User-authored company notes.",
+            confidence: .medium,
+            excerptText: normalizedText,
+            fetchedText: normalizedText,
+            errorMessage: nil,
+            citationPayload: nil,
+            orderIndex: orderIndex,
+            fetchedAt: Date()
+        )
     }
 
     private static func makePrompt(
@@ -385,20 +729,17 @@ public enum CompanyResearchService {
             }
         }
 
-        if let notes = company.notesMarkdown, !notes.isEmpty {
-            lines.append("User Notes:\n\(notes)")
-        }
-
         let sourceBlocks = sources.map { source in
             var block = """
             Source \(source.orderIndex + 1): \(source.title)
-            URL: \(source.urlString)
+            URL: \(source.resolvedURLString ?? source.urlString)
             Kind: \(source.sourceKind.rawValue)
-            Status: \(source.fetchStatus.rawValue)
+            Acquisition: \(source.acquisitionMethod.rawValue)
+            Validation: \(source.validationStatus.rawValue)
             """
 
-            if let errorMessage = source.errorMessage {
-                block += "\nError: \(errorMessage)"
+            if let validationReason = source.validationReason {
+                block += "\nValidation Notes: \(validationReason)"
             }
             if let fetchedText = source.fetchedText {
                 block += "\nContent:\n\(fetchedText)"
@@ -406,7 +747,7 @@ public enum CompanyResearchService {
             return block
         }
 
-        lines.append("Sources:\n\(sourceBlocks.joined(separator: "\n\n"))")
+        lines.append("Validated Evidence:\n\(sourceBlocks.joined(separator: "\n\n"))")
         return lines.joined(separator: "\n\n")
     }
 
@@ -458,16 +799,47 @@ public enum CompanyResearchService {
                 )
             }
 
+        let summary = json["summary"] as? String
+            ?? json["companySummary"] as? String
+            ?? json["company_summary"] as? String
+        let summaryConfidenceNote = json["summaryConfidenceNote"] as? String
+            ?? json["summary_confidence_note"] as? String
+        let enrichedSummaryConfidence = summaryConfidenceNote ?? confidenceNote(for: sourcePayloads)
+        let runStatus = runStatus(for: sourcePayloads, summary: summary)
+
         return CompanyResearchResult(
-            websiteURL: json["websiteURL"] as? String ?? json["website_url"] as? String,
-            linkedInURL: json["linkedInURL"] as? String ?? json["linkedin_url"] as? String,
-            glassdoorURL: json["glassdoorURL"] as? String ?? json["glassdoor_url"] as? String,
-            levelsFYIURL: json["levelsFYIURL"] as? String ?? json["levels_fyi_url"] as? String,
-            teamBlindURL: json["teamBlindURL"] as? String ?? json["teamblind_url"] as? String,
+            websiteURL: bestURL(
+                parsedURL: json["websiteURL"] as? String ?? json["website_url"] as? String,
+                sourceKind: .companyWebsite,
+                sourcePayloads: sourcePayloads
+            ),
+            linkedInURL: bestURL(
+                parsedURL: json["linkedInURL"] as? String ?? json["linkedin_url"] as? String,
+                sourceKind: .linkedIn,
+                sourcePayloads: sourcePayloads
+            ),
+            glassdoorURL: bestURL(
+                parsedURL: json["glassdoorURL"] as? String ?? json["glassdoor_url"] as? String,
+                sourceKind: .glassdoor,
+                sourcePayloads: sourcePayloads
+            ),
+            levelsFYIURL: bestURL(
+                parsedURL: json["levelsFYIURL"] as? String ?? json["levels_fyi_url"] as? String,
+                sourceKind: .levelsFYI,
+                sourcePayloads: sourcePayloads
+            ),
+            teamBlindURL: bestURL(
+                parsedURL: json["teamBlindURL"] as? String ?? json["teamblind_url"] as? String,
+                sourceKind: .teamBlind,
+                sourcePayloads: sourcePayloads
+            ),
             industry: json["industry"] as? String,
             sizeBand: sizeBand,
             headquarters: json["headquarters"] as? String,
-            summary: json["summary"] as? String ?? json["companySummary"] as? String ?? json["company_summary"] as? String,
+            summary: summary,
+            summaryConfidenceNote: enrichedSummaryConfidence,
+            runStatus: runStatus,
+            failureMessage: runStatus == .failed ? "No verified evidence was available for this company." : nil,
             sources: sourcePayloads,
             salaryFindings: salaryFindings,
             usage: usage,
@@ -475,27 +847,325 @@ public enum CompanyResearchService {
         )
     }
 
-    private static func googleSearchURL(
-        companyName: String,
-        role: String?,
-        location: String?,
-        site: String?
-    ) -> URL? {
-        var query = companyName
-        if let role, !role.isEmpty {
-            query += " \(role)"
-        }
-        if let location, !location.isEmpty {
-            query += " \(location)"
-        }
-        if let site, !site.isEmpty {
-            query += " site:\(site)"
+    static func validateEvidence(
+        text: String,
+        company: CompanyProfile,
+        sourceKind: CompanyResearchSourceKind,
+        requestedURLString: String,
+        resolvedURLString: String?,
+        acquisitionMethod: ResearchAcquisitionMethod,
+        fallbackTitle: String
+    ) -> (
+        sourceKind: CompanyResearchSourceKind,
+        fetchStatus: CompanyResearchFetchStatus,
+        validationStatus: ResearchValidationStatus,
+        reason: String?,
+        confidence: ResearchConfidence
+    ) {
+        let effectiveURL = resolvedURLString ?? requestedURLString
+        let inferredKind = inferSourceKind(from: effectiveURL, fallback: sourceKind)
+        let normalizedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowercasedText = normalizedText.lowercased()
+        let host = URL(string: effectiveURL)?.host?.lowercased() ?? ""
+        let companyName = company.name.lowercased()
+
+        if inferredKind == .manual {
+            return (inferredKind, .manual, .manual, "User-authored manual note.", .medium)
         }
 
-        guard let escaped = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-            return nil
+        if looksLikeSearchInterstitial(urlString: effectiveURL, text: lowercasedText) {
+            return (inferredKind, .invalid, .invalid, "Search results or redirect page, not a usable source page.", .low)
         }
-        return URL(string: "https://www.google.com/search?q=\(escaped)")
+
+        if looksBlocked(host: host, text: lowercasedText) {
+            return (inferredKind, .blocked, .blocked, "The source appears blocked, gated, or anti-bot protected.", .low)
+        }
+
+        if normalizedText.count < 80 {
+            return (inferredKind, .invalid, .invalid, "The page did not contain enough readable text to trust.", .low)
+        }
+
+        let mentionsCompany = lowercasedText.contains(companyName)
+        let domainMatchesCompany = domainMatchesCompanyWebsite(host: host, company: company)
+        let thinThreshold = acquisitionMethod == .providerSearch ? 140 : 220
+
+        if inferredKind == .companyWebsite && !domainMatchesCompany && !mentionsCompany {
+            return (inferredKind, .partial, .partial, "The source is readable but could not be strongly linked to the company.", .low)
+        }
+
+        if inferredKind != .companyWebsite && !mentionsCompany && normalizedText.count < thinThreshold {
+            return (inferredKind, .invalid, .invalid, "\(fallbackTitle) did not include enough company-specific content.", .low)
+        }
+
+        if normalizedText.count < thinThreshold {
+            return (inferredKind, .partial, .partial, "The source is readable but thin; summary confidence is reduced.", .low)
+        }
+
+        if acquisitionMethod == .providerSearch && !mentionsCompany {
+            return (inferredKind, .partial, .partial, "The citation is relevant but only weakly tied to the company name.", .medium)
+        }
+
+        let confidence: ResearchConfidence = (inferredKind == .companyWebsite || domainMatchesCompany) ? .high : .medium
+        return (inferredKind, .verified, .verified, "Validated company-specific evidence.", confidence)
+    }
+
+    static func looksLikeSearchInterstitial(urlString: String, text: String) -> Bool {
+        let host = URL(string: urlString)?.host?.lowercased() ?? ""
+        let path = URL(string: urlString)?.path.lowercased() ?? ""
+        if host.contains("google.") && path.contains("/search") {
+            return true
+        }
+        if host.contains("bing.") && path.contains("/search") {
+            return true
+        }
+
+        let markers = [
+            "please click here if you are not redirected within a few seconds",
+            "google search",
+            "send feedback",
+            "unusual traffic from your computer network"
+        ]
+        return markers.contains(where: text.contains)
+    }
+
+    static func looksBlocked(host: String, text: String) -> Bool {
+        let generalMarkers = [
+            "access denied",
+            "captcha",
+            "verify you are human",
+            "security check",
+            "temporarily unavailable",
+            "sign in to continue"
+        ]
+        if generalMarkers.contains(where: text.contains) {
+            return true
+        }
+
+        if host.contains("linkedin.com") {
+            let linkedInMarkers = [
+                "join linkedin",
+                "sign in to view more",
+                "linkedin login"
+            ]
+            return linkedInMarkers.contains(where: text.contains)
+        }
+
+        if host.contains("glassdoor.com") || host.contains("teamblind.com") {
+            let gatedMarkers = [
+                "continue to glassdoor",
+                "sign in to continue",
+                "please create an account"
+            ]
+            return gatedMarkers.contains(where: text.contains)
+        }
+
+        return false
+    }
+
+    private static func domainMatchesCompanyWebsite(host: String, company: CompanyProfile) -> Bool {
+        guard let websiteURL = company.websiteURL,
+              let companyDomain = URLHelpers.extractDomain(from: websiteURL)?.lowercased(),
+              !host.isEmpty else {
+            return false
+        }
+        return host.contains(companyDomain)
+    }
+
+    static func inferSourceKind(
+        from urlString: String,
+        fallback: CompanyResearchSourceKind
+    ) -> CompanyResearchSourceKind {
+        let host = URL(string: urlString)?.host?.lowercased() ?? ""
+        if host.contains("linkedin.com") {
+            return .linkedIn
+        }
+        if host.contains("glassdoor.com") {
+            return .glassdoor
+        }
+        if host.contains("levels.fyi") {
+            return .levelsFYI
+        }
+        if host.contains("teamblind.com") {
+            return .teamBlind
+        }
+        return fallback
+    }
+
+    static func normalizeEvidenceText(_ text: String) -> String {
+        var normalized = text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        normalized = normalized.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized.count > 5000 {
+            normalized = String(normalized.prefix(5000))
+        }
+        return normalized
+    }
+
+    private static func blockedFetchStatus(for error: Error) -> CompanyResearchFetchStatus {
+        let description = error.localizedDescription.lowercased()
+        if description.contains("http 999") || description.contains("rate limited") || description.contains("unauthorized") {
+            return .blocked
+        }
+        return .failed
+    }
+
+    private static func blockedValidationStatus(for error: Error) -> ResearchValidationStatus {
+        let description = error.localizedDescription.lowercased()
+        if description.contains("http 999") || description.contains("rate limited") || description.contains("unauthorized") {
+            return .blocked
+        }
+        return .invalid
+    }
+
+    private static func makePayload(
+        title: String,
+        urlString: String,
+        resolvedURLString: String?,
+        sourceKind: CompanyResearchSourceKind,
+        acquisitionMethod: ResearchAcquisitionMethod,
+        fetchStatus: CompanyResearchFetchStatus,
+        validationStatus: ResearchValidationStatus,
+        validationReason: String?,
+        confidence: ResearchConfidence?,
+        excerptText: String?,
+        fetchedText: String?,
+        errorMessage: String?,
+        citationPayload: String?,
+        orderIndex: Int,
+        fetchedAt: Date
+    ) -> CompanyResearchSourcePayload {
+        let excerpt = excerptText.map { String($0.prefix(500)) }
+        return CompanyResearchSourcePayload(
+            title: title,
+            urlString: urlString,
+            sourceKind: sourceKind,
+            fetchStatus: fetchStatus,
+            contentExcerpt: excerpt,
+            fetchedText: fetchedText,
+            errorMessage: errorMessage,
+            orderIndex: orderIndex,
+            resolvedURLString: resolvedURLString,
+            validationStatus: validationStatus,
+            acquisitionMethod: acquisitionMethod,
+            validationReason: validationReason,
+            confidence: confidence,
+            citationPayload: citationPayload,
+            fetchedAt: fetchedAt,
+            validatedAt: fetchedAt
+        )
+    }
+
+    private static func deduplicateSourcePayloads(
+        _ payloads: [CompanyResearchSourcePayload]
+    ) -> [CompanyResearchSourcePayload] {
+        var bestByURL: [String: CompanyResearchSourcePayload] = [:]
+
+        for payload in payloads {
+            let key = (payload.resolvedURLString ?? payload.urlString).lowercased()
+            guard !key.isEmpty else { continue }
+
+            if let existing = bestByURL[key] {
+                if score(payload) > score(existing) {
+                    bestByURL[key] = payload
+                }
+            } else {
+                bestByURL[key] = payload
+            }
+        }
+
+        return bestByURL.values.sorted { lhs, rhs in
+            if lhs.orderIndex != rhs.orderIndex {
+                return lhs.orderIndex < rhs.orderIndex
+            }
+            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        }
+    }
+
+    private static func score(_ payload: CompanyResearchSourcePayload) -> Int {
+        let statusScore: Int
+        switch payload.validationStatus {
+        case .verified:
+            statusScore = 5
+        case .manual:
+            statusScore = 4
+        case .partial:
+            statusScore = 3
+        case .blocked:
+            statusScore = 2
+        case .invalid:
+            statusScore = 1
+        case .skipped:
+            statusScore = 0
+        }
+
+        let confidenceScore: Int
+        switch payload.confidence {
+        case .high:
+            confidenceScore = 3
+        case .medium:
+            confidenceScore = 2
+        case .low:
+            confidenceScore = 1
+        case nil:
+            confidenceScore = 0
+        }
+
+        return statusScore * 10 + confidenceScore
+    }
+
+    static func runStatus(
+        for sourcePayloads: [CompanyResearchSourcePayload],
+        summary: String?
+    ) -> ResearchRunStatus {
+        let hasVerified = sourcePayloads.contains { $0.validationStatus == .verified || $0.validationStatus == .manual }
+        let hasAnyProblem = sourcePayloads.contains {
+            $0.validationStatus == .blocked || $0.validationStatus == .invalid || $0.validationStatus == .partial
+        }
+        let hasSummary = summary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+
+        if !hasVerified || !hasSummary {
+            return .failed
+        }
+        return hasAnyProblem ? .partial : .succeeded
+    }
+
+    private static func confidenceNote(for sourcePayloads: [CompanyResearchSourcePayload]) -> String {
+        let verifiedCount = sourcePayloads.filter { $0.validationStatus == .verified || $0.validationStatus == .manual }.count
+        let partialCount = sourcePayloads.filter { $0.validationStatus == .partial }.count
+
+        if verifiedCount >= 3 {
+            return "Built from multiple validated sources."
+        }
+        if verifiedCount >= 1 && partialCount > 0 {
+            return "Built from limited verified evidence with some blocked or thin sources."
+        }
+        if verifiedCount >= 1 {
+            return "Built from a narrow source set. Treat details as directional."
+        }
+        return "No validated source content was available."
+    }
+
+    private static func bestURL(
+        parsedURL: String?,
+        sourceKind: CompanyResearchSourceKind,
+        sourcePayloads: [CompanyResearchSourcePayload]
+    ) -> String? {
+        CompanyProfile.normalizedURLString(parsedURL)
+            ?? verifiedSourceURL(of: sourceKind, in: sourcePayloads)
+    }
+
+    private static func verifiedSourceURL(
+        of sourceKind: CompanyResearchSourceKind,
+        in sourcePayloads: [CompanyResearchSourcePayload]
+    ) -> String? {
+        sourcePayloads.first(where: {
+            $0.sourceKind == sourceKind &&
+            ($0.validationStatus == .verified || $0.validationStatus == .partial)
+        }).map { $0.resolvedURLString ?? $0.urlString }
+    }
+
+    private static func siteRootURL(for domain: String?) -> String? {
+        guard let domain, !domain.isEmpty else { return nil }
+        return "https://www.\(domain)"
     }
 
     private static func stripMarkdownFences(from text: String) -> String {
@@ -554,6 +1224,10 @@ public enum CompanyResearchService {
         }
     }
 
+    private static let providerSearchSystemPrompt = """
+    Search the web for cited company evidence. Prefer official company pages and trustworthy platform pages. Return concise evidence with citations.
+    """
+
     private static let systemPrompt = """
     You are an assistant that prepares structured company research for a job search workspace.
 
@@ -568,6 +1242,7 @@ public enum CompanyResearchService {
       "sizeBand": "startup" | "small" | "midsize" | "enterprise" | null,
       "headquarters": string | null,
       "summary": string | null,
+      "summaryConfidenceNote": string | null,
       "salaryFindings": [
         {
           "roleTitle": string,
@@ -586,11 +1261,12 @@ public enum CompanyResearchService {
     }
 
     Rules:
-    - Use only the provided source text. If a field is unknown, return null.
-    - Summary should be 120-220 words and mention source uncertainty when evidence is thin.
-    - Salary findings should only be included when the source text supports the range.
-    - Preserve source URLs exactly when present in the source list.
-    - Do not invent Glassdoor, Levels.fyi, TeamBlind, or LinkedIn URLs unless they are clearly present in the provided content or source list.
+    - Use only the provided validated evidence. If a field is unknown, return null.
+    - Every summary claim must be supported by the supplied evidence.
+    - Summary should be 120-220 words and explicitly mention uncertainty when the evidence is thin.
+    - Salary findings should only be included when the evidence clearly supports the range.
+    - Preserve source URLs exactly when present in the evidence.
+    - Do not invent Glassdoor, Levels.fyi, TeamBlind, or LinkedIn URLs unless they are clearly present in the evidence.
     - Output raw JSON only.
     """
 }

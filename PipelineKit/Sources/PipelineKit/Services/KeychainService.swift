@@ -13,6 +13,7 @@ public final class KeychainService {
     public enum KeychainError: LocalizedError {
         case itemNotFound
         case duplicateItem
+        case authenticationFailed
         case unexpectedStatus(OSStatus)
         case encodingError
 
@@ -22,6 +23,8 @@ public final class KeychainService {
                 return "Item not found in Keychain"
             case .duplicateItem:
                 return "Item already exists in Keychain"
+            case .authenticationFailed:
+                return "Pipeline could not unlock or read the saved API key from Keychain. Unlock your login keychain or re-save the API key in Settings."
             case .unexpectedStatus(let status):
                 return "Keychain error: \(status)"
             case .encodingError:
@@ -110,16 +113,29 @@ public final class KeychainService {
         "\(provider.keychainKey).keys"
     }
 
-    private func baseQuery(for provider: AIProvider, account: String) -> [String: Any] {
+    private func baseQuery(for provider: AIProvider, account: String, includeAccessGroup: Bool) -> [String: Any] {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: account,
             kSecAttrService as String: Constants.App.bundleID,
         ]
-        #if !targetEnvironment(simulator)
-        query[kSecAttrAccessGroup as String] = KeychainService.accessGroup
-        #endif
+        if includeAccessGroup {
+            #if !targetEnvironment(simulator)
+            query[kSecAttrAccessGroup as String] = KeychainService.accessGroup
+            #endif
+        }
         return query
+    }
+
+    private func queryVariants(for provider: AIProvider, account: String) -> [[String: Any]] {
+        #if targetEnvironment(simulator)
+        return [baseQuery(for: provider, account: account, includeAccessGroup: false)]
+        #else
+        return [
+            baseQuery(for: provider, account: account, includeAccessGroup: true),
+            baseQuery(for: provider, account: account, includeAccessGroup: false)
+        ]
+        #endif
     }
 
     private func normalizeAPIKeys(_ apiKeys: [String]) -> [String] {
@@ -161,45 +177,95 @@ public final class KeychainService {
     }
 
     private func readData(for provider: AIProvider, account: String) throws -> Data? {
-        var query = baseQuery(for: provider, account: account)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var lastAuthenticationFailure = false
 
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        for baseQuery in queryVariants(for: provider, account: account) {
+            var query = baseQuery
+            query[kSecReturnData as String] = true
+            query[kSecMatchLimit as String] = kSecMatchLimitOne
 
-        if status == errSecItemNotFound {
-            return nil
+            var result: AnyObject?
+            let status = SecItemCopyMatching(query as CFDictionary, &result)
+
+            if status == errSecItemNotFound {
+                continue
+            }
+
+            if status == errSecAuthFailed {
+                lastAuthenticationFailure = true
+                continue
+            }
+
+            guard status == errSecSuccess else {
+                throw KeychainError.unexpectedStatus(status)
+            }
+
+            guard let data = result as? Data else {
+                throw KeychainError.encodingError
+            }
+
+            return data
         }
 
-        guard status == errSecSuccess else {
-            throw KeychainError.unexpectedStatus(status)
+        if lastAuthenticationFailure {
+            throw KeychainError.authenticationFailed
         }
 
-        guard let data = result as? Data else {
-            throw KeychainError.encodingError
-        }
-
-        return data
+        return nil
     }
 
     private func writeData(_ data: Data, for provider: AIProvider, account: String) throws {
-        let query = baseQuery(for: provider, account: account)
-        _ = SecItemDelete(query as CFDictionary)
+        var lastStatus: OSStatus?
 
-        var addQuery = query
-        addQuery[kSecValueData as String] = data
-        let status = SecItemAdd(addQuery as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw KeychainError.unexpectedStatus(status)
+        for query in queryVariants(for: provider, account: account) {
+            _ = SecItemDelete(query as CFDictionary)
+
+            var addQuery = query
+            addQuery[kSecValueData as String] = data
+            let status = SecItemAdd(addQuery as CFDictionary, nil)
+            if status == errSecSuccess {
+                return
+            }
+
+            lastStatus = status
+            if !shouldFallbackFromGroupedKeychainStatus(status) {
+                break
+            }
+        }
+
+        if lastStatus == errSecAuthFailed {
+            throw KeychainError.authenticationFailed
+        }
+        if let lastStatus {
+            throw KeychainError.unexpectedStatus(lastStatus)
         }
     }
 
     private func deleteData(for provider: AIProvider, account: String) throws {
-        let status = SecItemDelete(baseQuery(for: provider, account: account) as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
+        var lastStatus: OSStatus = errSecSuccess
+        var sawAuthenticationFailure = false
+
+        for query in queryVariants(for: provider, account: account) {
+            let status = SecItemDelete(query as CFDictionary)
+            if status == errSecSuccess || status == errSecItemNotFound {
+                lastStatus = status
+                continue
+            }
+            if status == errSecAuthFailed {
+                sawAuthenticationFailure = true
+                lastStatus = status
+                continue
+            }
             throw KeychainError.unexpectedStatus(status)
         }
+
+        if sawAuthenticationFailure && lastStatus == errSecAuthFailed {
+            throw KeychainError.authenticationFailed
+        }
+    }
+
+    private func shouldFallbackFromGroupedKeychainStatus(_ status: OSStatus) -> Bool {
+        status == errSecAuthFailed || status == errSecMissingEntitlement
     }
 
     public func hasAPIKey(for provider: AIProvider) -> Bool {

@@ -117,6 +117,107 @@ import Testing
     #expect(company.sortedSalarySnapshots.first?.sourceName == "Levels.fyi")
 }
 
+@Test func companyResearchValidationRejectsSearchInterstitialPages() {
+    let company = CompanyProfile(name: "Moloco")
+    let validation = CompanyResearchService.validateEvidence(
+        text: CompanyResearchService.normalizeEvidenceText(
+            "Google Search Please click here if you are not redirected within a few seconds. Send feedback."
+        ),
+        company: company,
+        sourceKind: .search,
+        requestedURLString: "https://www.google.com/search?q=moloco",
+        resolvedURLString: "https://www.google.com/search?q=moloco",
+        acquisitionMethod: .urlSession,
+        fallbackTitle: "Company Search"
+    )
+
+    #expect(validation.validationStatus == .invalid)
+    #expect(validation.fetchStatus == .invalid)
+}
+
+@Test func companyResearchValidationMarksLinkedInLoginWallsBlocked() {
+    let company = CompanyProfile(name: "Moloco")
+    let validation = CompanyResearchService.validateEvidence(
+        text: CompanyResearchService.normalizeEvidenceText(
+            "Join LinkedIn Sign in to view more about Moloco and open jobs."
+        ),
+        company: company,
+        sourceKind: .linkedIn,
+        requestedURLString: "https://www.linkedin.com/company/moloco",
+        resolvedURLString: "https://www.linkedin.com/company/moloco",
+        acquisitionMethod: .urlSession,
+        fallbackTitle: "LinkedIn"
+    )
+
+    #expect(validation.validationStatus == .blocked)
+    #expect(validation.fetchStatus == .blocked)
+}
+
+@Test func companyResearchRunStatusReturnsPartialForMixedEvidence() {
+    let runStatus = CompanyResearchService.runStatus(
+        for: [
+            CompanyResearchSourcePayload(
+                title: "Company Website",
+                urlString: "https://moloco.com",
+                sourceKind: .companyWebsite,
+                fetchStatus: .verified,
+                contentExcerpt: "Moloco builds machine learning advertising products.",
+                fetchedText: "Moloco builds machine learning advertising products for app marketers.",
+                errorMessage: nil,
+                orderIndex: 0,
+                resolvedURLString: "https://moloco.com",
+                validationStatus: .verified,
+                acquisitionMethod: .urlSession,
+                validationReason: "Validated company-specific evidence.",
+                confidence: .high
+            ),
+            CompanyResearchSourcePayload(
+                title: "LinkedIn",
+                urlString: "https://www.linkedin.com/company/moloco",
+                sourceKind: .linkedIn,
+                fetchStatus: .blocked,
+                contentExcerpt: nil,
+                fetchedText: nil,
+                errorMessage: "HTTP 999",
+                orderIndex: 1,
+                resolvedURLString: nil,
+                validationStatus: .blocked,
+                acquisitionMethod: .urlSession,
+                validationReason: "The source appears blocked, gated, or anti-bot protected.",
+                confidence: .low
+            )
+        ],
+        summary: "Moloco is an ad-tech company focused on machine learning."
+    )
+
+    #expect(runStatus == .partial)
+}
+
+@Test func companyResearchRunStatusFailsWithoutVerifiedEvidence() {
+    let runStatus = CompanyResearchService.runStatus(
+        for: [
+            CompanyResearchSourcePayload(
+                title: "Company Search",
+                urlString: "https://www.google.com/search?q=moloco",
+                sourceKind: .search,
+                fetchStatus: .invalid,
+                contentExcerpt: nil,
+                fetchedText: nil,
+                errorMessage: "Search interstitial",
+                orderIndex: 0,
+                resolvedURLString: nil,
+                validationStatus: .invalid,
+                acquisitionMethod: .urlSession,
+                validationReason: "Search results or redirect page, not a usable source page.",
+                confidence: .low
+            )
+        ],
+        summary: nil
+    )
+
+    #expect(runStatus == .failed)
+}
+
 @Test func companyCompensationComparisonIncludesInternalAndExternalRows() async throws {
     let company = CompanyProfile(name: "Stripe")
     let current = JobApplication(

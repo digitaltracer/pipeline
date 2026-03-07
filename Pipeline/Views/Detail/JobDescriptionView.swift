@@ -9,6 +9,8 @@ struct JobDescriptionView: View {
     }
 
     let description: String
+    var isDenoising: Bool = false
+    var onDenoise: (() -> Void)? = nil
     @State private var isExpanded = false
 
     private let previewBlockLimit = 4
@@ -60,21 +62,47 @@ struct JobDescriptionView: View {
 
                 Spacer()
 
-                if hasCollapsibleContent {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            isExpanded.toggle()
-                        }
-                    } label: {
-                        Text(isExpanded ? "Show Less" : "Show More")
+                HStack(spacing: 8) {
+                    if let onDenoise {
+                        Button(action: onDenoise) {
+                            HStack(spacing: 6) {
+                                if isDenoising {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                        .tint(DesignSystem.Colors.accent)
+                                } else {
+                                    Image(systemName: "sparkles")
+                                }
+
+                                Text(isDenoising ? "Denoising..." : "Denoise")
+                            }
                             .font(.footnote.weight(.semibold))
                             .foregroundColor(DesignSystem.Colors.accent)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
                             .background(DesignSystem.Colors.accent.opacity(0.12))
                             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isDenoising)
                     }
-                    .buttonStyle(.plain)
+
+                    if hasCollapsibleContent {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isExpanded.toggle()
+                            }
+                        } label: {
+                            Text(isExpanded ? "Show Less" : "Show More")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundColor(DesignSystem.Colors.accent)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(DesignSystem.Colors.accent.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
 

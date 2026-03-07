@@ -32,4 +32,29 @@ public enum AIServicePrompts {
         \(webContent)
         """
     }
+
+    public static let jobDescriptionDenoisePrompt = """
+    You are cleaning an imported job description that may contain browser-extension noise, page chrome, tracking fragments, or unrelated copied text.
+
+    Return exactly one valid JSON object with this schema:
+    {
+      "cleanedDescription": string
+    }
+
+    Rules:
+    - Keep only the actual job posting content.
+    - Remove extension/browser UI text, duplicate fragments, cookie/login banners, navigation labels, tracking noise, and unrelated footer/header content.
+    - Preserve the employer's original meaning, wording, section order, bullet structure, compensation, location, qualifications, and responsibilities whenever they are part of the real posting.
+    - Do not summarize, editorialize, or rewrite for style beyond the minimum cleanup needed to remove noise.
+    - Keep line breaks and bullets where they help readability.
+    - Output raw JSON only. No markdown fences. No prose outside the JSON.
+    """
+
+    public static func jobDescriptionDenoiseUserPrompt(description: String) -> String {
+        """
+        Clean this imported job description and remove unrelated noise while preserving the actual posting:
+
+        \(description)
+        """
+    }
 }
