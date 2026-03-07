@@ -6,12 +6,17 @@ public final class ApplicationActivity {
     public var id: UUID = UUID()
     private var kindRawValue: String = ApplicationActivityKind.note.rawValue
     private var interviewStageRawValue: String?
+    public var fromStatusRawValue: String?
+    public var toStatusRawValue: String?
+    public var fromFollowUpDate: Date?
+    public var toFollowUpDate: Date?
     public var occurredAt: Date = Date()
     public var notes: String?
     public var rating: Int?
     public var emailSubject: String?
     public var emailBodySnapshot: String?
     public var legacyInterviewLogID: UUID?
+    public var isSystemGenerated: Bool = false
     public var createdAt: Date = Date()
     public var updatedAt: Date = Date()
 
@@ -33,6 +38,26 @@ public final class ApplicationActivity {
         set { interviewStageRawValue = newValue?.rawValue }
     }
 
+    public var fromStatus: ApplicationStatus? {
+        get {
+            guard let fromStatusRawValue,
+                  !fromStatusRawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return nil }
+            return ApplicationStatus(rawValue: fromStatusRawValue)
+        }
+        set { fromStatusRawValue = newValue?.rawValue }
+    }
+
+    public var toStatus: ApplicationStatus? {
+        get {
+            guard let toStatusRawValue,
+                  !toStatusRawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return nil }
+            return ApplicationStatus(rawValue: toStatusRawValue)
+        }
+        set { toStatusRawValue = newValue?.rawValue }
+    }
+
     public init(
         id: UUID = UUID(),
         kind: ApplicationActivityKind,
@@ -45,6 +70,11 @@ public final class ApplicationActivity {
         contact: Contact? = nil,
         interviewStage: InterviewStage? = nil,
         legacyInterviewLogID: UUID? = nil,
+        fromStatus: ApplicationStatus? = nil,
+        toStatus: ApplicationStatus? = nil,
+        fromFollowUpDate: Date? = nil,
+        toFollowUpDate: Date? = nil,
+        isSystemGenerated: Bool = false,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -59,6 +89,11 @@ public final class ApplicationActivity {
         self.contact = contact
         self.interviewStageRawValue = interviewStage?.rawValue
         self.legacyInterviewLogID = legacyInterviewLogID
+        self.fromStatusRawValue = fromStatus?.rawValue
+        self.toStatusRawValue = toStatus?.rawValue
+        self.fromFollowUpDate = fromFollowUpDate
+        self.toFollowUpDate = toFollowUpDate
+        self.isSystemGenerated = isSystemGenerated
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -68,8 +103,25 @@ public final class ApplicationActivity {
         case .interview:
             return interviewStage?.displayName ?? kind.displayName
         case .email:
-            return emailSubject?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? emailSubject! : kind.displayName
-        default:
+            if let emailSubject,
+               !emailSubject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return emailSubject
+            }
+            return kind.displayName
+        case .statusChange:
+            if let toStatus {
+                return "Status changed to \(toStatus.displayName)"
+            }
+            return "Status updated"
+        case .followUp:
+            if toFollowUpDate != nil {
+                return fromFollowUpDate == nil ? "Follow-up scheduled" : "Follow-up rescheduled"
+            }
+            if fromFollowUpDate != nil {
+                return "Follow-up cleared"
+            }
+            return "Follow-up updated"
+        case .call, .text, .note:
             return kind.displayName
         }
     }
@@ -78,6 +130,22 @@ public final class ApplicationActivity {
         switch kind {
         case .email:
             return emailBodySnapshot
+        case .statusChange:
+            if let fromStatus, let toStatus {
+                return "\(fromStatus.displayName) -> \(toStatus.displayName)"
+            }
+            return toStatus?.displayName
+        case .followUp:
+            switch (fromFollowUpDate, toFollowUpDate) {
+            case let (nil, toDate?):
+                return "Set for \(toDate.formatted(date: .abbreviated, time: .omitted))"
+            case let (fromDate?, toDate?):
+                return "\(fromDate.formatted(date: .abbreviated, time: .omitted)) -> \(toDate.formatted(date: .abbreviated, time: .omitted))"
+            case let (fromDate?, nil):
+                return "Previously \(fromDate.formatted(date: .abbreviated, time: .omitted))"
+            case (nil, nil):
+                return nil
+            }
         default:
             return notes
         }

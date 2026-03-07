@@ -201,15 +201,45 @@ final class AddEditApplicationViewModel {
         guard isValid else { throw SaveError.validationFailed(validationErrors) }
 
         let savedApplication: JobApplication
-        if isEditing, let app = editingApplication {
-            try updateApplication(app, context: context)
-            try context.save()
-            savedApplication = app
-        } else {
-            let app = try createApplication(context: context)
-            context.insert(app)
-            try context.save()
-            savedApplication = app
+        let saveTimestamp = Date()
+
+        do {
+            if isEditing, let app = editingApplication {
+                let previousStatus = app.status
+                let previousFollowUpDate = app.nextFollowUpDate
+
+                try updateApplication(app, context: context)
+                ApplicationTimelineRecorderService.recordStatusChange(
+                    for: app,
+                    from: previousStatus,
+                    to: app.status,
+                    occurredAt: saveTimestamp,
+                    in: context
+                )
+                ApplicationTimelineRecorderService.recordFollowUpChange(
+                    for: app,
+                    from: previousFollowUpDate,
+                    to: app.nextFollowUpDate,
+                    occurredAt: saveTimestamp,
+                    in: context
+                )
+
+                try context.save()
+                savedApplication = app
+            } else {
+                let app = try createApplication(context: context)
+                context.insert(app)
+                ApplicationTimelineRecorderService.seedInitialHistory(
+                    for: app,
+                    occurredAt: saveTimestamp,
+                    in: context
+                )
+                try context.save()
+                savedApplication = app
+            }
+        } catch {
+            context.rollback()
+            throw error
         }
 
         Task {

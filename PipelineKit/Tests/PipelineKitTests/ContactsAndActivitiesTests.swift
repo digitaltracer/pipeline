@@ -169,6 +169,253 @@ import Testing
     #expect(Set(contacts.compactMap(\.companyName)) == ["Apple", "Google"])
 }
 
+@Test func overviewMarkdownPersistsOnApplication() throws {
+    let container = try makeContactsContainer()
+    let context = ModelContext(container)
+
+    let application = JobApplication(
+        companyName: "Notion",
+        role: "iOS Engineer",
+        location: "Remote",
+        overviewMarkdown: """
+        ## Recruiter context
+        - Warm intro from Dana
+        - Team is hiring for platform work
+        """
+    )
+
+    context.insert(application)
+    try context.save()
+
+    let fetched = try context.fetch(FetchDescriptor<JobApplication>())
+    #expect(fetched.count == 1)
+    #expect(fetched.first?.overviewMarkdown?.contains("Recruiter context") == true)
+}
+
+@Test func statusChangeRecorderCreatesStructuredActivityAndSkipsDuplicates() throws {
+    let container = try makeContactsContainer()
+    let context = ModelContext(container)
+
+    let application = JobApplication(
+        companyName: "Figma",
+        role: "iOS Engineer",
+        location: "Remote"
+    )
+    context.insert(application)
+
+    ApplicationTimelineRecorderService.recordStatusChange(
+        for: application,
+        from: .saved,
+        to: .applied,
+        occurredAt: Date(timeIntervalSinceReferenceDate: 10),
+        in: context
+    )
+    ApplicationTimelineRecorderService.recordStatusChange(
+        for: application,
+        from: .applied,
+        to: .applied,
+        occurredAt: Date(timeIntervalSinceReferenceDate: 20),
+        in: context
+    )
+
+    try context.save()
+
+    let activities = try context.fetch(FetchDescriptor<ApplicationActivity>())
+    #expect(activities.count == 1)
+    #expect(activities.first?.kind == .statusChange)
+    #expect(activities.first?.fromStatus == .saved)
+    #expect(activities.first?.toStatus == .applied)
+    #expect(activities.first?.isSystemGenerated == true)
+}
+
+@Test func followUpRecorderTracksSetRescheduleAndClear() throws {
+    let container = try makeContactsContainer()
+    let context = ModelContext(container)
+
+    let application = JobApplication(
+        companyName: "Linear",
+        role: "iOS Engineer",
+        location: "Remote"
+    )
+    context.insert(application)
+
+    let firstDate = Date(timeIntervalSinceReferenceDate: 100)
+    let secondDate = Date(timeIntervalSinceReferenceDate: 200)
+
+    ApplicationTimelineRecorderService.recordFollowUpChange(
+        for: application,
+        from: nil,
+        to: firstDate,
+        occurredAt: Date(timeIntervalSinceReferenceDate: 10),
+        in: context
+    )
+    ApplicationTimelineRecorderService.recordFollowUpChange(
+        for: application,
+        from: firstDate,
+        to: secondDate,
+        occurredAt: Date(timeIntervalSinceReferenceDate: 20),
+        in: context
+    )
+    ApplicationTimelineRecorderService.recordFollowUpChange(
+        for: application,
+        from: secondDate,
+        to: nil,
+        occurredAt: Date(timeIntervalSinceReferenceDate: 30),
+        in: context
+    )
+
+    try context.save()
+
+    let activities = application.sortedActivities
+    #expect(activities.count == 3)
+    #expect(activities[0].kind == .followUp)
+    #expect(activities[0].fromFollowUpDate == secondDate)
+    #expect(activities[0].toFollowUpDate == nil)
+    #expect(activities[1].fromFollowUpDate == firstDate)
+    #expect(activities[1].toFollowUpDate == secondDate)
+    #expect(activities[2].fromFollowUpDate == nil)
+    #expect(activities[2].toFollowUpDate == firstDate)
+}
+
+@Test func initialHistorySeedingCreatesStatusAndFollowUpEvents() throws {
+    let container = try makeContactsContainer()
+    let context = ModelContext(container)
+
+    let followUpDate = Date(timeIntervalSinceReferenceDate: 300)
+    let application = JobApplication(
+        companyName: "OpenAI",
+        role: "Product Engineer",
+        location: "San Francisco",
+        status: .interviewing,
+        nextFollowUpDate: followUpDate
+    )
+
+    context.insert(application)
+    ApplicationTimelineRecorderService.seedInitialHistory(
+        for: application,
+        occurredAt: Date(timeIntervalSinceReferenceDate: 10),
+        in: context
+    )
+    try context.save()
+
+    let activities = application.sortedActivities
+    #expect(activities.count == 2)
+    #expect(Set(activities.map(\.kind)) == [.statusChange, .followUp])
+    #expect(activities.first(where: { $0.kind == .statusChange })?.toStatus == .interviewing)
+    #expect(activities.first(where: { $0.kind == .followUp })?.toFollowUpDate == followUpDate)
+}
+
+@Test func sortedActivitiesOrderMixedManualAndSystemEntriesChronologically() throws {
+    let container = try makeContactsContainer()
+    let context = ModelContext(container)
+
+    let application = JobApplication(
+        companyName: "Ramp",
+        role: "iOS Engineer",
+        location: "New York"
+    )
+    context.insert(application)
+
+    let note = ApplicationActivity(
+        kind: .note,
+        occurredAt: Date(timeIntervalSinceReferenceDate: 50),
+        notes: "Manual note",
+        application: application
+    )
+    context.insert(note)
+    application.addActivity(note)
+
+    ApplicationTimelineRecorderService.recordStatusChange(
+        for: application,
+        from: .saved,
+        to: .applied,
+        occurredAt: Date(timeIntervalSinceReferenceDate: 100),
+        in: context
+    )
+    ApplicationTimelineRecorderService.recordFollowUpChange(
+        for: application,
+        from: nil,
+        to: Date(timeIntervalSinceReferenceDate: 400),
+        occurredAt: Date(timeIntervalSinceReferenceDate: 150),
+        in: context
+    )
+
+    try context.save()
+
+    let activities = application.sortedActivities
+    #expect(activities.map(\.kind) == [.followUp, .statusChange, .note])
+}
+
+@Test func applicationTasksPersistPriorityCompletionAndOrdering() throws {
+    let container = try makeContactsContainer()
+    let context = ModelContext(container)
+
+    let application = JobApplication(
+        companyName: "Vercel",
+        role: "Product Engineer",
+        location: "Remote"
+    )
+    context.insert(application)
+
+    let datedTask = ApplicationTask(
+        title: "Prepare STAR stories",
+        notes: "Focus on cross-functional projects.",
+        dueDate: Date(timeIntervalSinceReferenceDate: 200),
+        priority: .high,
+        application: application
+    )
+    let backlogTask = ApplicationTask(
+        title: "Research company values",
+        priority: .medium,
+        application: application
+    )
+
+    context.insert(datedTask)
+    context.insert(backlogTask)
+    application.addTask(datedTask)
+    application.addTask(backlogTask)
+
+    datedTask.setCompleted(true)
+    backlogTask.priority = .low
+
+    try context.save()
+
+    let fetchedTasks = try context.fetch(FetchDescriptor<ApplicationTask>())
+    #expect(fetchedTasks.count == 2)
+    #expect(datedTask.isCompleted == true)
+    #expect(datedTask.completedAt != nil)
+    #expect(backlogTask.priority == .low)
+    #expect(application.sortedTasks.first?.id == backlogTask.id)
+    #expect(application.sortedTasks.last?.id == datedTask.id)
+}
+
+@Test func deletingApplicationCascadesTasks() throws {
+    let container = try makeContactsContainer()
+    let context = ModelContext(container)
+
+    let application = JobApplication(
+        companyName: "Anthropic",
+        role: "iOS Engineer",
+        location: "San Francisco"
+    )
+    let task = ApplicationTask(
+        title: "Send thank-you note",
+        dueDate: Date(timeIntervalSinceReferenceDate: 100),
+        application: application
+    )
+
+    context.insert(application)
+    context.insert(task)
+    application.addTask(task)
+    try context.save()
+
+    context.delete(application)
+    try context.save()
+
+    let remainingTasks = try context.fetch(FetchDescriptor<ApplicationTask>())
+    #expect(remainingTasks.isEmpty)
+}
+
 private func makeContactsContainer() throws -> ModelContainer {
     let schema = Schema([
         JobApplication.self,
@@ -177,7 +424,8 @@ private func makeContactsContainer() throws -> ModelContainer {
         InterviewLog.self,
         Contact.self,
         ApplicationContactLink.self,
-        ApplicationActivity.self
+        ApplicationActivity.self,
+        ApplicationTask.self
     ])
     let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
     return try ModelContainer(for: schema, configurations: [configuration])

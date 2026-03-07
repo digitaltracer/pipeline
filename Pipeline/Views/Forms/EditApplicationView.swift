@@ -130,6 +130,7 @@ struct EditApplicationView: View {
             Contact.self,
             ApplicationContactLink.self,
             ApplicationActivity.self,
+            ApplicationTask.self,
             ApplicationAttachment.self
         ],
         inMemory: true

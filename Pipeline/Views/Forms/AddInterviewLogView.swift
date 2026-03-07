@@ -352,7 +352,14 @@ struct AddInterviewLogView: View {
 
         // Ensure status is interviewing
         if application.status == .applied || application.status == .saved {
+            let previousStatus = application.status
             application.status = .interviewing
+            ApplicationTimelineRecorderService.recordStatusChange(
+                for: application,
+                from: previousStatus,
+                to: application.status,
+                in: modelContext
+            )
         }
 
         do {
@@ -382,6 +389,7 @@ struct AddInterviewLogView: View {
             Contact.self,
             ApplicationContactLink.self,
             ApplicationActivity.self,
+            ApplicationTask.self,
             ApplicationAttachment.self
         ],
         inMemory: true

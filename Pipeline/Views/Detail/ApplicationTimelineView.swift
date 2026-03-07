@@ -7,7 +7,7 @@ struct ApplicationTimelineView: View {
     var onEditActivity: ((ApplicationActivity) -> Void)? = nil
     var onDeleteActivity: ((ApplicationActivity) -> Void)? = nil
     var emptyTitle: String = "No activity yet"
-    var emptyDescription: String = "Log interviews, calls, emails, texts, and notes to build a full timeline for this application."
+    var emptyDescription: String = "Log interviews, calls, emails, texts, and notes to build a full timeline for this application. Status and follow-up changes will appear automatically."
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -19,7 +19,7 @@ struct ApplicationTimelineView: View {
 
                 if let onAddActivity {
                     Menu {
-                        ForEach(ApplicationActivityKind.allCases) { kind in
+                        ForEach(ApplicationActivityKind.manualCases) { kind in
                             Button {
                                 onAddActivity(kind)
                             } label: {
@@ -122,10 +122,10 @@ private struct ActivityRowView: View {
                 Text(summary)
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .lineLimit(4)
+                    .lineLimit(activity.isSystemGenerated ? nil : 4)
             }
 
-            if onEdit != nil || onDelete != nil {
+            if !activity.isSystemGenerated && (onEdit != nil || onDelete != nil) {
                 HStack {
                     Spacer()
 

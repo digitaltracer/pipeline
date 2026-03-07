@@ -46,7 +46,7 @@ struct ActivityEditorView: View {
             Form {
                 Section("Type") {
                     Picker("Activity Type", selection: $selectedKind) {
-                        ForEach(ApplicationActivityKind.allCases) { kind in
+                        ForEach(ApplicationActivityKind.manualCases) { kind in
                             Label(kind.displayName, systemImage: kind.icon)
                                 .tag(kind)
                         }

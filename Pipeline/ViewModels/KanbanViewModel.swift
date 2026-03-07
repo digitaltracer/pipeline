@@ -27,10 +27,17 @@ final class KanbanViewModel {
         }
 
         application.updateTimestamp()
+        ApplicationTimelineRecorderService.recordStatusChange(
+            for: application,
+            from: oldStatus,
+            to: application.status,
+            in: context
+        )
 
         do {
             try context.save()
         } catch {
+            context.rollback()
             print("KanbanViewModel: failed to save after move: \(error)")
         }
     }

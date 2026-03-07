@@ -6,11 +6,14 @@ import PipelineKit
 final class ApplicationDetailViewModel {
     enum SaveValidationError: LocalizedError {
         case emptyActivity
+        case emptyTaskTitle
 
         var errorDescription: String? {
             switch self {
             case .emptyActivity:
                 return "Add some notes or activity details before saving."
+            case .emptyTaskTitle:
+                return "Enter a task title before saving."
             }
         }
     }
@@ -21,6 +24,12 @@ final class ApplicationDetailViewModel {
         let previousStatus = application.status
         application.status = .archived
         application.updateTimestamp()
+        ApplicationTimelineRecorderService.recordStatusChange(
+            for: application,
+            from: previousStatus,
+            to: application.status,
+            in: context
+        )
 
         do {
             try context.save()
@@ -28,7 +37,7 @@ final class ApplicationDetailViewModel {
                 await NotificationService.shared.syncFollowUpReminder(for: application)
             }
         } catch {
-            application.status = previousStatus
+            context.rollback()
             throw error
         }
     }
@@ -46,7 +55,6 @@ final class ApplicationDetailViewModel {
 
     func updateStatus(_ status: ApplicationStatus, for application: JobApplication, context: ModelContext) throws {
         let previousStatus = application.status
-        let previousAppliedDate = application.appliedDate
         application.status = status
         application.updateTimestamp()
 
@@ -60,14 +68,20 @@ final class ApplicationDetailViewModel {
             application.appliedDate = Date()
         }
 
+        ApplicationTimelineRecorderService.recordStatusChange(
+            for: application,
+            from: previousStatus,
+            to: application.status,
+            in: context
+        )
+
         do {
             try context.save()
             Task { @MainActor in
                 await NotificationService.shared.syncFollowUpReminder(for: application)
             }
         } catch {
-            application.status = previousStatus
-            application.appliedDate = previousAppliedDate
+            context.rollback()
             throw error
         }
     }
@@ -96,6 +110,127 @@ final class ApplicationDetailViewModel {
         }
     }
 
+    func saveOverviewMarkdown(_ markdown: String?, for application: JobApplication, context: ModelContext) throws {
+        let previousMarkdown = application.overviewMarkdown
+        application.overviewMarkdown = markdown
+        application.updateTimestamp()
+
+        do {
+            try context.save()
+        } catch {
+            application.overviewMarkdown = previousMarkdown
+            throw error
+        }
+    }
+
+    func saveTask(
+        _ existingTask: ApplicationTask?,
+        title: String,
+        notes: String?,
+        dueDate: Date?,
+        priority: Priority,
+        for application: JobApplication,
+        context: ModelContext
+    ) throws {
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedTitle.isEmpty else { throw SaveValidationError.emptyTaskTitle }
+
+        let task: ApplicationTask
+        if let existingTask {
+            task = existingTask
+        } else {
+            task = ApplicationTask(
+                title: normalizedTitle,
+                notes: notes,
+                dueDate: dueDate,
+                priority: priority,
+                application: application
+            )
+            context.insert(task)
+            application.addTask(task)
+        }
+
+        task.title = normalizedTitle
+        task.notes = notes
+        task.dueDate = dueDate
+        task.priority = priority
+        task.updateTimestamp()
+        application.updateTimestamp()
+
+        do {
+            try context.save()
+            Task { @MainActor in
+                await NotificationService.shared.syncTaskReminder(for: task)
+            }
+        } catch {
+            context.rollback()
+            throw error
+        }
+    }
+
+    func setTaskCompletion(
+        _ isCompleted: Bool,
+        for task: ApplicationTask,
+        in application: JobApplication,
+        context: ModelContext
+    ) throws {
+        task.setCompleted(isCompleted)
+        application.updateTimestamp()
+
+        do {
+            try context.save()
+            Task { @MainActor in
+                await NotificationService.shared.syncTaskReminder(for: task)
+            }
+        } catch {
+            context.rollback()
+            throw error
+        }
+    }
+
+    func deleteTask(_ task: ApplicationTask, from application: JobApplication, context: ModelContext) throws {
+        let taskID = task.id
+        let applicationID = application.id
+
+        context.delete(task)
+        application.tasks?.removeAll(where: { $0.id == taskID })
+        application.updateTimestamp()
+
+        do {
+            try context.save()
+            Task {
+                await NotificationService.shared.removeTaskNotifications(for: taskID, applicationID: applicationID)
+            }
+        } catch {
+            context.rollback()
+            throw error
+        }
+    }
+
+    func clearFollowUp(for application: JobApplication, context: ModelContext) throws {
+        let previousFollowUpDate = application.nextFollowUpDate
+        guard previousFollowUpDate != nil else { return }
+
+        application.nextFollowUpDate = nil
+        application.updateTimestamp()
+        ApplicationTimelineRecorderService.recordFollowUpChange(
+            for: application,
+            from: previousFollowUpDate,
+            to: nil,
+            in: context
+        )
+
+        do {
+            try context.save()
+            Task { @MainActor in
+                await NotificationService.shared.syncFollowUpReminder(for: application)
+            }
+        } catch {
+            context.rollback()
+            throw error
+        }
+    }
+
     func addInterviewLog(_ log: InterviewLog, to application: JobApplication, context: ModelContext) throws {
         application.addInterviewLog(log)
 
@@ -110,7 +245,14 @@ final class ApplicationDetailViewModel {
 
         // Ensure status is interviewing if not already
         if application.status == .applied || application.status == .saved {
+            let previousStatus = application.status
             application.status = .interviewing
+            ApplicationTimelineRecorderService.recordStatusChange(
+                for: application,
+                from: previousStatus,
+                to: application.status,
+                in: context
+            )
         }
 
         do {
@@ -256,7 +398,7 @@ final class ApplicationDetailViewModel {
             )
         }
 
-        syncInterviewState(for: application)
+        syncInterviewState(for: application, context: context)
 
         do {
             try context.save()
@@ -267,10 +409,12 @@ final class ApplicationDetailViewModel {
     }
 
     func deleteActivity(_ activity: ApplicationActivity, from application: JobApplication, context: ModelContext) throws {
+        guard !activity.isSystemGenerated else { return }
+
         context.delete(activity)
         application.activities?.removeAll(where: { $0.id == activity.id })
         application.updateTimestamp()
-        syncInterviewState(for: application)
+        syncInterviewState(for: application, context: context)
 
         do {
             try context.save()
@@ -288,7 +432,7 @@ final class ApplicationDetailViewModel {
             return .interviewer
         case .email, .call, .text:
             return .recruiter
-        case .note:
+        case .note, .statusChange, .followUp:
             return .other
         }
     }
@@ -307,6 +451,8 @@ final class ApplicationDetailViewModel {
             return emailSubject != nil || emailBodySnapshot != nil || notes != nil
         case .call, .text, .note:
             return notes != nil
+        case .statusChange, .followUp:
+            return false
         }
     }
 
@@ -355,7 +501,7 @@ final class ApplicationDetailViewModel {
         return link
     }
 
-    private func syncInterviewState(for application: JobApplication) {
+    private func syncInterviewState(for application: JobApplication, context: ModelContext) {
         let latestInterviewStage = application.sortedActivities
             .filter { $0.kind == .interview }
             .compactMap(\.interviewStage)
@@ -364,8 +510,15 @@ final class ApplicationDetailViewModel {
 
         application.interviewStage = latestInterviewStage
 
-        if latestInterviewStage != nil, application.status == .saved || application.status == .applied {
+        if latestInterviewStage != nil && (application.status == .saved || application.status == .applied) {
+            let previousStatus = application.status
             application.status = .interviewing
+            ApplicationTimelineRecorderService.recordStatusChange(
+                for: application,
+                from: previousStatus,
+                to: application.status,
+                in: context
+            )
         }
     }
 }

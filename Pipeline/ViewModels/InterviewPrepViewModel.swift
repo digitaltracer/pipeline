@@ -62,16 +62,7 @@ final class InterviewPrepViewModel {
             interviewStage = ""
         }
 
-        let notes = application.sortedActivities
-            .compactMap { activity -> String? in
-                switch activity.kind {
-                case .email:
-                    return activity.emailBodySnapshot ?? activity.notes
-                default:
-                    return activity.notes
-                }
-            }
-            .joined(separator: "\n")
+        let notes = notesContext()
 
         do {
             let prepResult = try await settingsViewModel.withAPIKeyWaterfall(for: provider) { apiKey in
@@ -154,5 +145,32 @@ final class InterviewPrepViewModel {
             errorMessage: errorMessage,
             in: modelContext
         )
+    }
+
+    private func notesContext() -> String {
+        var sections: [String] = []
+
+        if let overview = application.overviewMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !overview.isEmpty {
+            sections.append("Overview Notes:\n\(overview)")
+        }
+
+        let activityNotes = application.sortedActivities
+            .filter { !$0.isSystemGenerated }
+            .compactMap { activity -> String? in
+                switch activity.kind {
+                case .email:
+                    return activity.emailBodySnapshot ?? activity.notes
+                default:
+                    return activity.notes
+                }
+            }
+            .joined(separator: "\n")
+
+        if !activityNotes.isEmpty {
+            sections.append("Activity Notes:\n\(activityNotes)")
+        }
+
+        return sections.joined(separator: "\n\n")
     }
 }

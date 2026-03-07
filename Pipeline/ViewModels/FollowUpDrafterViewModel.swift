@@ -34,7 +34,7 @@ final class FollowUpDrafterViewModel {
     var daysSinceLastContact: Int {
         let referenceDate: Date
         if let latestActivity = application.sortedActivities
-            .first {
+            .first(where: isContactActivity) {
             referenceDate = latestActivity.occurredAt
         } else {
             referenceDate = application.updatedAt
@@ -81,16 +81,7 @@ final class FollowUpDrafterViewModel {
             stage = application.status.displayName
         }
 
-        let notes = application.sortedActivities
-            .compactMap { activity -> String? in
-                switch activity.kind {
-                case .email:
-                    return activity.emailBodySnapshot ?? activity.notes
-                default:
-                    return activity.notes
-                }
-            }
-            .joined(separator: "\n")
+        let notes = notesContext()
 
         do {
             let emailResult = try await settingsViewModel.withAPIKeyWaterfall(for: provider) { apiKey in
@@ -172,6 +163,46 @@ final class FollowUpDrafterViewModel {
             URLQueryItem(name: "body", value: editableBody)
         ]
         return components.url
+    }
+
+    private func notesContext() -> String {
+        var sections: [String] = []
+
+        if let overview = application.overviewMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !overview.isEmpty {
+            sections.append("Overview Notes:\n\(overview)")
+        }
+
+        let activityNotes = application.sortedActivities
+            .filter { !$0.isSystemGenerated }
+            .compactMap { activity -> String? in
+                switch activity.kind {
+                case .email:
+                    return activity.emailBodySnapshot ?? activity.notes
+                default:
+                    return activity.notes
+                }
+            }
+            .joined(separator: "\n")
+
+        if !activityNotes.isEmpty {
+            sections.append("Activity Notes:\n\(activityNotes)")
+        }
+
+        return sections.joined(separator: "\n\n")
+    }
+
+    private func isContactActivity(_ activity: ApplicationActivity) -> Bool {
+        guard !activity.isSystemGenerated else { return false }
+
+        switch activity.kind {
+        case .interview, .email, .call, .text:
+            return true
+        case .note:
+            return activity.contact != nil
+        case .statusChange, .followUp:
+            return false
+        }
     }
 
     private func recordUsage(

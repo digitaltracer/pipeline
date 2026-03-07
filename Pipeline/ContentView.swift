@@ -62,6 +62,12 @@ struct ContentView: View {
                 switch selectedDestination {
                 case .dashboard:
                     DashboardView(settingsViewModel: settingsViewModel)
+                case .upcoming:
+                    UpcomingView(
+                        items: UpcomingItem.build(from: applications, searchText: searchText),
+                        selectedApplication: $selectedApplication,
+                        searchText: $searchText
+                    )
                 case .contacts:
                     ContactsListView(
                         contacts: filteredContacts,
@@ -89,6 +95,7 @@ struct ContentView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
                         Button("Dashboard") { selectedDestination = .dashboard }
+                        Button("Upcoming") { selectedDestination = .upcoming }
                         Divider()
                         ForEach(SidebarFilter.allCases) { filter in
                             Button(filter.displayName) {
@@ -160,6 +167,7 @@ struct ContentView: View {
                 Contact.self,
                 ApplicationContactLink.self,
                 ApplicationActivity.self,
+                ApplicationTask.self,
                 ApplicationAttachment.self,
                 ResumeMasterRevision.self,
                 ResumeJobSnapshot.self,

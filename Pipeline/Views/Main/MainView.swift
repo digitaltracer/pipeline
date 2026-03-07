@@ -80,8 +80,16 @@ struct MainView: View {
         contactsViewModel.filterContacts(contacts)
     }
 
+    private var upcomingItems: [UpcomingItem] {
+        UpcomingItem.build(from: applications, searchText: searchText)
+    }
+
+    private var pendingDueItemCount: Int {
+        UpcomingItem.build(from: applications).count
+    }
+
     private var shouldShowApplicationDetail: Bool {
-        isApplicationsDestination && selectedApplication != nil
+        (isApplicationsDestination || selectedDestination == .upcoming) && selectedApplication != nil
     }
 
     private var shouldShowContactDetail: Bool {
@@ -97,6 +105,9 @@ struct MainView: View {
         switch selectedDestination {
         case .dashboard:
             DashboardView(settingsViewModel: settingsViewModel)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        case .upcoming:
+            upcomingColumn
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         case .resume:
             ResumeWorkspaceView()
@@ -197,6 +208,16 @@ struct MainView: View {
         .background(DesignSystem.Colors.contentBackground(colorScheme))
     }
 
+    private var upcomingColumn: some View {
+        UpcomingView(
+            items: upcomingItems,
+            selectedApplication: $selectedApplication,
+            searchText: $searchText
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(DesignSystem.Colors.contentBackground(colorScheme))
+    }
+
     private var sidebarColumn: some View {
         SidebarView(
             selectedDestination: $selectedDestination,
@@ -207,6 +228,7 @@ struct MainView: View {
                 from: applications,
                 includeInAllApplications: allApplicationsInclusionRule
             ),
+            upcomingCount: pendingDueItemCount,
             settingsViewModel: settingsViewModel
         )
         .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
@@ -297,7 +319,7 @@ struct MainView: View {
                 viewModel.selectedFilter = filter
             }
             enforceViewModeAvailability()
-            if newValue.applicationFilter == nil {
+            if newValue.applicationFilter == nil && newValue != .upcoming {
                 closeSelectedApplication()
             }
             if newValue != .contacts {
@@ -431,6 +453,396 @@ struct MainView: View {
     private func enforceViewModeAvailability() {
         if viewMode == .kanban && !isKanbanAvailable {
             viewMode = .grid
+        }
+    }
+}
+
+struct UpcomingView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) private var colorScheme
+
+    let items: [UpcomingItem]
+    @Binding var selectedApplication: JobApplication?
+    @Binding var searchText: String
+
+    @State private var editingTask: ApplicationTask?
+    @State private var actionErrorMessage: String?
+
+    private let viewModel = ApplicationDetailViewModel()
+
+    private var sections: [UpcomingSection] {
+        UpcomingSection.allCases.compactMap { section in
+            let sectionItems = items.filter { $0.section == section }
+            return sectionItems.isEmpty ? nil : section
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Upcoming")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("\(items.count) due item\(items.count == 1 ? "" : "s")")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.top, 20)
+            .padding(.bottom, 12)
+
+            SearchBar(text: $searchText, placeholder: "Search tasks, companies, or roles...")
+                .padding(.horizontal)
+                .padding(.bottom, 12)
+
+            Divider()
+                .overlay(DesignSystem.Colors.divider(colorScheme))
+
+            if items.isEmpty {
+                ContentUnavailableView {
+                    Label("Nothing upcoming", systemImage: "calendar.badge.checkmark")
+                } description: {
+                    Text(searchText.isEmpty ? "Pending tasks with due dates and follow-ups will show up here." : "No matching upcoming items.")
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 20) {
+                        ForEach(sections, id: \.self) { section in
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text(section.title)
+                                    .font(.headline)
+
+                                ForEach(items.filter { $0.section == section }) { item in
+                                    UpcomingItemRow(
+                                        item: item,
+                                        onOpen: {
+                                            selectedApplication = item.application
+                                        },
+                                        onCompleteTask: item.task.map { task in
+                                            {
+                                                do {
+                                                    try viewModel.setTaskCompletion(true, for: task, in: item.application, context: modelContext)
+                                                } catch {
+                                                    actionErrorMessage = error.localizedDescription
+                                                }
+                                            }
+                                        },
+                                        onEditTask: item.task.map { task in
+                                            { editingTask = task }
+                                        },
+                                        onDeleteTask: item.task.map { task in
+                                            {
+                                                do {
+                                                    try viewModel.deleteTask(task, from: item.application, context: modelContext)
+                                                } catch {
+                                                    actionErrorMessage = error.localizedDescription
+                                                }
+                                            }
+                                        },
+                                        onClearFollowUp: item.kind == .followUp ? {
+                                            do {
+                                                try viewModel.clearFollowUp(for: item.application, context: modelContext)
+                                            } catch {
+                                                actionErrorMessage = error.localizedDescription
+                                            }
+                                        } : nil
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
+                }
+            }
+        }
+        .sheet(item: $editingTask) { task in
+            if let application = task.application {
+                ApplicationTaskEditorView(application: application, taskToEdit: task)
+            }
+        }
+        .alert("Action Failed", isPresented: Binding(
+            get: { actionErrorMessage != nil },
+            set: { if !$0 { actionErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(actionErrorMessage ?? "An unknown error occurred.")
+        }
+    }
+}
+
+private struct UpcomingItemRow: View {
+    let item: UpcomingItem
+    var onOpen: () -> Void
+    var onCompleteTask: (() -> Void)? = nil
+    var onEditTask: (() -> Void)? = nil
+    var onDeleteTask: (() -> Void)? = nil
+    var onClearFollowUp: (() -> Void)? = nil
+
+    @State private var showingDeleteConfirmation = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: item.icon)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(item.tintColor)
+                    .frame(width: 18, height: 18)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text(item.title)
+                            .font(.subheadline.weight(.semibold))
+
+                        PriorityFlag(priority: item.priority)
+                    }
+
+                    Text("\(item.application.companyName) • \(item.application.role)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    if let notes = item.notes {
+                        Text(notes)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+
+                Spacer()
+
+                Text(item.dueDateLabel)
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(item.dueTintColor)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(item.dueTintColor.opacity(0.12))
+                    .clipShape(Capsule())
+            }
+
+            HStack(spacing: 12) {
+                Button("Open") {
+                    onOpen()
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(DesignSystem.Colors.accent)
+
+                if let onCompleteTask {
+                    Button("Complete") {
+                        onCompleteTask()
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.green)
+                }
+
+                if let onClearFollowUp {
+                    Button("Done") {
+                        onClearFollowUp()
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.green)
+                }
+
+                if let onEditTask {
+                    Button("Edit") {
+                        onEditTask()
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(DesignSystem.Colors.accent)
+                }
+
+                if let onDeleteTask {
+                    Button(role: .destructive) {
+                        showingDeleteConfirmation = true
+                    } label: {
+                        Text("Delete")
+                    }
+                    .buttonStyle(.plain)
+                    .confirmationDialog(
+                        "Delete Task",
+                        isPresented: $showingDeleteConfirmation,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Delete", role: .destructive) {
+                            onDeleteTask()
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Are you sure you want to delete this task?")
+                    }
+                }
+
+                Spacer()
+            }
+            .font(.caption)
+        }
+        .padding(14)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+    }
+}
+
+enum UpcomingSection: CaseIterable {
+    case overdue
+    case today
+    case soon
+    case later
+
+    var title: String {
+        switch self {
+        case .overdue:
+            return "Overdue"
+        case .today:
+            return "Today"
+        case .soon:
+            return "Soon"
+        case .later:
+            return "Later"
+        }
+    }
+}
+
+struct UpcomingItem: Identifiable {
+    enum Kind {
+        case task
+        case followUp
+    }
+
+    let id: String
+    let kind: Kind
+    let application: JobApplication
+    let task: ApplicationTask?
+    let title: String
+    let notes: String?
+    let dueDate: Date
+    let priority: Priority
+
+    var section: UpcomingSection {
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: Date())
+        let startOfDueDay = calendar.startOfDay(for: dueDate)
+
+        if startOfDueDay < startOfToday {
+            return .overdue
+        }
+
+        if calendar.isDateInToday(dueDate) {
+            return .today
+        }
+
+        let startOfSoonBoundary = calendar.date(byAdding: .day, value: 7, to: startOfToday) ?? startOfToday
+        if startOfDueDay < startOfSoonBoundary {
+            return .soon
+        }
+
+        return .later
+    }
+
+    var icon: String {
+        switch kind {
+        case .task:
+            return "checklist"
+        case .followUp:
+            return "calendar.badge.clock"
+        }
+    }
+
+    var tintColor: Color {
+        switch kind {
+        case .task:
+            return priority.color
+        case .followUp:
+            return .orange
+        }
+    }
+
+    var dueTintColor: Color {
+        section == .overdue ? .red : tintColor
+    }
+
+    var dueDateLabel: String {
+        switch section {
+        case .overdue:
+            return "Overdue"
+        case .today:
+            return "Today"
+        case .soon, .later:
+            return dueDate.formatted(date: .abbreviated, time: .omitted)
+        }
+    }
+
+    static func build(from applications: [JobApplication], searchText: String = "") -> [UpcomingItem] {
+        let lowercasedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        let items = applications
+            .filter { $0.status != .archived }
+            .flatMap { application -> [UpcomingItem] in
+                var applicationItems: [UpcomingItem] = []
+
+                if let followUpDate = application.nextFollowUpDate {
+                    applicationItems.append(
+                        UpcomingItem(
+                            id: "followup-\(application.id.uuidString)",
+                            kind: .followUp,
+                            application: application,
+                            task: nil,
+                            title: "Follow up with \(application.companyName)",
+                            notes: nil,
+                            dueDate: followUpDate,
+                            priority: application.priority
+                        )
+                    )
+                }
+
+                let taskItems = application.sortedTasks.compactMap { task -> UpcomingItem? in
+                    guard !task.isCompleted, let dueDate = task.dueDate else { return nil }
+
+                    return UpcomingItem(
+                        id: "task-\(task.id.uuidString)",
+                        kind: .task,
+                        application: application,
+                        task: task,
+                        title: task.displayTitle,
+                        notes: task.normalizedNotes,
+                        dueDate: dueDate,
+                        priority: task.priority
+                    )
+                }
+
+                applicationItems.append(contentsOf: taskItems)
+                return applicationItems
+            }
+
+        let filteredItems: [UpcomingItem]
+        if lowercasedSearch.isEmpty {
+            filteredItems = items
+        } else {
+            filteredItems = items.filter { item in
+                item.title.lowercased().contains(lowercasedSearch) ||
+                item.application.companyName.lowercased().contains(lowercasedSearch) ||
+                item.application.role.lowercased().contains(lowercasedSearch) ||
+                (item.notes?.lowercased().contains(lowercasedSearch) ?? false)
+            }
+        }
+
+        return filteredItems.sorted { lhs, rhs in
+            if lhs.dueDate != rhs.dueDate {
+                return lhs.dueDate < rhs.dueDate
+            }
+
+            if lhs.priority.sortOrder != rhs.priority.sortOrder {
+                return lhs.priority.sortOrder < rhs.priority.sortOrder
+            }
+
+            if lhs.application.companyName != rhs.application.companyName {
+                return lhs.application.companyName.localizedCaseInsensitiveCompare(rhs.application.companyName) == .orderedAscending
+            }
+
+            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
         }
     }
 }

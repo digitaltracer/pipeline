@@ -9,6 +9,8 @@ public enum ApplicationActivityKind: Codable, CaseIterable, Identifiable, Hashab
     case call
     case text
     case note
+    case statusChange
+    case followUp
 
     public var id: String { rawValue }
 
@@ -22,6 +24,10 @@ public enum ApplicationActivityKind: Codable, CaseIterable, Identifiable, Hashab
             self = .call
         case "text":
             self = .text
+        case "statuschange", "status change":
+            self = .statusChange
+        case "followup", "follow-up", "follow up":
+            self = .followUp
         default:
             self = .note
         }
@@ -39,6 +45,10 @@ public enum ApplicationActivityKind: Codable, CaseIterable, Identifiable, Hashab
             return "Text"
         case .note:
             return "Note"
+        case .statusChange:
+            return "Status Change"
+        case .followUp:
+            return "Follow Up"
         }
     }
 
@@ -56,6 +66,10 @@ public enum ApplicationActivityKind: Codable, CaseIterable, Identifiable, Hashab
             return "message"
         case .note:
             return "note.text"
+        case .statusChange:
+            return "arrow.triangle.2.circlepath"
+        case .followUp:
+            return "calendar.badge.clock"
         }
     }
 
@@ -72,6 +86,10 @@ public enum ApplicationActivityKind: Codable, CaseIterable, Identifiable, Hashab
             return .teal
         case .note:
             return .secondary
+        case .statusChange:
+            return .indigo
+        case .followUp:
+            return .orange
         }
     }
     #endif
@@ -79,7 +97,20 @@ public enum ApplicationActivityKind: Codable, CaseIterable, Identifiable, Hashab
     public var requiresInterviewFields: Bool { self == .interview }
     public var requiresEmailFields: Bool { self == .email }
 
+    public var isSystemGeneratedOnly: Bool {
+        switch self {
+        case .statusChange, .followUp:
+            return true
+        case .interview, .email, .call, .text, .note:
+            return false
+        }
+    }
+
     public static var allCases: [ApplicationActivityKind] {
+        [.interview, .email, .call, .text, .note, .statusChange, .followUp]
+    }
+
+    public static var manualCases: [ApplicationActivityKind] {
         [.interview, .email, .call, .text, .note]
     }
 

@@ -9,6 +9,7 @@ public final class JobApplication {
     public var location: String = ""
     public var jobURL: String?
     public var jobDescription: String?
+    public var overviewMarkdown: String?
 
     public private(set) var statusRawValue: String = ApplicationStatus.saved.rawValue
     public private(set) var priorityRawValue: String = Priority.medium.rawValue
@@ -41,6 +42,9 @@ public final class JobApplication {
 
     @Relationship(deleteRule: .cascade, inverse: \ApplicationActivity.application)
     public var activities: [ApplicationActivity]?
+
+    @Relationship(deleteRule: .cascade, inverse: \ApplicationTask.application)
+    public var tasks: [ApplicationTask]?
 
     @Relationship(deleteRule: .cascade, inverse: \ResumeJobSnapshot.application)
     public var resumeSnapshots: [ResumeJobSnapshot]?
@@ -202,7 +206,48 @@ public final class JobApplication {
     }
 
     public var sortedActivities: [ApplicationActivity] {
-        (activities ?? []).sorted { $0.occurredAt > $1.occurredAt }
+        (activities ?? []).sorted { lhs, rhs in
+            if lhs.occurredAt != rhs.occurredAt {
+                return lhs.occurredAt > rhs.occurredAt
+            }
+
+            if lhs.createdAt != rhs.createdAt {
+                return lhs.createdAt > rhs.createdAt
+            }
+
+            return lhs.id.uuidString > rhs.id.uuidString
+        }
+    }
+
+    public var sortedTasks: [ApplicationTask] {
+        (tasks ?? []).sorted { lhs, rhs in
+            if lhs.isCompleted != rhs.isCompleted {
+                return !lhs.isCompleted && rhs.isCompleted
+            }
+
+            switch (lhs.dueDate, rhs.dueDate) {
+            case let (lhsDate?, rhsDate?):
+                if lhsDate != rhsDate {
+                    return lhsDate < rhsDate
+                }
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            case (nil, nil):
+                break
+            }
+
+            if lhs.priority.sortOrder != rhs.priority.sortOrder {
+                return lhs.priority.sortOrder < rhs.priority.sortOrder
+            }
+
+            if lhs.createdAt != rhs.createdAt {
+                return lhs.createdAt > rhs.createdAt
+            }
+
+            return lhs.id.uuidString > rhs.id.uuidString
+        }
     }
 
     public var primaryContactLink: ApplicationContactLink? {
@@ -267,6 +312,7 @@ public final class JobApplication {
         location: String,
         jobURL: String? = nil,
         jobDescription: String? = nil,
+        overviewMarkdown: String? = nil,
         status: ApplicationStatus = .saved,
         priority: Priority = .medium,
         source: Source = .jobPortal,
@@ -290,6 +336,7 @@ public final class JobApplication {
         interviewLogs: [InterviewLog]? = nil,
         contactLinks: [ApplicationContactLink]? = nil,
         activities: [ApplicationActivity]? = nil,
+        tasks: [ApplicationTask]? = nil,
         resumeSnapshots: [ResumeJobSnapshot]? = nil,
         attachments: [ApplicationAttachment]? = nil,
         createdAt: Date = Date(),
@@ -301,6 +348,7 @@ public final class JobApplication {
         self.location = location
         self.jobURL = jobURL
         self.jobDescription = jobDescription
+        self.overviewMarkdown = overviewMarkdown
         self.statusRawValue = status.rawValue
         self.priorityRawValue = priority.rawValue
         self.sourceRawValue = source.rawValue
@@ -326,6 +374,7 @@ public final class JobApplication {
         self.interviewLogs = interviewLogs
         self.contactLinks = contactLinks
         self.activities = activities
+        self.tasks = tasks
         self.resumeSnapshots = resumeSnapshots
         self.attachments = attachments
         self.createdAt = createdAt
@@ -366,6 +415,14 @@ public final class JobApplication {
             activities = []
         }
         activities?.append(activity)
+        updateTimestamp()
+    }
+
+    public func addTask(_ task: ApplicationTask) {
+        if tasks == nil {
+            tasks = []
+        }
+        tasks?.append(task)
         updateTimestamp()
     }
 

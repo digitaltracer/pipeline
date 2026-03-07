@@ -776,7 +776,7 @@ struct NotificationSettingsView: View {
             .onChange(of: viewModel.reminderTiming) { _, timing in
                 guard viewModel.notificationsEnabled else { return }
                 Task {
-                    await NotificationService.shared.syncFollowUpReminders(
+                    await NotificationService.shared.syncReminderState(
                         for: applications,
                         notificationsEnabled: true,
                         timing: timing
@@ -791,7 +791,7 @@ struct NotificationSettingsView: View {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("Allow notifications for Pipeline in system settings to receive follow-up reminders.")
+                Text("Allow notifications for Pipeline in system settings to receive follow-up and task reminders.")
             }
     }
 
@@ -810,7 +810,7 @@ struct NotificationSettingsView: View {
         Section {
             Toggle("Enable Notifications", isOn: $viewModel.notificationsEnabled)
         } footer: {
-            Text("Get reminders for follow-up dates you set on job applications.")
+            Text("Get reminders for follow-up dates and task due dates you set on job applications.")
         }
     }
 
@@ -892,7 +892,7 @@ struct NotificationSettingsView: View {
     private var notificationPermissionFooterText: String {
         switch permissionStatus {
         case .authorized, .provisional, .ephemeral:
-            return "Pipeline can send reminders for follow-up dates."
+            return "Pipeline can send reminders for follow-up dates and task due dates."
         case .denied:
             return "Notifications are blocked. Open system settings to enable them for Pipeline."
         case .notDetermined:
@@ -907,7 +907,7 @@ struct NotificationSettingsView: View {
         permissionStatus = await NotificationService.shared.checkPermissionStatus()
 
         guard viewModel.notificationsEnabled else { return }
-        await NotificationService.shared.syncFollowUpReminders(
+        await NotificationService.shared.syncReminderState(
             for: applications,
             notificationsEnabled: true,
             timing: viewModel.reminderTiming
@@ -920,7 +920,7 @@ struct NotificationSettingsView: View {
         permissionStatus = updatedStatus
 
         if NotificationService.shared.isPermissionGranted(updatedStatus) {
-            await NotificationService.shared.syncFollowUpReminders(
+            await NotificationService.shared.syncReminderState(
                 for: applications,
                 notificationsEnabled: true,
                 timing: viewModel.reminderTiming
@@ -943,7 +943,7 @@ struct NotificationSettingsView: View {
                 return
             }
 
-            await NotificationService.shared.syncFollowUpReminders(
+            await NotificationService.shared.syncReminderState(
                 for: applications,
                 notificationsEnabled: true,
                 timing: viewModel.reminderTiming
@@ -1016,7 +1016,7 @@ struct NotificationSettingsContent: View {
             .onChange(of: viewModel.reminderTiming) { _, timing in
                 guard viewModel.notificationsEnabled else { return }
                 Task {
-                    await NotificationService.shared.syncFollowUpReminders(
+                    await NotificationService.shared.syncReminderState(
                         for: applications,
                         notificationsEnabled: true,
                         timing: timing
@@ -1031,7 +1031,7 @@ struct NotificationSettingsContent: View {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("Allow notifications for Pipeline in system settings to receive follow-up reminders.")
+                Text("Allow notifications for Pipeline in system settings to receive follow-up and task reminders.")
             }
     }
 
@@ -1039,7 +1039,7 @@ struct NotificationSettingsContent: View {
         VStack(alignment: .leading, spacing: 14) {
             SettingsFormSectionCard(
                 title: "Notifications",
-                subtitle: "Get reminders for follow-up dates you set on job applications.",
+                subtitle: "Get reminders for follow-up dates and task due dates you set on job applications.",
                 icon: "bell.badge.fill"
             ) {
                 Toggle("Enable Notifications", isOn: $viewModel.notificationsEnabled)
@@ -1139,11 +1139,11 @@ struct NotificationSettingsContent: View {
     private var notificationPermissionFooterText: String {
         switch permissionStatus {
         case .authorized, .provisional, .ephemeral:
-            return "Pipeline can send reminders for follow-up dates."
+            return "Pipeline can send reminders for follow-up dates and task due dates."
         case .denied:
             return "Notifications are blocked. Open system settings to enable them for Pipeline."
         case .notDetermined:
-            return "Get reminders for follow-up dates you set on job applications."
+            return "Get reminders for follow-up dates and task due dates you set on job applications."
         @unknown default:
             return "Check your system settings if reminders are not arriving."
         }
@@ -1154,7 +1154,7 @@ struct NotificationSettingsContent: View {
         permissionStatus = await NotificationService.shared.checkPermissionStatus()
 
         guard viewModel.notificationsEnabled else { return }
-        await NotificationService.shared.syncFollowUpReminders(
+        await NotificationService.shared.syncReminderState(
             for: applications,
             notificationsEnabled: true,
             timing: viewModel.reminderTiming
@@ -1167,7 +1167,7 @@ struct NotificationSettingsContent: View {
         permissionStatus = updatedStatus
 
         if NotificationService.shared.isPermissionGranted(updatedStatus) {
-            await NotificationService.shared.syncFollowUpReminders(
+            await NotificationService.shared.syncReminderState(
                 for: applications,
                 notificationsEnabled: true,
                 timing: viewModel.reminderTiming
@@ -1190,7 +1190,7 @@ struct NotificationSettingsContent: View {
                 return
             }
 
-            await NotificationService.shared.syncFollowUpReminders(
+            await NotificationService.shared.syncReminderState(
                 for: applications,
                 notificationsEnabled: true,
                 timing: viewModel.reminderTiming

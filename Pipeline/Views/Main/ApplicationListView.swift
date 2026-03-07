@@ -13,6 +13,7 @@ struct ApplicationListView: View {
     @Binding var selectedApplication: JobApplication?
     @Binding var searchText: String
     @State private var actionErrorMessage: String?
+    private let detailViewModel = ApplicationDetailViewModel()
 
     private let columns = [
         GridItem(.adaptive(minimum: 260, maximum: 340), spacing: 16)
@@ -131,22 +132,9 @@ struct ApplicationListView: View {
     }
 
     private func applyStatus(_ status: ApplicationStatus, to application: JobApplication) {
-        let previousStatus = application.status
-        let previousAppliedDate = application.appliedDate
-        application.status = status
-        if (status == .applied || status == .interviewing), application.appliedDate == nil {
-            application.appliedDate = Date()
-        }
-        application.updateTimestamp()
-
         do {
-            try modelContext.save()
-            Task { @MainActor in
-                await NotificationService.shared.syncFollowUpReminder(for: application)
-            }
+            try detailViewModel.updateStatus(status, for: application, context: modelContext)
         } catch {
-            application.status = previousStatus
-            application.appliedDate = previousAppliedDate
             actionErrorMessage = error.localizedDescription
         }
     }
@@ -216,6 +204,7 @@ private extension View {
             Contact.self,
             ApplicationContactLink.self,
             ApplicationActivity.self,
+            ApplicationTask.self,
             ApplicationAttachment.self
         ],
         inMemory: true

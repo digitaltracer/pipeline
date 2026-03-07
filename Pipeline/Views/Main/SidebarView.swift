@@ -10,6 +10,7 @@ struct SidebarView: View {
     @Binding var showingAddContact: Bool
     @Binding var showingSettings: Bool
     let statusCounts: [SidebarFilter: Int]
+    let upcomingCount: Int
     @Bindable var settingsViewModel: SettingsViewModel
     @Environment(\.colorScheme) private var colorScheme
 
@@ -73,6 +74,16 @@ struct SidebarView: View {
                         accentColor: .indigo
                     ) {
                         selectedDestination = .dashboard
+                    }
+
+                    destinationButton(
+                        title: "Upcoming",
+                        icon: "calendar.badge.clock",
+                        isSelected: selectedDestination == .upcoming,
+                        accentColor: .orange,
+                        count: upcomingCount
+                    ) {
+                        selectedDestination = .upcoming
                     }
 
                     ForEach(SidebarFilter.allCases) { filter in
@@ -150,6 +161,7 @@ struct SidebarView: View {
         icon: String,
         isSelected: Bool,
         accentColor: Color,
+        count: Int? = nil,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -157,7 +169,8 @@ struct SidebarView: View {
                 title: title,
                 icon: icon,
                 isSelected: isSelected,
-                accentColor: accentColor
+                accentColor: accentColor,
+                count: count
             )
         }
         .buttonStyle(.plain)
@@ -171,6 +184,7 @@ struct SidebarView: View {
         icon: String,
         isSelected: Bool,
         accentColor: Color,
+        count: Int? = nil,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -178,7 +192,8 @@ struct SidebarView: View {
                 title: title,
                 icon: icon,
                 isSelected: isSelected,
-                accentColor: accentColor
+                accentColor: accentColor,
+                count: count
             )
         }
         .buttonStyle(.plain)
@@ -189,7 +204,8 @@ struct SidebarView: View {
         title: String,
         icon: String,
         isSelected: Bool,
-        accentColor: Color
+        accentColor: Color,
+        count: Int? = nil
     ) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
@@ -202,6 +218,18 @@ struct SidebarView: View {
                 .foregroundColor(isSelected ? .white : .primary)
 
             Spacer(minLength: 0)
+
+            if let count, count > 0 {
+                Text("\(count)")
+                    .font(.system(size: 12, weight: .medium))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule()
+                            .fill(isSelected ? Color.white.opacity(0.18) : DesignSystem.Colors.surfaceElevated(colorScheme))
+                    )
+                    .foregroundColor(isSelected ? .white : .secondary)
+            }
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 10)
@@ -277,6 +305,7 @@ struct SidebarFilterRow: View {
             .rejected: 3,
             .archived: 1
         ],
+        upcomingCount: 6,
         settingsViewModel: SettingsViewModel()
     )
     .frame(width: 250)
@@ -288,6 +317,7 @@ struct SidebarView: View {
     @Binding var showingAddContact: Bool
     @Binding var showingSettings: Bool
     let statusCounts: [SidebarFilter: Int]
+    let upcomingCount: Int
     @Bindable var settingsViewModel: SettingsViewModel
 
     var body: some View {

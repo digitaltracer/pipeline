@@ -3,6 +3,7 @@ import PipelineKit
 
 enum MainDestination: Hashable {
     case dashboard
+    case upcoming
     case applications(SidebarFilter)
     case contacts
     case resume
@@ -19,6 +20,8 @@ enum MainDestination: Hashable {
         switch self {
         case .dashboard:
             return "Dashboard"
+        case .upcoming:
+            return "Upcoming"
         case .applications(let filter):
             return filter.displayName
         case .contacts:

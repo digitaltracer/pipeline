@@ -300,6 +300,7 @@ import Testing
         Contact.self,
         ApplicationContactLink.self,
         ApplicationActivity.self,
+        ApplicationTask.self,
         ResumeMasterRevision.self,
         ResumeJobSnapshot.self,
         AIUsageRecord.self,

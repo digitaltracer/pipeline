@@ -18,6 +18,7 @@ public enum SharedContainer {
             Contact.self,
             ApplicationContactLink.self,
             ApplicationActivity.self,
+            ApplicationTask.self,
             ApplicationAttachment.self,
             ResumeMasterRevision.self,
             ResumeJobSnapshot.self,
