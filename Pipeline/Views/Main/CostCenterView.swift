@@ -192,6 +192,7 @@ struct CostCenterView: View {
         .onAppear {
             do {
                 try AIUsageLedgerService.seedDefaultRatesIfNeeded(in: modelContext)
+                _ = try AIUsageLedgerService.backfillMissingCostsIfNeeded(in: modelContext)
             } catch {
                 actionError = error.localizedDescription
             }

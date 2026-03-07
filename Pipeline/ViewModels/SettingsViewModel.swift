@@ -26,6 +26,7 @@ final class SettingsViewModel {
         static let selectedAIProvider = "selectedAIProvider"
         static let selectedAIModel = "selectedAIModel"
         static let cloudSyncEnabled = Constants.UserDefaultsKeys.cloudSyncEnabled
+        static let appLockEnabled = Constants.UserDefaultsKeys.appLockEnabled
         static let hiddenStatusesInAllApplications = "hiddenStatusesInAllApplications"
 
         static let customModelsByProviderID = "customModelsByProviderID"
@@ -113,6 +114,14 @@ final class SettingsViewModel {
         }
     }
 
+    // MARK: - Security
+
+    var appLockEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(appLockEnabled, forKey: StorageKeys.appLockEnabled)
+        }
+    }
+
     // MARK: - Sync
 
     let cloudSyncSupported: Bool
@@ -179,6 +188,8 @@ final class SettingsViewModel {
         } else {
             self.analyticsBaseCurrency = .usd
         }
+
+        self.appLockEnabled = UserDefaults.standard.bool(forKey: StorageKeys.appLockEnabled)
 
         migrateLegacyCustomModelStorageIfNeeded()
         migrateSelectedAIModelIfNeeded()

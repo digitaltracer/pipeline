@@ -44,6 +44,7 @@ public enum Constants {
         public static let selectedAIProvider = "selectedAIProvider"
         public static let selectedAIModel = "selectedAIModel"
         public static let cloudSyncEnabled = "cloudSyncEnabled"
+        public static let appLockEnabled = "appLockEnabled"
         public static let notificationsEnabled = "notificationsEnabled"
         public static let reminderTiming = "reminderTiming"
         public static let analyticsBaseCurrency = "analyticsBaseCurrency"

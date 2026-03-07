@@ -59,7 +59,7 @@ public final class BasicWebContentProvider: WebContentProvider {
 
         let text = Self.stripHTML(html)
         AIParseDebugLogger.info(
-            "\(serviceName): stripped webpage text length=\(text.count) preview=\(AIParseDebugLogger.preview(text, maxLength: 220))."
+            "\(serviceName): stripped webpage text length=\(text.count)."
         )
 
         guard !text.isEmpty else {

@@ -123,11 +123,7 @@ public final class GeminiService: AIServiceProtocol {
             guard !text.isEmpty else { continue }
 
             AIParseDebugLogger.info(
-                "GeminiService: candidate \(index + 1) output captured."
-            )
-            AIParseDebugLogger.infoFullText(
-                "GeminiService: candidate \(index + 1) output",
-                text: text
+                "GeminiService: candidate \(index + 1) output chars=\(text.count)."
             )
 
             do {

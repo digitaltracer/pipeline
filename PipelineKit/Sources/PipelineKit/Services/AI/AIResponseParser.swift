@@ -8,8 +8,9 @@ public enum AIResponseParser {
         let jsonPayload = extractJSONObject(from: cleaned) ?? cleaned
 
         guard let root = parseJSONObject(from: jsonPayload) else {
-            let preview = AIParseDebugLogger.preview(jsonPayload, maxLength: 600)
-            AIParseDebugLogger.error("AIResponseParser: unable to parse JSON payload. Preview: \(preview)")
+            AIParseDebugLogger.error(
+                "AIResponseParser: unable to parse JSON payload. payloadChars=\(jsonPayload.count)."
+            )
             throw AIServiceError.parsingError("Model output was not valid JSON.")
         }
 

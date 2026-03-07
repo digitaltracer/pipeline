@@ -120,7 +120,6 @@ import Testing
         switch error {
         case .parsingError(let message):
             #expect(message.contains("not valid JSON"))
-            #expect(message.contains("AIParse"))
         default:
             Issue.record("Expected parsingError, got \(error)")
         }
@@ -147,7 +146,6 @@ import Testing
         switch error {
         case .parsingError(let message):
             #expect(message.contains("appears truncated"))
-            #expect(message.contains("AIParse"))
         default:
             Issue.record("Expected parsingError, got \(error)")
         }
@@ -193,7 +191,6 @@ import Testing
         switch error {
         case .parsingError(let message):
             #expect(message.contains("expected schema"))
-            #expect(message.contains("AIParse"))
         default:
             Issue.record("Expected parsingError, got \(error)")
         }

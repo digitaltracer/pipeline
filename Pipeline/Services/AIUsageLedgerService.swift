@@ -16,25 +16,41 @@ enum AIUsageLedgerService {
     }
 
     static func seedDefaultRatesIfNeeded(in modelContext: ModelContext) throws {
-        var descriptor = FetchDescriptor<AIModelRate>()
-        descriptor.fetchLimit = 1
-        let existing = try modelContext.fetch(descriptor)
-        guard existing.isEmpty else { return }
-
+        let existingRates = try modelContext.fetch(FetchDescriptor<AIModelRate>())
         let now = Date()
+        var didChangeRates = false
+
         for definition in AIPricingDefaults.defaultRates {
-            let rate = AIModelRate(
-                providerID: definition.providerID,
-                model: definition.model,
-                inputUSDPerMillion: definition.inputUSDPerMillion,
-                outputUSDPerMillion: definition.outputUSDPerMillion,
-                updatedAt: now,
-                source: .seeded
-            )
-            modelContext.insert(rate)
+            if let existingRate = existingRates.first(where: {
+                $0.providerID.caseInsensitiveCompare(definition.providerID) == .orderedSame &&
+                $0.model.caseInsensitiveCompare(definition.model) == .orderedSame
+            }) {
+                guard existingRate.source == .seeded else { continue }
+
+                if existingRate.inputUSDPerMillion != definition.inputUSDPerMillion ||
+                    existingRate.outputUSDPerMillion != definition.outputUSDPerMillion {
+                    existingRate.inputUSDPerMillion = definition.inputUSDPerMillion
+                    existingRate.outputUSDPerMillion = definition.outputUSDPerMillion
+                    existingRate.updatedAt = now
+                    didChangeRates = true
+                }
+            } else {
+                let rate = AIModelRate(
+                    providerID: definition.providerID,
+                    model: definition.model,
+                    inputUSDPerMillion: definition.inputUSDPerMillion,
+                    outputUSDPerMillion: definition.outputUSDPerMillion,
+                    updatedAt: now,
+                    source: .seeded
+                )
+                modelContext.insert(rate)
+                didChangeRates = true
+            }
         }
 
-        try modelContext.save()
+        if didChangeRates {
+            try modelContext.save()
+        }
     }
 
     static func resetRatesToDefaults(in modelContext: ModelContext) throws {
@@ -57,6 +73,7 @@ enum AIUsageLedgerService {
         }
 
         try modelContext.save()
+        _ = try backfillMissingCostsIfNeeded(in: modelContext)
     }
 
     static func upsertRate(
@@ -89,6 +106,71 @@ enum AIUsageLedgerService {
         }
 
         try modelContext.save()
+        _ = try backfillMissingCostsIfNeeded(
+            providerID: normalizedProvider,
+            model: normalizedModel,
+            in: modelContext
+        )
+    }
+
+    @discardableResult
+    static func backfillMissingCostsIfNeeded(
+        providerID: String? = nil,
+        model: String? = nil,
+        in modelContext: ModelContext
+    ) throws -> Int {
+        let normalizedProvider = providerID?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normalizedModel = model?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let records = try modelContext.fetch(FetchDescriptor<AIUsageRecord>())
+        var updatedCount = 0
+
+        for record in records {
+            guard record.promptTokens != nil,
+                  record.completionTokens != nil,
+                  record.totalCostUSD == nil else {
+                continue
+            }
+
+            if let normalizedProvider,
+               record.providerID.caseInsensitiveCompare(normalizedProvider) != .orderedSame {
+                continue
+            }
+
+            if let normalizedModel,
+               record.model.caseInsensitiveCompare(normalizedModel) != .orderedSame {
+                continue
+            }
+
+            let costs = try calculateCosts(
+                providerID: record.providerID,
+                model: record.model,
+                promptTokens: record.promptTokens,
+                completionTokens: record.completionTokens,
+                in: modelContext
+            )
+
+            guard let totalCostUSD = costs.totalCostUSD else {
+                continue
+            }
+
+            record.inputCostUSD = costs.inputCostUSD
+            record.outputCostUSD = costs.outputCostUSD
+            record.totalCostUSD = totalCostUSD
+
+            if record.totalTokens == nil,
+               let promptTokens = record.promptTokens,
+               let completionTokens = record.completionTokens {
+                record.totalTokens = promptTokens + completionTokens
+            }
+
+            updatedCount += 1
+        }
+
+        if updatedCount > 0 {
+            try modelContext.save()
+        }
+
+        return updatedCount
     }
 
     @discardableResult

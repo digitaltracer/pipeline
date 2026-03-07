@@ -341,7 +341,7 @@ public enum AICompletionClient {
                 throw AIServiceError.apiError(message)
             }
             AIParseDebugLogger.error(
-                "AICompletionClient(\(providerName)): API error status=\(httpResponse.statusCode) bodyPreview=\(AIParseDebugLogger.preview(String(decoding: data, as: UTF8.self), maxLength: 280))."
+                "AICompletionClient(\(providerName)): API error status=\(httpResponse.statusCode) response body redacted bytes=\(data.count)."
             )
             throw AIServiceError.apiError("HTTP \(httpResponse.statusCode)")
         }

@@ -67,7 +67,7 @@ final class WKWebViewContentProvider: WebContentProvider {
 
         let text = BasicWebContentProvider.stripHTML(html)
         AIParseDebugLogger.info(
-            "\(serviceName): stripped webpage text length=\(text.count) preview=\(AIParseDebugLogger.preview(text, maxLength: 220))."
+            "\(serviceName): stripped webpage text length=\(text.count)."
         )
 
         if text.isEmpty {
@@ -102,11 +102,7 @@ final class WKWebViewContentProvider: WebContentProvider {
         let normalizedText = normalizeExtractedText(rawText)
 
         AIParseDebugLogger.info(
-            "\(serviceName): WKWebView extracted text length=\(normalizedText.count) preview=\(AIParseDebugLogger.preview(normalizedText, maxLength: 220))."
-        )
-        AIParseDebugLogger.infoFullText(
-            "\(serviceName): WKWebView extracted text",
-            text: normalizedText
+            "\(serviceName): WKWebView extracted text length=\(normalizedText.count)."
         )
 
         guard !normalizedText.isEmpty else {

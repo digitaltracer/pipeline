@@ -10,6 +10,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     case allApplications
     case analytics
     case notifications
+    case security
     case sync
     case about
 
@@ -22,6 +23,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .allApplications: return "All Applications"
         case .analytics: return "Analytics"
         case .notifications: return "Notifications"
+        case .security: return "Security"
         case .sync: return "iCloud Sync"
         case .about: return "About"
         }
@@ -39,6 +41,8 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
             return "Dashboard currency and planning preferences"
         case .notifications:
             return "Follow-up reminder behavior"
+        case .security:
+            return "App lock and privacy policy"
         case .sync:
             return "Choose local-only or iCloud-backed storage"
         case .about:
@@ -53,6 +57,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .allApplications: return "line.3.horizontal.decrease.circle.fill"
         case .analytics: return "chart.xyaxis.line"
         case .notifications: return "bell.badge.fill"
+        case .security: return "lock.shield.fill"
         case .sync: return "icloud.fill"
         case .about: return "info.circle.fill"
         }
@@ -63,10 +68,10 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
 struct SettingsView: View {
     @Bindable var viewModel: SettingsViewModel
     var isPresentedInSheet: Bool = false
+    @Environment(\.dismiss) private var dismiss
 
     #if os(macOS)
     @State private var selectedCategory: SettingsCategory = .appearance
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     #endif
 
@@ -117,6 +122,12 @@ struct SettingsView: View {
                     }
 
                     NavigationLink {
+                        SecuritySettingsView(viewModel: viewModel)
+                    } label: {
+                        Label("Security", systemImage: "lock.shield")
+                    }
+
+                    NavigationLink {
                         SyncSettingsView(viewModel: viewModel)
                     } label: {
                         Label("iCloud Sync", systemImage: "icloud")
@@ -130,11 +141,6 @@ struct SettingsView: View {
                         }
                     }
 
-                    if let privacyURL = URL(string: Constants.URLs.privacyPolicy) {
-                        Link(destination: privacyURL) {
-                            Label("Privacy Policy", systemImage: "hand.raised")
-                        }
-                    }
                 }
 
                 Section {
@@ -147,6 +153,15 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .toolbar {
+                if isPresentedInSheet {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") {
+                            dismiss()
+                        }
+                    }
+                }
+            }
         }
         #endif
     }
@@ -280,6 +295,8 @@ struct SettingsView: View {
             AnalyticsSettingsContent(viewModel: viewModel)
         case .notifications:
             NotificationSettingsContent(viewModel: viewModel)
+        case .security:
+            SecuritySettingsContent(viewModel: viewModel)
         case .sync:
             SyncSettingsContent(viewModel: viewModel)
         case .about:
@@ -454,17 +471,6 @@ struct AboutSettingsContent: View {
                         title: "Report an Issue",
                         subtitle: "Share bugs or feedback to improve Pipeline.",
                         icon: "exclamationmark.bubble"
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-
-            if let privacyURL = URL(string: Constants.URLs.privacyPolicy) {
-                Link(destination: privacyURL) {
-                    SettingsLinkRow(
-                        title: "Privacy Policy",
-                        subtitle: "Review how your data is handled.",
-                        icon: "hand.raised"
                     )
                 }
                 .buttonStyle(.plain)
@@ -1203,5 +1209,7 @@ struct NotificationSettingsContent: View {
 }
 
 #Preview {
-    SettingsView(viewModel: SettingsViewModel())
+    let settingsViewModel = SettingsViewModel()
+    SettingsView(viewModel: settingsViewModel)
+        .environment(AppLockCoordinator(settingsViewModel: settingsViewModel))
 }

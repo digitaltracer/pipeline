@@ -115,9 +115,7 @@ public final class AnthropicService: AIServiceProtocol {
             throw AIServiceError.invalidResponse
         }
 
-        AIParseDebugLogger.info(
-            "AnthropicService: model output preview: \(AIParseDebugLogger.preview(text, maxLength: 280))."
-        )
+        AIParseDebugLogger.info("AnthropicService: model output chars=\(text.count).")
         var parsed = try AIResponseParser.parseJobData(from: text)
         parsed.usage = usageMetrics
         return parsed

@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var selectedContact: Contact?
     @State private var showingAddApplication = false
     @State private var showingAddContact = false
+    @State private var showingSettings = false
     @State private var searchText = ""
     @Bindable var settingsViewModel: SettingsViewModel
 
@@ -123,6 +124,12 @@ struct ContentView: View {
                         } label: {
                             Image(systemName: selectedDestination == .contacts ? "person.badge.plus" : "plus")
                         }
+
+                        Button {
+                            showingSettings = true
+                        } label: {
+                            Image(systemName: "gearshape")
+                        }
                     }
                 }
             }
@@ -149,6 +156,9 @@ struct ContentView: View {
                 ContactDetailView(contact: contact)
             }
         }
+        .sheet(isPresented: $showingSettings) {
+            SettingsView(viewModel: settingsViewModel, isPresentedInSheet: true)
+        }
         .task {
             prewarmJSONEditorIfNeeded()
         }
@@ -157,7 +167,9 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView(settingsViewModel: SettingsViewModel())
+    let settingsViewModel = SettingsViewModel()
+    ContentView(settingsViewModel: settingsViewModel)
+        .environment(AppLockCoordinator(settingsViewModel: settingsViewModel))
         .modelContainer(
             for: [
                 JobApplication.self,

@@ -126,9 +126,7 @@ public final class OpenAIService: AIServiceProtocol {
             throw AIServiceError.invalidResponse
         }
 
-        AIParseDebugLogger.info(
-            "OpenAIService: model output preview: \(AIParseDebugLogger.preview(contentText, maxLength: 280))."
-        )
+        AIParseDebugLogger.info("OpenAIService: model output chars=\(contentText.count).")
         var parsed = try AIResponseParser.parseJobData(from: contentText)
         parsed.usage = usageMetrics
         return parsed

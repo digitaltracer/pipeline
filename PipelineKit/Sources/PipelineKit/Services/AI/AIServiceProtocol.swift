@@ -36,7 +36,7 @@ public enum AIServiceError: LocalizedError {
         case .unauthorized:
             return "Invalid API key. Please check your settings."
         case .noDataExtracted:
-            return "AI returned a response, but no job details were extracted. Check the Xcode console logs for \"AIParse\" entries."
+            return "AI returned a response, but no job details were extracted. Try another model or verify that the job page is readable."
         }
     }
 }
@@ -71,32 +71,20 @@ public enum AIParseDebugLogger {
         #if DEBUG
         let normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
         guard !normalized.isEmpty else {
-            logger.info("\(label, privacy: .public): <empty>")
+            logger.info("\(label, privacy: .public): content redacted; length=0.")
             return
         }
 
-        logger.info("\(label, privacy: .public): full text length=\(normalized.count, privacy: .public).")
-
-        var part = 1
-        var cursor = normalized.startIndex
-        while cursor < normalized.endIndex {
-            let next = normalized.index(cursor, offsetBy: chunkSize, limitedBy: normalized.endIndex) ?? normalized.endIndex
-            let chunk = String(normalized[cursor..<next])
-            logger.info("\(label, privacy: .public) [part \(part, privacy: .public)]: \(chunk, privacy: .public)")
-            cursor = next
-            part += 1
-        }
+        logger.info(
+            "\(label, privacy: .public): content redacted; length=\(normalized.count, privacy: .public) chunkSize=\(chunkSize, privacy: .public)."
+        )
         #endif
     }
 
     public static func preview(_ text: String, maxLength: Int = 280) -> String {
-        let compact = text
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard compact.count > maxLength else {
-            return compact
-        }
-        return "\(compact.prefix(maxLength))..."
+        let compact = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !compact.isEmpty else { return "<empty>" }
+        return "<redacted \(min(compact.count, maxLength)) chars>"
     }
 
     public static func summarizedURL(_ rawURL: String) -> String {

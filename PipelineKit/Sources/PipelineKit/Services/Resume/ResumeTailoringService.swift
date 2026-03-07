@@ -13,13 +13,13 @@ public enum ResumeTailoringProgressEvent: Sendable, Equatable {
 
 public enum ResumeTailoringService {
     private static let invalidJSONErrorMessage =
-        "Resume tailoring response was not valid JSON. Check Xcode console logs for \"AIParse\" entries."
+        "Resume tailoring response was not valid JSON. Retry Generate Suggestions."
     private static let schemaMismatchErrorMessage =
-        "Resume tailoring response JSON did not match expected schema. Check Xcode console logs for \"AIParse\" entries."
+        "Resume tailoring response JSON did not match the expected schema. Retry Generate Suggestions."
     private static let truncatedResponseErrorMessage =
-        "Resume tailoring response appears truncated before JSON completed. Please retry Generate Suggestions and check AIParse logs."
+        "Resume tailoring response appears truncated before the JSON completed. Retry Generate Suggestions."
     private static let patchRevisionSchemaErrorMessage =
-        "Patch revision response must return exactly one patch for the selected section. Check Xcode console logs for \"AIParse\" entries."
+        "Patch revision response must return exactly one patch for the selected section."
     private static let tailoringMaxTokens = 25_000
     private static let patchRevisionMaxTokens = 8_000
 
@@ -141,7 +141,7 @@ public enum ResumeTailoringService {
                 }
                 lastDecodeError = error
                 AIParseDebugLogger.warning(
-                    "ResumeTailoringService: candidate \(index + 1) failed to decode. Preview=\(AIParseDebugLogger.preview(candidate, maxLength: 300)). Error=\(decodeErrorDetails(error))"
+                    "ResumeTailoringService: candidate \(index + 1) failed to decode. candidateChars=\(candidate.count) error=\(decodeErrorDetails(error))."
                 )
             }
         }
@@ -150,10 +150,6 @@ public enum ResumeTailoringService {
             AIParseDebugLogger.error(
                 "ResumeTailoringService: model output appears truncated (unterminated string/object/array)."
             )
-            AIParseDebugLogger.infoFullText(
-                "ResumeTailoringService: raw model output",
-                text: rawResponse
-            )
             throw AIServiceError.parsingError(truncatedResponseErrorMessage)
         }
 
@@ -161,19 +157,11 @@ public enum ResumeTailoringService {
             AIParseDebugLogger.error(
                 "ResumeTailoringService: model output looked like JSON but did not match expected schema. Last decode error=\(String(describing: lastDecodeError.map(decodeErrorDetails)))."
             )
-            AIParseDebugLogger.infoFullText(
-                "ResumeTailoringService: raw model output",
-                text: rawResponse
-            )
             throw AIServiceError.parsingError(schemaMismatchErrorMessage)
         }
 
         AIParseDebugLogger.error(
             "ResumeTailoringService: failed to find a parseable JSON payload in model output."
-        )
-        AIParseDebugLogger.infoFullText(
-            "ResumeTailoringService: raw model output",
-            text: rawResponse
         )
 
         throw AIServiceError.parsingError(invalidJSONErrorMessage)
