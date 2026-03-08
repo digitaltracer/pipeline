@@ -282,6 +282,7 @@ private func makeCompanyContainer() throws -> ModelContainer {
         ApplicationActivity.self,
         ApplicationTask.self,
         ApplicationAttachment.self,
+        CoverLetterDraft.self,
         ResumeMasterRevision.self,
         ResumeJobSnapshot.self,
         AIUsageRecord.self,

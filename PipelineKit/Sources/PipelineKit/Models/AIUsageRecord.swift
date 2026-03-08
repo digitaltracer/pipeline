@@ -5,6 +5,7 @@ public enum AIUsageFeature: String, Codable, CaseIterable, Sendable, Identifiabl
     case resumeTailoring = "resume_tailoring"
     case interviewPrep = "interview_prep"
     case followUpDraft = "follow_up_draft"
+    case coverLetterDraft = "cover_letter_draft"
     case jobParsing = "job_parsing"
     case companyResearch = "company_research"
     case jobDescriptionDenoise = "job_description_denoise"
@@ -19,6 +20,8 @@ public enum AIUsageFeature: String, Codable, CaseIterable, Sendable, Identifiabl
             return "Interview Prep"
         case .followUpDraft:
             return "Follow-up Draft"
+        case .coverLetterDraft:
+            return "Cover Letter Draft"
         case .jobParsing:
             return "Job Parsing"
         case .companyResearch:

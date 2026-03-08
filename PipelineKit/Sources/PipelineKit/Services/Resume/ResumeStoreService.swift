@@ -1,6 +1,39 @@
 import Foundation
 import SwiftData
 
+public struct ResumeSourceSelection: Sendable {
+    public enum Kind: String, Sendable {
+        case tailoredSnapshot = "tailored_snapshot"
+        case masterResume = "master_resume"
+    }
+
+    public let kind: Kind
+    public let rawJSON: String
+    public let snapshotID: UUID?
+    public let createdAt: Date
+
+    public init(
+        kind: Kind,
+        rawJSON: String,
+        snapshotID: UUID?,
+        createdAt: Date
+    ) {
+        self.kind = kind
+        self.rawJSON = rawJSON
+        self.snapshotID = snapshotID
+        self.createdAt = createdAt
+    }
+
+    public var label: String {
+        switch kind {
+        case .tailoredSnapshot:
+            return "Latest Tailored Resume"
+        case .masterResume:
+            return "Master Resume"
+        }
+    }
+}
+
 public enum ResumeStoreService {
     public static func currentMasterRevision(in context: ModelContext) throws -> ResumeMasterRevision? {
         var descriptor = FetchDescriptor<ResumeMasterRevision>(
@@ -58,6 +91,31 @@ public enum ResumeStoreService {
 
     public static func jobSnapshots(for application: JobApplication) -> [ResumeJobSnapshot] {
         application.sortedResumeSnapshots
+    }
+
+    public static func preferredResumeSource(
+        for application: JobApplication,
+        in context: ModelContext
+    ) throws -> ResumeSourceSelection? {
+        if let snapshot = application.sortedResumeSnapshots.first {
+            return ResumeSourceSelection(
+                kind: .tailoredSnapshot,
+                rawJSON: snapshot.rawJSON,
+                snapshotID: snapshot.id,
+                createdAt: snapshot.createdAt
+            )
+        }
+
+        if let masterRevision = try currentMasterRevision(in: context) {
+            return ResumeSourceSelection(
+                kind: .masterResume,
+                rawJSON: masterRevision.rawJSON,
+                snapshotID: nil,
+                createdAt: masterRevision.createdAt
+            )
+        }
+
+        return nil
     }
 
     @discardableResult

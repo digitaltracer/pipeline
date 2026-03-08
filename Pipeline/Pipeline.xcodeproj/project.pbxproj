@@ -87,6 +87,7 @@
 		000000000000000000000088 /* AppLockRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000088 /* AppLockRootView.swift */; };
 		000000000000000000000089 /* SecuritySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000089 /* SecuritySettingsView.swift */; };
 		000000000000000000000090 /* PrivacyPolicy.md in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000090 /* PrivacyPolicy.md */; };
+		000000000000000000000092 /* CoverLetterTemplate.tex in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000092 /* CoverLetterTemplate.tex */; };
 		000000000000000000000091 /* JobDescriptionDenoiseViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000091 /* JobDescriptionDenoiseViewModel.swift */; };
 		000000000000000000000074 /* tectonic in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000074 /* tectonic */; };
 		000000000000000000000075 /* ResumeTemplate.tex in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000075 /* ResumeTemplate.tex */; };
@@ -237,6 +238,7 @@
 		100000000000000000000088 /* AppLockRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockRootView.swift; sourceTree = "<group>"; };
 		100000000000000000000089 /* SecuritySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecuritySettingsView.swift; sourceTree = "<group>"; };
 		100000000000000000000090 /* PrivacyPolicy.md */ = {isa = PBXFileReference; lastKnownFileType = text; path = PrivacyPolicy.md; sourceTree = "<group>"; };
+		100000000000000000000092 /* CoverLetterTemplate.tex */ = {isa = PBXFileReference; lastKnownFileType = text; path = CoverLetterTemplate.tex; sourceTree = "<group>"; };
 		100000000000000000000091 /* JobDescriptionDenoiseViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobDescriptionDenoiseViewModel.swift; sourceTree = "<group>"; };
 		A01000000000000000000010 /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
 		A01000000000000000000020 /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = manifest.json; sourceTree = "<group>"; };
@@ -401,6 +403,7 @@
 				100000000000000000000069 /* ResumeFonts */,
 				100000000000000000000074 /* tectonic */,
 				100000000000000000000075 /* ResumeTemplate.tex */,
+				100000000000000000000092 /* CoverLetterTemplate.tex */,
 				100000000000000000000090 /* PrivacyPolicy.md */,
 			);
 			path = Resources;
@@ -683,6 +686,7 @@
 				000000000000000000000069 /* ResumeFonts in Resources */,
 				000000000000000000000074 /* tectonic in Resources */,
 				000000000000000000000075 /* ResumeTemplate.tex in Resources */,
+				000000000000000000000092 /* CoverLetterTemplate.tex in Resources */,
 				000000000000000000000090 /* PrivacyPolicy.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

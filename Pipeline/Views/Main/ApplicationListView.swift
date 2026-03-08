@@ -209,7 +209,8 @@ private extension View {
             ApplicationContactLink.self,
             ApplicationActivity.self,
             ApplicationTask.self,
-            ApplicationAttachment.self
+            ApplicationAttachment.self,
+            CoverLetterDraft.self
         ],
         inMemory: true
     )

@@ -27,6 +27,7 @@ struct JobDetailView: View {
     @State private var showingDeleteAlert = false
     @State private var showingInterviewPrep = false
     @State private var showingFollowUpDrafter = false
+    @State private var showingCoverLetterEditor = false
     @State private var showingCompanyWorkspace = false
     @State private var companyWorkspaceTab: CompanyWorkspaceTab = .overview
     @State private var actionErrorMessage: String?
@@ -209,6 +210,15 @@ struct JobDetailView: View {
                 )
             )
         }
+        .sheet(isPresented: $showingCoverLetterEditor) {
+            CoverLetterEditorView(
+                viewModel: CoverLetterEditorViewModel(
+                    application: application,
+                    settingsViewModel: SettingsViewModel(),
+                    modelContext: modelContext
+                )
+            )
+        }
         .sheet(isPresented: $showingCompanyWorkspace) {
             if let company = application.company {
                 CompanyWorkspaceView(
@@ -322,20 +332,28 @@ struct JobDetailView: View {
             }
             .buttonStyle(.bordered)
 
-            if application.status == .interviewing {
-                Button {
-                    showingInterviewPrep = true
-                } label: {
-                    Label("Prep", systemImage: "sparkles")
-                        .frame(width: 110)
+            Menu {
+                if application.status == .interviewing {
+                    Button {
+                        showingInterviewPrep = true
+                    } label: {
+                        Label("Interview Prep", systemImage: "sparkles")
+                    }
                 }
-                .buttonStyle(.bordered)
-            }
 
-            Button {
-                showingFollowUpDrafter = true
+                Button {
+                    showingFollowUpDrafter = true
+                } label: {
+                    Label("Follow Up", systemImage: "envelope.badge")
+                }
+
+                Button {
+                    showingCoverLetterEditor = true
+                } label: {
+                    Label("Cover Letter", systemImage: "doc.text")
+                }
             } label: {
-                Label("Follow Up", systemImage: "envelope.badge")
+                Label("AI", systemImage: "sparkles")
                     .frame(width: 120)
             }
             .buttonStyle(.bordered)
@@ -2030,6 +2048,7 @@ private struct JobDescriptionDenoiseReviewSheet: View {
             ApplicationActivity.self,
             ApplicationTask.self,
             ApplicationAttachment.self,
+            CoverLetterDraft.self,
             ResumeMasterRevision.self,
             ResumeJobSnapshot.self,
             AIUsageRecord.self,

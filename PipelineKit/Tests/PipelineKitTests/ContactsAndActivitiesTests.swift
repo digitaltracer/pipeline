@@ -429,7 +429,8 @@ private func makeContactsContainer() throws -> ModelContainer {
         Contact.self,
         ApplicationContactLink.self,
         ApplicationActivity.self,
-        ApplicationTask.self
+        ApplicationTask.self,
+        CoverLetterDraft.self
     ])
     let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
     return try ModelContainer(for: schema, configurations: [configuration])

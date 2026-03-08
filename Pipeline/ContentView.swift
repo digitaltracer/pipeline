@@ -185,6 +185,7 @@ struct ContentView: View {
                 ApplicationActivity.self,
                 ApplicationTask.self,
                 ApplicationAttachment.self,
+                CoverLetterDraft.self,
                 ResumeMasterRevision.self,
                 ResumeJobSnapshot.self,
                 AIUsageRecord.self,

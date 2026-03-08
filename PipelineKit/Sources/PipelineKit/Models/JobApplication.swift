@@ -50,6 +50,9 @@ public final class JobApplication {
     @Relationship(deleteRule: .cascade, inverse: \ResumeJobSnapshot.application)
     public var resumeSnapshots: [ResumeJobSnapshot]?
 
+    @Relationship(deleteRule: .cascade, inverse: \CoverLetterDraft.application)
+    public var coverLetterDraft: CoverLetterDraft?
+
     @Relationship(deleteRule: .cascade, inverse: \ApplicationAttachment.application)
     public var attachments: [ApplicationAttachment]?
 
@@ -345,6 +348,7 @@ public final class JobApplication {
         activities: [ApplicationActivity]? = nil,
         tasks: [ApplicationTask]? = nil,
         resumeSnapshots: [ResumeJobSnapshot]? = nil,
+        coverLetterDraft: CoverLetterDraft? = nil,
         attachments: [ApplicationAttachment]? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
@@ -384,6 +388,7 @@ public final class JobApplication {
         self.activities = activities
         self.tasks = tasks
         self.resumeSnapshots = resumeSnapshots
+        self.coverLetterDraft = coverLetterDraft
         self.attachments = attachments
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -530,6 +535,12 @@ public final class JobApplication {
             attachments = []
         }
         attachments?.append(attachment)
+        updateTimestamp()
+    }
+
+    public func assignCoverLetterDraft(_ draft: CoverLetterDraft?) {
+        guard coverLetterDraft?.id != draft?.id else { return }
+        coverLetterDraft = draft
         updateTimestamp()
     }
 

@@ -427,3 +427,163 @@ enum ResumePDFExportService {
         #endif
     }
 }
+
+// MARK: - Cover Letter Renderer
+
+enum CoverLetterTeXRenderer {
+    enum TeXError: LocalizedError {
+        case templateNotFound
+        case markerNotFound
+
+        var errorDescription: String? {
+            switch self {
+            case .templateNotFound:
+                return "CoverLetterTemplate.tex not found in app bundle."
+            case .markerNotFound:
+                return "CoverLetterTemplate.tex is missing one or more Pipeline markers."
+            }
+        }
+    }
+
+    static func renderTeX(
+        companyName: String,
+        role: String,
+        greeting: String,
+        hookParagraph: String,
+        bodyParagraphs: [String],
+        closingParagraph: String,
+        resumeJSON: String?
+    ) throws -> String {
+        guard let templateURL = Bundle.main.url(forResource: "CoverLetterTemplate", withExtension: "tex"),
+              let templateString = try? String(contentsOf: templateURL, encoding: .utf8)
+        else {
+            throw TeXError.templateNotFound
+        }
+
+        let markers = [
+            "%%PIPELINE_CONTACT_HEADER%%",
+            "%%PIPELINE_LETTER_META%%",
+            "%%PIPELINE_BODY%%"
+        ]
+        guard markers.allSatisfy(templateString.contains) else {
+            throw TeXError.markerNotFound
+        }
+
+        return templateString
+            .replacingOccurrences(of: "%%PIPELINE_CONTACT_HEADER%%", with: contactHeader(resumeJSON: resumeJSON))
+            .replacingOccurrences(of: "%%PIPELINE_LETTER_META%%", with: letterMeta(companyName: companyName, role: role))
+            .replacingOccurrences(
+                of: "%%PIPELINE_BODY%%",
+                with: letterBody(
+                    greeting: greeting,
+                    hookParagraph: hookParagraph,
+                    bodyParagraphs: bodyParagraphs,
+                    closingParagraph: closingParagraph
+                )
+            )
+    }
+
+    private static func contactHeader(resumeJSON: String?) -> String {
+        guard let resumeJSON,
+              let validated = try? ResumeSchemaValidator.validate(jsonText: resumeJSON)
+        else {
+            return ""
+        }
+
+        let resume = validated.schema
+        let contact = resume.contact
+        var parts: [String] = []
+
+        if !contact.phone.trimmedEmpty {
+            parts.append(ResumeTeXRenderer.escapeLaTeX(contact.phone))
+        }
+        if !contact.email.trimmedEmpty {
+            let email = ResumeTeXRenderer.escapeLaTeX(contact.email)
+            parts.append("\\href{mailto:\(contact.email)}{\(email)}")
+        }
+        if !contact.linkedin.trimmedEmpty {
+            let url = normalizedExternalURL(contact.linkedin)
+            parts.append("\\href{\(url)}{\(ResumeTeXRenderer.escapeLaTeX(contact.linkedin))}")
+        }
+        if !contact.github.trimmedEmpty {
+            let url = normalizedExternalURL(contact.github)
+            parts.append("\\href{\(url)}{\(ResumeTeXRenderer.escapeLaTeX(contact.github))}")
+        }
+
+        let separator = parts.isEmpty ? "" : "\\\\[3pt]\n"
+        let contactLine = parts.joined(separator: " \\textbullet\\ ")
+        return """
+        {\\Large\\textbf{\(ResumeTeXRenderer.escapeLaTeX(resume.name))}}\(separator)\(contactLine)
+        """
+    }
+
+    private static func letterMeta(companyName: String, role: String) -> String {
+        let today = Date.now.formatted(date: .long, time: .omitted)
+        return """
+        \(ResumeTeXRenderer.escapeLaTeX(today))\\\\
+        \(ResumeTeXRenderer.escapeLaTeX(companyName))\\\\
+        \(ResumeTeXRenderer.escapeLaTeX(role))
+        """
+    }
+
+    private static func letterBody(
+        greeting: String,
+        hookParagraph: String,
+        bodyParagraphs: [String],
+        closingParagraph: String
+    ) -> String {
+        let sections = [greeting, hookParagraph] + bodyParagraphs + [closingParagraph]
+        return sections
+            .map { paragraphTex(for: $0) }
+            .joined(separator: "\n\n")
+    }
+
+    private static func paragraphTex(for value: String) -> String {
+        let escaped = ResumeTeXRenderer.escapeLaTeX(value)
+            .replacingOccurrences(of: "\n", with: "\\\\\n")
+        return "\(escaped)\n\\par"
+    }
+
+    private static func normalizedExternalURL(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
+            return trimmed
+        }
+        return "https://\(trimmed)"
+    }
+}
+
+enum CoverLetterPDFExportService {
+    @MainActor
+    static func makeDocument(
+        companyName: String,
+        role: String,
+        greeting: String,
+        hookParagraph: String,
+        bodyParagraphs: [String],
+        closingParagraph: String,
+        resumeJSON: String?
+    ) async throws -> ResumePDFFileDocument {
+        #if os(macOS)
+        let tex = try CoverLetterTeXRenderer.renderTeX(
+            companyName: companyName,
+            role: role,
+            greeting: greeting,
+            hookParagraph: hookParagraph,
+            bodyParagraphs: bodyParagraphs,
+            closingParagraph: closingParagraph,
+            resumeJSON: resumeJSON
+        )
+        let data = try await TectonicPDFCompiler.compile(tex: tex)
+        return ResumePDFFileDocument(data: data)
+        #else
+        throw NSError(
+            domain: "com.pipeline.coverletter",
+            code: 1,
+            userInfo: [
+                NSLocalizedDescriptionKey: "PDF export is not available on iOS. Please use a Mac to export your cover letter as PDF."
+            ]
+        )
+        #endif
+    }
+}
