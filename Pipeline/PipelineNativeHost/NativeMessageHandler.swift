@@ -99,7 +99,7 @@ enum NativeMessageHandler {
 
             await MainActor.run {
                 context.insert(application)
-                try? context.save()
+                try? ApplicationChecklistService().sync(for: application, trigger: .applicationCreated, in: context)
             }
 
             return ["success": true, "company": application.companyName, "role": application.role]

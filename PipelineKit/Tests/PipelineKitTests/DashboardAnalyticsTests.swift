@@ -136,6 +136,67 @@ import Testing
     #expect(analytics.averageOfferedComp == 140_000)
 }
 
+@Test func dashboardAnalyticsComputesChecklistPerformance() async {
+    let currentApplication = JobApplication(
+        companyName: "OpenAI",
+        role: "Engineer",
+        location: "Remote",
+        status: .applied,
+        appliedDate: makeDate("2026-03-03"),
+        updatedAt: makeDate("2026-03-03")
+    )
+    let completedChecklist = ApplicationTask(
+        title: "Tailor resume",
+        isCompleted: true,
+        completedAt: makeDate("2026-03-04"),
+        application: currentApplication,
+        origin: .smartChecklist,
+        checklistTemplateID: "tailorResume"
+    )
+    let overdueChecklist = ApplicationTask(
+        title: "Follow up",
+        dueDate: makeDate("2026-03-01"),
+        application: currentApplication,
+        origin: .smartChecklist,
+        checklistTemplateID: "followUpOnApplication"
+    )
+    currentApplication.tasks = [completedChecklist, overdueChecklist]
+
+    let previousApplication = JobApplication(
+        companyName: "Anthropic",
+        role: "Engineer",
+        location: "Remote",
+        status: .applied,
+        appliedDate: makeDate("2026-02-10"),
+        updatedAt: makeDate("2026-02-10")
+    )
+    let previousChecklist = ApplicationTask(
+        title: "Research company",
+        application: previousApplication,
+        origin: .smartChecklist,
+        checklistTemplateID: "researchCompany"
+    )
+    previousApplication.tasks = [previousChecklist]
+
+    let analyticsService = DashboardAnalyticsService(exchangeRateService: MockExchangeRateProvider(rate: 1.0))
+    let analytics = await analyticsService.analyze(
+        applications: [currentApplication, previousApplication],
+        cycles: [],
+        goals: [],
+        scope: .thisMonth,
+        baseCurrency: .usd,
+        referenceDate: makeDate("2026-03-08")
+    )
+
+    #expect(analytics.currentChecklist.totalItems == 2)
+    #expect(analytics.currentChecklist.completedItems == 1)
+    #expect(analytics.currentChecklist.openItems == 1)
+    #expect(analytics.currentChecklist.overdueItems == 1)
+    #expect(analytics.currentChecklist.completionRate == 0.5)
+    #expect(analytics.previousChecklist.totalItems == 1)
+    #expect(analytics.previousChecklist.completedItems == 0)
+}
+
 @Test func exchangeRateServiceFallsBackToLatestOfflineCachedRate() async {
     let suiteName = "ExchangeRateServiceTests-\(UUID().uuidString)"
     let userDefaults = UserDefaults(suiteName: suiteName)!
@@ -208,6 +269,7 @@ private func makeAnalyticsContainer() throws -> ModelContainer {
         ApplicationContactLink.self,
         ApplicationActivity.self,
         ApplicationTask.self,
+        ApplicationChecklistSuggestion.self,
         ApplicationAttachment.self,
         CoverLetterDraft.self,
         ResumeMasterRevision.self,

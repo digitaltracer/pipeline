@@ -104,7 +104,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
             await MainActor.run {
                 context.insert(application)
-                try? context.save()
+                try? ApplicationChecklistService().sync(for: application, trigger: .applicationCreated, in: context)
             }
 
             Self.logger.info("Saved application: \(company) — \(title)")

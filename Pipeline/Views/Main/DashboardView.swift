@@ -37,6 +37,7 @@ struct DashboardView: View {
                         emptyStateCard
                     } else {
                         summaryCards
+                        checklistSection(analytics: analytics)
                         goalTrackingSection(analytics: analytics)
                         cadenceHeatmapSection(analytics: analytics)
                         salarySection(analytics: analytics)
@@ -151,7 +152,7 @@ struct DashboardView: View {
     }
 
     private var summaryCards: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 12) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: 12)], spacing: 12) {
             ForEach(viewModel.summaryCards) { card in
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
@@ -174,6 +175,74 @@ struct DashboardView: View {
                 .appCard(cornerRadius: 14, elevated: true, shadow: false)
             }
         }
+    }
+
+    private func checklistSection(analytics: DashboardAnalyticsResult) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label("Checklist Performance", systemImage: "checklist")
+                    .font(.headline)
+                Spacer()
+                Text(viewModel.percentString(analytics.currentChecklist.completionRate))
+                    .font(.subheadline.weight(.semibold))
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
+                checklistMetricCard(
+                    title: "Completed",
+                    value: "\(analytics.currentChecklist.completedItems) / \(analytics.currentChecklist.totalItems)",
+                    subtitle: analytics.comparisonLabel
+                )
+                checklistMetricCard(
+                    title: "Open",
+                    value: "\(analytics.currentChecklist.openItems)",
+                    subtitle: "Checklist items in scope"
+                )
+                checklistMetricCard(
+                    title: "Overdue",
+                    value: "\(analytics.currentChecklist.overdueItems)",
+                    subtitle: "Past due and incomplete"
+                )
+            }
+
+            Text(checklistDeltaSummary(analytics))
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(16)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+    }
+
+    private func checklistMetricCard(title: String, value: String, subtitle: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.secondary)
+            Text(value)
+                .font(.title3.weight(.bold))
+            Text(subtitle)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+        )
+    }
+
+    private func checklistDeltaSummary(_ analytics: DashboardAnalyticsResult) -> String {
+        let current = Int((analytics.currentChecklist.completionRate * 100).rounded())
+        let previous = Int((analytics.previousChecklist.completionRate * 100).rounded())
+        let delta = current - previous
+
+        if delta == 0 {
+            return "Checklist completion is unchanged \(analytics.comparisonLabel)."
+        }
+
+        let direction = delta > 0 ? "up" : "down"
+        return "Checklist completion is \(direction) by \(abs(delta)) pts \(analytics.comparisonLabel)."
     }
 
     private func goalTrackingSection(analytics: DashboardAnalyticsResult) -> some View {
@@ -804,6 +873,7 @@ private struct GoalManagementSheet: View {
                 ApplicationContactLink.self,
                 ApplicationActivity.self,
                 ApplicationTask.self,
+                ApplicationChecklistSuggestion.self,
                 ApplicationAttachment.self,
                 CoverLetterDraft.self
             ],

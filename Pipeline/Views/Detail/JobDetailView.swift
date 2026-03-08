@@ -28,10 +28,12 @@ struct JobDetailView: View {
     @State private var showingInterviewPrep = false
     @State private var showingFollowUpDrafter = false
     @State private var showingCoverLetterEditor = false
+    @State private var showingTailorResume = false
     @State private var showingCompanyWorkspace = false
     @State private var companyWorkspaceTab: CompanyWorkspaceTab = .overview
     @State private var actionErrorMessage: String?
     @State private var descriptionDenoiseViewModel: JobDescriptionDenoiseViewModel
+    @State private var checklistSuggestionsViewModel: ChecklistSuggestionsViewModel
     @Environment(\.colorScheme) private var colorScheme
 
     init(
@@ -44,6 +46,12 @@ struct JobDetailView: View {
         self.onSelectContact = onSelectContact
         _descriptionDenoiseViewModel = State(
             initialValue: JobDescriptionDenoiseViewModel(
+                application: application,
+                settingsViewModel: SettingsViewModel()
+            )
+        )
+        _checklistSuggestionsViewModel = State(
+            initialValue: ChecklistSuggestionsViewModel(
                 application: application,
                 settingsViewModel: SettingsViewModel()
             )
@@ -131,6 +139,24 @@ struct JobDetailView: View {
                         viewModel: viewModel
                     )
 
+                    ApplicationChecklistSection(
+                        application: application,
+                        viewModel: viewModel,
+                        onEditTask: { task in
+                            editingTask = task
+                        },
+                        onOpenTaskAction: { task in
+                            openChecklistAction(for: task)
+                        },
+                        onError: { message in
+                            actionErrorMessage = message
+                        }
+                    )
+
+                    ApplicationChecklistSuggestionsSection(
+                        viewModel: checklistSuggestionsViewModel
+                    )
+
                     ApplicationTasksSection(
                         application: application,
                         viewModel: viewModel,
@@ -191,6 +217,9 @@ struct JobDetailView: View {
         }
         .sheet(item: $editingTask) { task in
             ApplicationTaskEditorView(application: application, taskToEdit: task)
+        }
+        .sheet(isPresented: $showingTailorResume) {
+            ResumeTailoringView(application: application)
         }
         .sheet(isPresented: $showingInterviewPrep) {
             InterviewPrepView(
@@ -284,14 +313,29 @@ struct JobDetailView: View {
             actionErrorMessage = newValue
             descriptionDenoiseViewModel.clearError()
         }
+        .onChange(of: checklistSuggestionsViewModel.error) { _, newValue in
+            guard let newValue else { return }
+            actionErrorMessage = newValue
+            checklistSuggestionsViewModel.clearError()
+        }
         .task(id: application.id) {
             descriptionDenoiseViewModel.setModelContext(modelContext)
+            checklistSuggestionsViewModel.setModelContext(modelContext)
             if application.company == nil {
                 do {
                     _ = try viewModel.ensureCompanyProfile(for: application, context: modelContext)
                 } catch {
                     actionErrorMessage = error.localizedDescription
                 }
+            }
+
+            do {
+                try ApplicationChecklistService().sync(for: application, trigger: .detailViewed, in: modelContext)
+                Task { @MainActor in
+                    await NotificationService.shared.syncReminderState(for: application)
+                }
+            } catch {
+                actionErrorMessage = error.localizedDescription
             }
         }
     }
@@ -303,6 +347,27 @@ struct JobDetailView: View {
             showingCompanyWorkspace = true
         } catch {
             actionErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func openChecklistAction(for task: ApplicationTask) {
+        switch task.actionKind {
+        case .none:
+            break
+        case .resumeTailoring:
+            showingTailorResume = true
+        case .coverLetter:
+            showingCoverLetterEditor = true
+        case .companyResearch:
+            openCompanyWorkspace(.research)
+        case .manageContacts:
+            showingManageContacts = true
+        case .interviewPrep:
+            showingInterviewPrep = true
+        case .followUpDrafter:
+            showingFollowUpDrafter = true
+        case .salaryComparison:
+            openCompanyWorkspace(.salary)
         }
     }
 
@@ -1649,6 +1714,148 @@ struct ApplicationTaskEditorView: View {
     }
 }
 
+private struct ApplicationChecklistSection: View {
+    @Environment(\.modelContext) private var modelContext
+    @Bindable var application: JobApplication
+    let viewModel: ApplicationDetailViewModel
+    let onEditTask: (ApplicationTask) -> Void
+    let onOpenTaskAction: (ApplicationTask) -> Void
+    let onError: (String) -> Void
+
+    @State private var showingCompletedTasks = false
+
+    private var openTasks: [ApplicationTask] {
+        application.sortedChecklistTasks.filter { !$0.isCompleted }
+    }
+
+    private var completedTasks: [ApplicationTask] {
+        application.sortedChecklistTasks.filter(\.isCompleted)
+    }
+
+    private var emptyMessage: String {
+        switch application.status {
+        case .saved:
+            return "Checklist items will appear automatically as you prep this role."
+        case .applied:
+            return "Pipeline will keep stage-based application follow-through here."
+        case .interviewing:
+            return "Interview prep steps will appear here when they apply to this role."
+        case .offered:
+            return "Offer-stage checklist items will appear here when they apply."
+        case .rejected, .archived, .custom(_):
+            return "No smart checklist items are active for this application."
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Smart Checklist", systemImage: "checklist")
+                    .font(.headline)
+
+                Spacer()
+
+                if !openTasks.isEmpty {
+                    Text("\(openTasks.count) open")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            if openTasks.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("No open checklist items")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    Text(emptyMessage)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .appCard(cornerRadius: 14, elevated: true, shadow: false)
+            } else {
+                ForEach(openTasks) { task in
+                    ApplicationTaskRow(
+                        task: task,
+                        actionLabel: task.actionKind == .none ? nil : "Open",
+                        deleteLabel: "Dismiss",
+                        deleteConfirmationTitle: "Dismiss Checklist Item",
+                        deleteConfirmationMessage: "This checklist item will stay hidden for this application.",
+                        onToggleCompletion: {
+                            setCompletion(!task.isCompleted, for: task)
+                        },
+                        onAction: {
+                            onOpenTaskAction(task)
+                        },
+                        onEdit: {
+                            onEditTask(task)
+                        },
+                        onDelete: {
+                            deleteTask(task)
+                        }
+                    )
+                }
+            }
+
+            if !completedTasks.isEmpty {
+                DisclosureGroup(
+                    isExpanded: $showingCompletedTasks,
+                    content: {
+                        VStack(spacing: 12) {
+                            ForEach(completedTasks) { task in
+                                ApplicationTaskRow(
+                                    task: task,
+                                    actionLabel: task.actionKind == .none ? nil : "Open",
+                                    deleteLabel: "Dismiss",
+                                    deleteConfirmationTitle: "Dismiss Checklist Item",
+                                    deleteConfirmationMessage: "This checklist item will stay hidden for this application.",
+                                    onToggleCompletion: {
+                                        setCompletion(false, for: task)
+                                    },
+                                    onAction: {
+                                        onOpenTaskAction(task)
+                                    },
+                                    onEdit: {
+                                        onEditTask(task)
+                                    },
+                                    onDelete: {
+                                        deleteTask(task)
+                                    }
+                                )
+                            }
+                        }
+                        .padding(.top, 12)
+                    },
+                    label: {
+                        Text("Completed (\(completedTasks.count))")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                )
+                .padding(14)
+                .appCard(cornerRadius: 14, elevated: true, shadow: false)
+            }
+        }
+    }
+
+    private func setCompletion(_ isCompleted: Bool, for task: ApplicationTask) {
+        do {
+            try viewModel.setTaskCompletion(isCompleted, for: task, in: application, context: modelContext)
+        } catch {
+            onError(error.localizedDescription)
+        }
+    }
+
+    private func deleteTask(_ task: ApplicationTask) {
+        do {
+            try viewModel.deleteTask(task, from: application, context: modelContext)
+        } catch {
+            onError(error.localizedDescription)
+        }
+    }
+}
+
 private struct ApplicationTasksSection: View {
     @Environment(\.modelContext) private var modelContext
     @Bindable var application: JobApplication
@@ -1660,11 +1867,11 @@ private struct ApplicationTasksSection: View {
     @State private var showingCompletedTasks = false
 
     private var openTasks: [ApplicationTask] {
-        application.sortedTasks.filter { !$0.isCompleted }
+        application.sortedManualTasks.filter { !$0.isCompleted }
     }
 
     private var completedTasks: [ApplicationTask] {
-        application.sortedTasks.filter(\.isCompleted)
+        application.sortedManualTasks.filter(\.isCompleted)
     }
 
     var body: some View {
@@ -1762,9 +1969,83 @@ private struct ApplicationTasksSection: View {
     }
 }
 
+private struct ApplicationChecklistSuggestionsSection: View {
+    @Bindable var viewModel: ChecklistSuggestionsViewModel
+
+    private var buttonTitle: String {
+        viewModel.hasGeneratedSuggestions ? "Refresh Suggestions" : "Generate Suggestions"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("AI Suggestions", systemImage: "sparkles")
+                    .font(.headline)
+
+                Spacer()
+
+                Button(buttonTitle) {
+                    Task {
+                        await viewModel.generate()
+                    }
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(DesignSystem.Colors.accent)
+                .disabled(viewModel.isLoading)
+            }
+
+            Text("Optional ideas tailored to this role. Accepted suggestions become normal tasks and do not change the base checklist.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            if viewModel.isLoading && viewModel.pendingSuggestions.isEmpty {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Generating role-specific next steps...")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .appCard(cornerRadius: 14, elevated: true, shadow: false)
+            } else if viewModel.pendingSuggestions.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("No pending suggestions")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    Text("Generate optional, job-specific next steps after you add more notes, company research, or interview context.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .appCard(cornerRadius: 14, elevated: true, shadow: false)
+            } else {
+                ForEach(viewModel.pendingSuggestions) { suggestion in
+                    ApplicationChecklistSuggestionRow(
+                        suggestion: suggestion,
+                        onAccept: {
+                            viewModel.accept(suggestion)
+                        },
+                        onDismiss: {
+                            viewModel.dismiss(suggestion)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
 private struct ApplicationTaskRow: View {
     let task: ApplicationTask
+    var actionLabel: String? = nil
+    var deleteLabel: String = "Delete"
+    var deleteConfirmationTitle: String = "Delete Task"
+    var deleteConfirmationMessage: String = "Are you sure you want to delete this task?"
     let onToggleCompletion: () -> Void
+    var onAction: (() -> Void)? = nil
     let onEdit: () -> Void
     let onDelete: () -> Void
 
@@ -1806,6 +2087,14 @@ private struct ApplicationTaskRow: View {
                 Spacer()
 
                 HStack(spacing: 12) {
+                    if let actionLabel, let onAction {
+                        Button(actionLabel) {
+                            onAction()
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(DesignSystem.Colors.accent)
+                    }
+
                     Button("Edit") {
                         onEdit()
                     }
@@ -1815,25 +2104,61 @@ private struct ApplicationTaskRow: View {
                     Button(role: .destructive) {
                         showingDeleteConfirmation = true
                     } label: {
-                        Text("Delete")
+                        Text(deleteLabel)
                     }
                     .buttonStyle(.plain)
                     .confirmationDialog(
-                        "Delete Task",
+                        deleteConfirmationTitle,
                         isPresented: $showingDeleteConfirmation,
                         titleVisibility: .visible
                     ) {
-                        Button("Delete", role: .destructive) {
+                        Button(deleteLabel, role: .destructive) {
                             onDelete()
                         }
                         Button("Cancel", role: .cancel) {}
                     } message: {
-                        Text("Are you sure you want to delete this task?")
+                        Text(deleteConfirmationMessage)
                     }
                 }
                 .font(.caption)
             }
         }
+        .padding(14)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+    }
+}
+
+private struct ApplicationChecklistSuggestionRow: View {
+    let suggestion: ApplicationChecklistSuggestion
+    let onAccept: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(suggestion.displayTitle)
+                .font(.subheadline.weight(.semibold))
+
+            if let rationale = suggestion.normalizedRationale {
+                Text(rationale)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            HStack(spacing: 12) {
+                Button("Add as Task") {
+                    onAccept()
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(DesignSystem.Colors.accent)
+
+                Button("Dismiss", role: .destructive) {
+                    onDismiss()
+                }
+                .buttonStyle(.plain)
+            }
+            .font(.caption.weight(.semibold))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .appCard(cornerRadius: 14, elevated: true, shadow: false)
     }
@@ -2047,6 +2372,7 @@ private struct JobDescriptionDenoiseReviewSheet: View {
             ApplicationContactLink.self,
             ApplicationActivity.self,
             ApplicationTask.self,
+            ApplicationChecklistSuggestion.self,
             ApplicationAttachment.self,
             CoverLetterDraft.self,
             ResumeMasterRevision.self,

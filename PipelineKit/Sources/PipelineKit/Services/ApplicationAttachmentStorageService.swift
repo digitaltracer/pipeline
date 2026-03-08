@@ -186,6 +186,7 @@ public struct ApplicationAttachmentStorageService {
 
         if isSubmittedResume {
             try ensureSingleSubmittedResume(current: attachment, in: application, context: context)
+            try ApplicationChecklistService().sync(for: application, trigger: .submittedResumeSaved, in: context)
         }
 
         application.updateTimestamp()
@@ -234,7 +235,7 @@ public struct ApplicationAttachmentStorageService {
         attachment.markSubmittedResume(true)
         attachment.category = .resume
         application.updateTimestamp()
-        try context.save()
+        try ApplicationChecklistService().sync(for: application, trigger: .submittedResumeSaved, in: context)
     }
 
     public func makeManagedRelativePath(

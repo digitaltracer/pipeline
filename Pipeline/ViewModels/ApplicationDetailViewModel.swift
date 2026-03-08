@@ -22,6 +22,8 @@ final class ApplicationDetailViewModel {
         }
     }
 
+    private let checklistService = ApplicationChecklistService()
+
     // MARK: - Actions
 
     func archive(_ application: JobApplication, context: ModelContext) throws {
@@ -36,9 +38,9 @@ final class ApplicationDetailViewModel {
         )
 
         do {
-            try context.save()
+            try syncChecklist(for: application, trigger: .statusChanged, context: context)
             Task { @MainActor in
-                await NotificationService.shared.syncFollowUpReminder(for: application)
+                await NotificationService.shared.syncReminderState(for: application)
             }
         } catch {
             context.rollback()
@@ -376,6 +378,10 @@ final class ApplicationDetailViewModel {
         let taskID = task.id
         let applicationID = application.id
 
+        if task.isSmartChecklistItem, let templateID = task.checklistTemplateID {
+            application.dismissChecklistTemplate(id: templateID)
+        }
+
         context.delete(task)
         application.tasks?.removeAll(where: { $0.id == taskID })
         application.updateTimestamp()
@@ -440,7 +446,10 @@ final class ApplicationDetailViewModel {
         }
 
         do {
-            try context.save()
+            try syncChecklist(for: application, trigger: .interviewLogged, context: context)
+            Task { @MainActor in
+                await NotificationService.shared.syncReminderState(for: application)
+            }
         } catch {
             context.rollback()
             throw error
@@ -474,7 +483,7 @@ final class ApplicationDetailViewModel {
         )
 
         do {
-            try context.save()
+            try syncChecklist(for: application, trigger: .contactsChanged, context: context)
         } catch {
             context.rollback()
             throw error
@@ -498,7 +507,7 @@ final class ApplicationDetailViewModel {
         }
 
         do {
-            try context.save()
+            try syncChecklist(for: application, trigger: .contactsChanged, context: context)
         } catch {
             context.rollback()
             throw error
@@ -521,7 +530,7 @@ final class ApplicationDetailViewModel {
         }
 
         do {
-            try context.save()
+            try syncChecklist(for: application, trigger: .contactsChanged, context: context)
         } catch {
             context.rollback()
             throw error
@@ -585,7 +594,7 @@ final class ApplicationDetailViewModel {
         syncInterviewState(for: application, context: context)
 
         do {
-            try context.save()
+            try syncChecklist(for: application, trigger: .statusChanged, context: context)
         } catch {
             context.rollback()
             throw error
@@ -717,6 +726,14 @@ final class ApplicationDetailViewModel {
         company.lastSalaryResearchAt = latestSalarySnapshot?.capturedAt
         company.updateTimestamp()
     }
+
+    private func syncChecklist(
+        for application: JobApplication,
+        trigger: ApplicationChecklistSyncTrigger,
+        context: ModelContext
+    ) throws {
+        try checklistService.sync(for: application, trigger: trigger, in: context)
+    }
 }
 
 @Observable
@@ -787,6 +804,12 @@ final class CompanyResearchViewModel {
                     requestStatus: requestStatus,
                     startedAt: requestStartedAt,
                     finishedAt: Date(),
+                    in: modelContext
+                )
+
+                try ApplicationChecklistService().sync(
+                    for: application,
+                    trigger: .companyResearchSaved,
                     in: modelContext
                 )
 

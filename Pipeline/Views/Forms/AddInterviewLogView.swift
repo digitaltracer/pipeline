@@ -394,6 +394,7 @@ struct AddInterviewLogView: View {
             ApplicationContactLink.self,
             ApplicationActivity.self,
             ApplicationTask.self,
+            ApplicationChecklistSuggestion.self,
             ApplicationAttachment.self,
             CoverLetterDraft.self
         ],

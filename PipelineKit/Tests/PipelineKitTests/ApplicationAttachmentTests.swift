@@ -177,6 +177,7 @@ private func makeAttachmentContainer() throws -> ModelContainer {
         ApplicationContactLink.self,
         ApplicationActivity.self,
         ApplicationTask.self,
+        ApplicationChecklistSuggestion.self,
         ApplicationAttachment.self,
         CoverLetterDraft.self,
         ResumeMasterRevision.self,

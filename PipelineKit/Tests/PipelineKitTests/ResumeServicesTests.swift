@@ -302,6 +302,7 @@ import Testing
         ApplicationContactLink.self,
         ApplicationActivity.self,
         ApplicationTask.self,
+        ApplicationChecklistSuggestion.self,
         CoverLetterDraft.self,
         ResumeMasterRevision.self,
         ResumeJobSnapshot.self,

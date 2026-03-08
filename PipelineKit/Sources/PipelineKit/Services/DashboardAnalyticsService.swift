@@ -104,6 +104,28 @@ public struct DashboardGoalProgress: Identifiable, Sendable {
     }
 }
 
+public struct DashboardChecklistSnapshot: Sendable {
+    public let totalItems: Int
+    public let completedItems: Int
+    public let openItems: Int
+    public let overdueItems: Int
+    public let completionRate: Double
+
+    public init(
+        totalItems: Int,
+        completedItems: Int,
+        openItems: Int,
+        overdueItems: Int,
+        completionRate: Double
+    ) {
+        self.totalItems = totalItems
+        self.completedItems = completedItems
+        self.openItems = openItems
+        self.overdueItems = overdueItems
+        self.completionRate = completionRate
+    }
+}
+
 public struct DashboardAnalyticsResult {
     public let scope: AnalyticsComparisonScope
     public let currentSnapshot: DashboardSnapshot
@@ -114,6 +136,8 @@ public struct DashboardAnalyticsResult {
     public let salaryDistribution: [DashboardSalaryBin]
     public let averageExpectedComp: Double?
     public let averageOfferedComp: Double?
+    public let currentChecklist: DashboardChecklistSnapshot
+    public let previousChecklist: DashboardChecklistSnapshot
     public let goalProgress: [DashboardGoalProgress]
     public let activeCycle: JobSearchCycle?
     public let previousCycle: JobSearchCycle?
@@ -131,6 +155,8 @@ public struct DashboardAnalyticsResult {
         salaryDistribution: [DashboardSalaryBin],
         averageExpectedComp: Double?,
         averageOfferedComp: Double?,
+        currentChecklist: DashboardChecklistSnapshot,
+        previousChecklist: DashboardChecklistSnapshot,
         goalProgress: [DashboardGoalProgress],
         activeCycle: JobSearchCycle?,
         previousCycle: JobSearchCycle?,
@@ -147,6 +173,8 @@ public struct DashboardAnalyticsResult {
         self.salaryDistribution = salaryDistribution
         self.averageExpectedComp = averageExpectedComp
         self.averageOfferedComp = averageOfferedComp
+        self.currentChecklist = currentChecklist
+        self.previousChecklist = previousChecklist
         self.goalProgress = goalProgress
         self.activeCycle = activeCycle
         self.previousCycle = previousCycle
@@ -195,6 +223,8 @@ public final class DashboardAnalyticsService: @unchecked Sendable {
         let funnel = makeFunnel(for: scopedApps.current)
         let timeInStage = makeTimeInStage(for: scopedApps.current, referenceDate: referenceDate)
         let cadenceHeatmap = makeCadenceHeatmap(for: scopedApps.current, referenceDate: referenceDate)
+        let currentChecklist = makeChecklistSnapshot(for: scopedApps.current, referenceDate: referenceDate)
+        let previousChecklist = makeChecklistSnapshot(for: scopedApps.previous, referenceDate: referenceDate)
 
         let salaryAnalytics = await makeSalaryAnalytics(
             for: scopedApps.current,
@@ -227,6 +257,8 @@ public final class DashboardAnalyticsService: @unchecked Sendable {
             salaryDistribution: salaryAnalytics.bins,
             averageExpectedComp: salaryAnalytics.averageExpectedComp,
             averageOfferedComp: salaryAnalytics.averageOfferedComp,
+            currentChecklist: currentChecklist,
+            previousChecklist: previousChecklist,
             goalProgress: goalProgress,
             activeCycle: activeCycle,
             previousCycle: previousCycle,
@@ -266,6 +298,28 @@ public final class DashboardAnalyticsService: @unchecked Sendable {
                 applications.filter { $0.cycle?.id == previousCycle?.id }
             )
         }
+    }
+
+    private func makeChecklistSnapshot(
+        for applications: [JobApplication],
+        referenceDate: Date
+    ) -> DashboardChecklistSnapshot {
+        let checklistTasks = applications.flatMap(\.sortedChecklistTasks)
+        let completedItems = checklistTasks.filter(\.isCompleted).count
+        let openItems = checklistTasks.count - completedItems
+        let startOfToday = calendar.startOfDay(for: referenceDate)
+        let overdueItems = checklistTasks.filter { task in
+            guard !task.isCompleted, let dueDate = task.dueDate else { return false }
+            return dueDate < startOfToday
+        }.count
+
+        return DashboardChecklistSnapshot(
+            totalItems: checklistTasks.count,
+            completedItems: completedItems,
+            openItems: openItems,
+            overdueItems: overdueItems,
+            completionRate: checklistTasks.isEmpty ? 0 : Double(completedItems) / Double(checklistTasks.count)
+        )
     }
 
     private func snapshot(for applications: [JobApplication]) -> DashboardSnapshot {

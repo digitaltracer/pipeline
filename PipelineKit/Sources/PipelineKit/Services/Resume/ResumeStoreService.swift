@@ -144,7 +144,7 @@ public enum ResumeStoreService {
         application.updateTimestamp()
 
         context.insert(snapshot)
-        try context.save()
+        try ApplicationChecklistService().sync(for: application, trigger: .resumeSnapshotSaved, in: context)
         return snapshot
     }
 

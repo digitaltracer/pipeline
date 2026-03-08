@@ -17,6 +17,7 @@ final class KanbanViewModel {
     func moveApplication(_ application: JobApplication, to status: ApplicationStatus, context: ModelContext) {
         let oldStatus = application.status
         guard oldStatus != status else { return }
+        let checklistService = ApplicationChecklistService()
 
         application.status = status
 
@@ -35,7 +36,10 @@ final class KanbanViewModel {
         )
 
         do {
-            try context.save()
+            try checklistService.sync(for: application, trigger: .statusChanged, in: context)
+            Task { @MainActor in
+                await NotificationService.shared.syncReminderState(for: application)
+            }
         } catch {
             context.rollback()
             print("KanbanViewModel: failed to save after move: \(error)")

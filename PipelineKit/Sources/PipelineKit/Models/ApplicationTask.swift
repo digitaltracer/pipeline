@@ -9,6 +9,9 @@ public final class ApplicationTask {
     public var dueDate: Date?
     public var isCompleted: Bool = false
     public var completedAt: Date?
+    private var originRawValue: String = ApplicationTaskOrigin.manual.rawValue
+    public var checklistTemplateID: String?
+    private var actionKindRawValue: String = ApplicationTaskActionKind.none.rawValue
     public private(set) var priorityRawValue: String = Priority.medium.rawValue
     public var createdAt: Date = Date()
     public var updatedAt: Date = Date()
@@ -24,6 +27,24 @@ public final class ApplicationTask {
         }
     }
 
+    public var origin: ApplicationTaskOrigin {
+        get { ApplicationTaskOrigin(rawValue: originRawValue) ?? .manual }
+        set {
+            guard originRawValue != newValue.rawValue else { return }
+            originRawValue = newValue.rawValue
+            updateTimestamp()
+        }
+    }
+
+    public var actionKind: ApplicationTaskActionKind {
+        get { ApplicationTaskActionKind(rawValue: actionKindRawValue) ?? .none }
+        set {
+            guard actionKindRawValue != newValue.rawValue else { return }
+            actionKindRawValue = newValue.rawValue
+            updateTimestamp()
+        }
+    }
+
     public init(
         id: UUID = UUID(),
         title: String,
@@ -33,6 +54,9 @@ public final class ApplicationTask {
         completedAt: Date? = nil,
         priority: Priority = .medium,
         application: JobApplication? = nil,
+        origin: ApplicationTaskOrigin = .manual,
+        checklistTemplateID: String? = nil,
+        actionKind: ApplicationTaskActionKind = .none,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -42,6 +66,9 @@ public final class ApplicationTask {
         self.dueDate = dueDate
         self.isCompleted = isCompleted
         self.completedAt = completedAt
+        self.originRawValue = origin.rawValue
+        self.checklistTemplateID = checklistTemplateID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.actionKindRawValue = actionKind.rawValue
         self.priorityRawValue = priority.rawValue
         self.application = application
         self.createdAt = createdAt
@@ -61,6 +88,10 @@ public final class ApplicationTask {
         guard let notes else { return nil }
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedNotes.isEmpty ? nil : trimmedNotes
+    }
+
+    public var isSmartChecklistItem: Bool {
+        origin == .smartChecklist
     }
 
     public func setCompleted(_ value: Bool) {

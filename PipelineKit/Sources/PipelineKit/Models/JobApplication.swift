@@ -31,6 +31,7 @@ public final class JobApplication {
     public private(set) var offerEquityCompensation: Int?
     public var appliedDate: Date?
     public var nextFollowUpDate: Date?
+    public var dismissedChecklistTemplateIDs: [String] = []
 
     public var cycle: JobSearchCycle?
     public var company: CompanyProfile?
@@ -46,6 +47,9 @@ public final class JobApplication {
 
     @Relationship(deleteRule: .cascade, inverse: \ApplicationTask.application)
     public var tasks: [ApplicationTask]?
+
+    @Relationship(deleteRule: .cascade, inverse: \ApplicationChecklistSuggestion.application)
+    public var checklistSuggestions: [ApplicationChecklistSuggestion]?
 
     @Relationship(deleteRule: .cascade, inverse: \ResumeJobSnapshot.application)
     public var resumeSnapshots: [ResumeJobSnapshot]?
@@ -254,6 +258,32 @@ public final class JobApplication {
         }
     }
 
+    public var sortedChecklistTasks: [ApplicationTask] {
+        sortedTasks.filter(\.isSmartChecklistItem)
+    }
+
+    public var sortedManualTasks: [ApplicationTask] {
+        sortedTasks.filter { !$0.isSmartChecklistItem }
+    }
+
+    public var sortedChecklistSuggestions: [ApplicationChecklistSuggestion] {
+        (checklistSuggestions ?? []).sorted { lhs, rhs in
+            if lhs.status != rhs.status {
+                return lhs.status.sortOrder < rhs.status.sortOrder
+            }
+
+            if lhs.updatedAt != rhs.updatedAt {
+                return lhs.updatedAt > rhs.updatedAt
+            }
+
+            return lhs.createdAt > rhs.createdAt
+        }
+    }
+
+    public var pendingChecklistSuggestions: [ApplicationChecklistSuggestion] {
+        sortedChecklistSuggestions.filter { $0.status == .pending }
+    }
+
     public var primaryContactLink: ApplicationContactLink? {
         sortedContactLinks.first(where: \.isPrimary)
     }
@@ -341,12 +371,14 @@ public final class JobApplication {
         offerEquityCompensation: Int? = nil,
         appliedDate: Date? = nil,
         nextFollowUpDate: Date? = nil,
+        dismissedChecklistTemplateIDs: [String] = [],
         cycle: JobSearchCycle? = nil,
         company: CompanyProfile? = nil,
         interviewLogs: [InterviewLog]? = nil,
         contactLinks: [ApplicationContactLink]? = nil,
         activities: [ApplicationActivity]? = nil,
         tasks: [ApplicationTask]? = nil,
+        checklistSuggestions: [ApplicationChecklistSuggestion]? = nil,
         resumeSnapshots: [ResumeJobSnapshot]? = nil,
         coverLetterDraft: CoverLetterDraft? = nil,
         attachments: [ApplicationAttachment]? = nil,
@@ -381,12 +413,14 @@ public final class JobApplication {
         setExpectedSalaryRange(min: expectedSalaryMin, max: expectedSalaryMax, shouldTouch: false)
         self.appliedDate = appliedDate
         self.nextFollowUpDate = nextFollowUpDate
+        self.dismissedChecklistTemplateIDs = dismissedChecklistTemplateIDs
         self.cycle = cycle
         self.company = company
         self.interviewLogs = interviewLogs
         self.contactLinks = contactLinks
         self.activities = activities
         self.tasks = tasks
+        self.checklistSuggestions = checklistSuggestions
         self.resumeSnapshots = resumeSnapshots
         self.coverLetterDraft = coverLetterDraft
         self.attachments = attachments
@@ -444,6 +478,32 @@ public final class JobApplication {
         }
         tasks?.append(task)
         updateTimestamp()
+    }
+
+    public func addChecklistSuggestion(_ suggestion: ApplicationChecklistSuggestion) {
+        if checklistSuggestions == nil {
+            checklistSuggestions = []
+        }
+        checklistSuggestions?.append(suggestion)
+        updateTimestamp()
+    }
+
+    public func dismissChecklistTemplate(id: String) {
+        let normalized = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return }
+        guard !dismissedChecklistTemplateIDs.contains(normalized) else { return }
+        dismissedChecklistTemplateIDs.append(normalized)
+        updateTimestamp()
+    }
+
+    public func restoreDismissedChecklistTemplate(id: String) {
+        let normalized = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return }
+        let previousCount = dismissedChecklistTemplateIDs.count
+        dismissedChecklistTemplateIDs.removeAll(where: { $0 == normalized })
+        if dismissedChecklistTemplateIDs.count != previousCount {
+            updateTimestamp()
+        }
     }
 
     public func setSalaryRange(min: Int?, max: Int?, shouldTouch: Bool = true) {

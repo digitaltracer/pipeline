@@ -202,6 +202,7 @@ final class AddEditApplicationViewModel {
 
         let savedApplication: JobApplication
         let saveTimestamp = Date()
+        let checklistService = ApplicationChecklistService()
 
         do {
             if isEditing, let app = editingApplication {
@@ -225,7 +226,7 @@ final class AddEditApplicationViewModel {
                     in: context
                 )
 
-                try context.save()
+                try checklistService.sync(for: app, trigger: .statusChanged, in: context)
                 savedApplication = app
             } else {
                 let app = try createApplication(context: context)
@@ -236,7 +237,7 @@ final class AddEditApplicationViewModel {
                     occurredAt: saveTimestamp,
                     in: context
                 )
-                try context.save()
+                try checklistService.sync(for: app, trigger: .applicationCreated, in: context)
                 savedApplication = app
             }
         } catch {
@@ -246,7 +247,7 @@ final class AddEditApplicationViewModel {
 
         Task {
             @MainActor in
-            await NotificationService.shared.syncFollowUpReminder(for: savedApplication)
+            await NotificationService.shared.syncReminderState(for: savedApplication)
         }
     }
 

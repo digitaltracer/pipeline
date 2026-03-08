@@ -723,7 +723,7 @@ final class CoverLetterEditorViewModel {
         draft.refreshPlainText(shouldTouch: false)
         draft.updateTimestamp()
         application.updateTimestamp()
-        try modelContext.save()
+        try ApplicationChecklistService().sync(for: application, trigger: .coverLetterSaved, in: modelContext)
         lastAutosavedAt = draft.updatedAt
         self.draft = draft
         return draft

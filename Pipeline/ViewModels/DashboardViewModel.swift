@@ -101,6 +101,21 @@ final class DashboardViewModel {
                     previous: analytics.previousSnapshot.responseRate
                 ),
                 icon: "chart.line.uptrend.xyaxis"
+            ),
+            SummaryCard(
+                id: "checklist-rate",
+                title: "Checklist Rate",
+                value: percentString(analytics.currentChecklist.completionRate),
+                deltaText: deltaString(
+                    current: analytics.currentChecklist.completionRate,
+                    previous: analytics.previousChecklist.completionRate,
+                    isPercent: true
+                ),
+                deltaColorName: deltaColorName(
+                    current: analytics.currentChecklist.completionRate,
+                    previous: analytics.previousChecklist.completionRate
+                ),
+                icon: "checklist"
             )
         ]
     }
