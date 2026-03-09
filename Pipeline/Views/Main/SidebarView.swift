@@ -102,14 +102,6 @@ struct SidebarView: View {
                         .listRowBackground(Color.clear)
                     }
 
-                    destinationButton(
-                        title: "Contacts",
-                        icon: "person.2",
-                        isSelected: selectedDestination == .contacts,
-                        accentColor: .cyan
-                    ) {
-                        selectedDestination = .contacts
-                    }
                 }
             }
             .listStyle(.sidebar)
@@ -119,6 +111,15 @@ struct SidebarView: View {
                 .padding(.horizontal)
 
             VStack(spacing: 4) {
+                destinationUtilityRow(
+                    title: "Contacts",
+                    icon: "person.2",
+                    isSelected: selectedDestination == .contacts,
+                    accentColor: .cyan
+                ) {
+                    selectedDestination = .contacts
+                }
+
                 destinationUtilityRow(
                     title: "Resume",
                     icon: "doc.text",

@@ -19,6 +19,8 @@ struct CostCenterView: View {
     @State private var addOutputRate: Double = 0
     @State private var actionError: String?
 
+    private let recentRunsMaxHeight: CGFloat = 360
+
     private enum TimeWindow: String, CaseIterable, Identifiable {
         case sevenDays = "Last 7 days"
         case fourteenDays = "Last 14 days"
@@ -178,13 +180,13 @@ struct CostCenterView: View {
                 summaryCards
                 spendPanels
                 modelBreakdownCard
+                recentRunsCard
 
                 if !missingRateRecords.isEmpty {
                     missingRateWarning
                 }
 
                 rateEditorCard
-                recentRunsCard
             }
             .padding(20)
         }
@@ -567,44 +569,51 @@ struct CostCenterView: View {
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 8)
             } else {
-                ForEach(Array(filteredRecords.prefix(20))) { record in
-                    HStack {
-                        Text(formatDateTime(record.finishedAt))
-                            .font(.caption2)
-                            .frame(width: 140, alignment: .leading)
+                ScrollView(.vertical, showsIndicators: true) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(filteredRecords.prefix(20))) { record in
+                            HStack {
+                                Text(formatDateTime(record.finishedAt))
+                                    .font(.caption2)
+                                    .frame(width: 140, alignment: .leading)
 
-                        Text(providerDisplayName(for: record.providerID))
-                            .font(.caption)
-                            .lineLimit(1)
-                            .frame(width: 90, alignment: .leading)
+                                Text(providerDisplayName(for: record.providerID))
+                                    .font(.caption)
+                                    .lineLimit(1)
+                                    .frame(width: 90, alignment: .leading)
 
-                        Text(record.model)
-                            .font(.caption)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                                Text(record.model)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                        Text(record.feature.title)
-                            .font(.caption)
-                            .lineLimit(1)
-                            .frame(width: 120, alignment: .leading)
+                                Text(record.feature.title)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                                    .frame(width: 120, alignment: .leading)
 
-                        Text(contextLabel(for: record))
-                            .font(.caption2)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .frame(width: 180, alignment: .leading)
+                                Text(contextLabel(for: record))
+                                    .font(.caption2)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    .frame(width: 180, alignment: .leading)
 
-                        Text(formatTokens(record.totalTokens ?? 0))
-                            .font(.caption)
-                            .frame(width: 90, alignment: .trailing)
+                                Text(formatTokens(record.totalTokens ?? 0))
+                                    .font(.caption)
+                                    .frame(width: 90, alignment: .trailing)
 
-                        Text(record.totalCostUSD.map(formatUSD) ?? "N/A")
-                            .font(.caption)
-                            .frame(width: 95, alignment: .trailing)
+                                Text(record.totalCostUSD.map(formatUSD) ?? "N/A")
+                                    .font(.caption)
+                                    .frame(width: 95, alignment: .trailing)
+                            }
+                            .padding(.vertical, 6)
+
+                            Divider().overlay(DesignSystem.Colors.divider(colorScheme))
+                        }
                     }
-                    Divider().overlay(DesignSystem.Colors.divider(colorScheme))
                 }
+                .frame(maxHeight: recentRunsMaxHeight)
             }
         }
         .padding(14)
