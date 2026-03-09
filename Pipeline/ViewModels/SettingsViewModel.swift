@@ -40,6 +40,11 @@ final class SettingsViewModel {
         static let notificationsEnabled = "notificationsEnabled"
         static let reminderTiming = "reminderTiming"
         static let analyticsBaseCurrency = Constants.UserDefaultsKeys.analyticsBaseCurrency
+        static let jobMatchPreferredCurrency = "jobMatchPreferredCurrency"
+        static let jobMatchPreferredSalaryMinText = "jobMatchPreferredSalaryMinText"
+        static let jobMatchPreferredSalaryMaxText = "jobMatchPreferredSalaryMaxText"
+        static let jobMatchAllowedWorkModes = "jobMatchAllowedWorkModes"
+        static let jobMatchPreferredLocations = "jobMatchPreferredLocations"
     }
 
     private static let modelCatalogRefreshInterval: TimeInterval = 60 * 60 * 24
@@ -111,6 +116,36 @@ final class SettingsViewModel {
     var analyticsBaseCurrency: Currency {
         didSet {
             UserDefaults.standard.set(analyticsBaseCurrency.rawValue, forKey: StorageKeys.analyticsBaseCurrency)
+        }
+    }
+
+    var jobMatchPreferredCurrency: Currency {
+        didSet {
+            UserDefaults.standard.set(jobMatchPreferredCurrency.rawValue, forKey: StorageKeys.jobMatchPreferredCurrency)
+        }
+    }
+
+    var jobMatchPreferredSalaryMinText: String {
+        didSet {
+            UserDefaults.standard.set(jobMatchPreferredSalaryMinText, forKey: StorageKeys.jobMatchPreferredSalaryMinText)
+        }
+    }
+
+    var jobMatchPreferredSalaryMaxText: String {
+        didSet {
+            UserDefaults.standard.set(jobMatchPreferredSalaryMaxText, forKey: StorageKeys.jobMatchPreferredSalaryMaxText)
+        }
+    }
+
+    private var jobMatchAllowedWorkModesRawValues: [String] {
+        didSet {
+            UserDefaults.standard.set(jobMatchAllowedWorkModesRawValues, forKey: StorageKeys.jobMatchAllowedWorkModes)
+        }
+    }
+
+    private var jobMatchPreferredLocations: [String] {
+        didSet {
+            UserDefaults.standard.set(jobMatchPreferredLocations, forKey: StorageKeys.jobMatchPreferredLocations)
         }
     }
 
@@ -189,6 +224,26 @@ final class SettingsViewModel {
             self.analyticsBaseCurrency = .usd
         }
 
+        if let rawValue = UserDefaults.standard.string(forKey: StorageKeys.jobMatchPreferredCurrency),
+           let currency = Currency(rawValue: rawValue) {
+            self.jobMatchPreferredCurrency = currency
+        } else {
+            self.jobMatchPreferredCurrency = .usd
+        }
+
+        self.jobMatchPreferredSalaryMinText = UserDefaults.standard.string(
+            forKey: StorageKeys.jobMatchPreferredSalaryMinText
+        ) ?? ""
+        self.jobMatchPreferredSalaryMaxText = UserDefaults.standard.string(
+            forKey: StorageKeys.jobMatchPreferredSalaryMaxText
+        ) ?? ""
+        self.jobMatchAllowedWorkModesRawValues = UserDefaults.standard.stringArray(
+            forKey: StorageKeys.jobMatchAllowedWorkModes
+        ) ?? JobMatchWorkMode.allCases.map(\.rawValue)
+        self.jobMatchPreferredLocations = UserDefaults.standard.stringArray(
+            forKey: StorageKeys.jobMatchPreferredLocations
+        ) ?? []
+
         self.appLockEnabled = UserDefaults.standard.bool(forKey: StorageKeys.appLockEnabled)
 
         migrateLegacyCustomModelStorageIfNeeded()
@@ -224,6 +279,53 @@ final class SettingsViewModel {
         }
 
         return models.first ?? ""
+    }
+
+    var jobMatchPreferredSalaryMin: Int? {
+        parseInteger(from: jobMatchPreferredSalaryMinText)
+    }
+
+    var jobMatchPreferredSalaryMax: Int? {
+        parseInteger(from: jobMatchPreferredSalaryMaxText)
+    }
+
+    var jobMatchPreferredLocationsText: String {
+        get {
+            jobMatchPreferredLocations.joined(separator: ", ")
+        }
+        set {
+            jobMatchPreferredLocations = Self.parseLocationTokens(newValue)
+        }
+    }
+
+    var jobMatchPreferences: JobMatchPreferences {
+        JobMatchPreferences(
+            preferredCurrency: jobMatchPreferredCurrency,
+            preferredSalaryMin: jobMatchPreferredSalaryMin,
+            preferredSalaryMax: jobMatchPreferredSalaryMax,
+            allowedWorkModes: jobMatchAllowedWorkModes,
+            preferredLocations: jobMatchPreferredLocations
+        )
+    }
+
+    var jobMatchAllowedWorkModes: [JobMatchWorkMode] {
+        jobMatchAllowedWorkModesRawValues.compactMap(JobMatchWorkMode.init(rawValue:))
+    }
+
+    func isJobMatchWorkModeAllowed(_ mode: JobMatchWorkMode) -> Bool {
+        jobMatchAllowedWorkModes.contains(mode)
+    }
+
+    func setJobMatchWorkMode(_ mode: JobMatchWorkMode, allowed: Bool) {
+        var values = jobMatchAllowedWorkModes
+        if allowed {
+            if !values.contains(mode) {
+                values.append(mode)
+            }
+        } else {
+            values.removeAll(where: { $0 == mode })
+        }
+        jobMatchAllowedWorkModesRawValues = values.map(\.rawValue)
     }
 
     func addCustomModel(_ model: String, for provider: AIProvider) {
@@ -591,5 +693,19 @@ final class SettingsViewModel {
             }
         }
         return result
+    }
+
+    private func parseInteger(from string: String) -> Int? {
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return Int(trimmed.filter(\.isNumber))
+    }
+
+    private static func parseLocationTokens(_ raw: String) -> [String] {
+        raw
+            .split(whereSeparator: { $0 == "," || $0 == "\n" || $0 == ";" })
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .uniquedPreservingOrder()
     }
 }

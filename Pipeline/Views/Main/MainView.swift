@@ -9,6 +9,7 @@ struct MainView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var applications: [JobApplication]
     @Query private var contacts: [Contact]
+    @Query(sort: \ResumeMasterRevision.createdAt, order: .reverse) private var resumeRevisions: [ResumeMasterRevision]
     @Environment(\.colorScheme) private var colorScheme
 
     @Binding var selectedDestination: MainDestination
@@ -65,6 +66,8 @@ struct MainView: View {
     private var filteredCount: Int {
         viewModel.filterApplications(
             applications,
+            currentResumeRevisionID: currentResumeRevision?.id,
+            matchPreferences: settingsViewModel.jobMatchPreferences,
             includeInAllApplications: allApplicationsInclusionRule
         ).count
     }
@@ -72,8 +75,35 @@ struct MainView: View {
     private var filteredApplications: [JobApplication] {
         viewModel.filterApplications(
             applications,
+            currentResumeRevisionID: currentResumeRevision?.id,
+            matchPreferences: settingsViewModel.jobMatchPreferences,
             includeInAllApplications: allApplicationsInclusionRule
         )
+    }
+
+    private var currentResumeRevision: ResumeMasterRevision? {
+        resumeRevisions.first(where: \.isCurrent) ?? resumeRevisions.first
+    }
+
+    private var staleMatchCount: Int {
+        let preferences = settingsViewModel.jobMatchPreferences
+        return applications.filter { application in
+            guard let assessment = application.matchAssessment else { return false }
+            return JobMatchScoringService.isStale(
+                assessment,
+                application: application,
+                currentResumeRevisionID: currentResumeRevision?.id,
+                preferences: preferences
+            )
+        }.count
+    }
+
+    private var jobMatchRefreshToken: String {
+        let applicationToken = applications.map { application in
+            let assessmentUpdatedAt = application.matchAssessment?.updatedAt.timeIntervalSinceReferenceDate ?? 0
+            return "\(application.id.uuidString)-\(application.updatedAt.timeIntervalSinceReferenceDate)-\(assessmentUpdatedAt)"
+        }.joined(separator: "|")
+        return "\(currentResumeRevision?.id.uuidString ?? "none")|\(settingsViewModel.jobMatchPreferences.fingerprint)|\(applicationToken)"
     }
 
     private var filteredContacts: [Contact] {
@@ -134,6 +164,19 @@ struct MainView: View {
                     .foregroundColor(.secondary)
 
                 Spacer()
+
+                if staleMatchCount > 0 {
+                    Button("Refresh \(staleMatchCount) Stale Score\(staleMatchCount == 1 ? "" : "s")") {
+                        Task {
+                            await JobMatchScoringCoordinator.shared.refreshAllStaleApplications(
+                                applications,
+                                modelContext: modelContext,
+                                settingsViewModel: settingsViewModel
+                            )
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
             }
             .padding(.horizontal)
             .padding(.top, 20)
@@ -158,12 +201,16 @@ struct MainView: View {
                 ApplicationListView(
                     applications: filteredApplications,
                     selectedApplication: $selectedApplication,
-                    searchText: $searchText
+                    searchText: $searchText,
+                    currentResumeRevisionID: currentResumeRevision?.id,
+                    matchPreferences: settingsViewModel.jobMatchPreferences
                 )
             case .kanban:
                 KanbanBoardView(
                     applications: filteredApplications,
-                    selectedApplication: $selectedApplication
+                    selectedApplication: $selectedApplication,
+                    currentResumeRevisionID: currentResumeRevision?.id,
+                    matchPreferences: settingsViewModel.jobMatchPreferences
                 )
             }
         }
@@ -340,6 +387,13 @@ struct MainView: View {
             installEscapeKeyMonitor()
 #endif
         }
+        .task(id: jobMatchRefreshToken) {
+            await JobMatchScoringCoordinator.shared.processEligibleApplications(
+                applications,
+                modelContext: modelContext,
+                settingsViewModel: settingsViewModel
+            )
+        }
 #if os(macOS)
         .onDisappear {
             removeEscapeKeyMonitor()
@@ -387,6 +441,15 @@ struct MainView: View {
                 .pickerStyle(.menu)
                 .toolbarHandCursor()
                 .padding(.horizontal, 6)
+            }
+            ToolbarItem(placement: .automatic) {
+                Picker("Score Filter", selection: $viewModel.matchScoreFilter) {
+                    ForEach(ApplicationListViewModel.MatchScoreFilter.allCases, id: \.self) { filter in
+                        Text(filter.rawValue).tag(filter)
+                    }
+                }
+                .pickerStyle(.menu)
+                .toolbarHandCursor()
             }
         }
         ToolbarItem(placement: .primaryAction) {

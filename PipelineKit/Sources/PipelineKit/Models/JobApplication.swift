@@ -57,6 +57,12 @@ public final class JobApplication {
     @Relationship(deleteRule: .cascade, inverse: \CoverLetterDraft.application)
     public var coverLetterDraft: CoverLetterDraft?
 
+    @Relationship(deleteRule: .cascade, inverse: \JobMatchAssessment.application)
+    public var matchAssessment: JobMatchAssessment?
+
+    @Relationship(deleteRule: .cascade, inverse: \ATSCompatibilityAssessment.application)
+    public var atsAssessment: ATSCompatibilityAssessment?
+
     @Relationship(deleteRule: .cascade, inverse: \ApplicationAttachment.application)
     public var attachments: [ApplicationAttachment]?
 
@@ -381,6 +387,8 @@ public final class JobApplication {
         checklistSuggestions: [ApplicationChecklistSuggestion]? = nil,
         resumeSnapshots: [ResumeJobSnapshot]? = nil,
         coverLetterDraft: CoverLetterDraft? = nil,
+        matchAssessment: JobMatchAssessment? = nil,
+        atsAssessment: ATSCompatibilityAssessment? = nil,
         attachments: [ApplicationAttachment]? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
@@ -423,6 +431,8 @@ public final class JobApplication {
         self.checklistSuggestions = checklistSuggestions
         self.resumeSnapshots = resumeSnapshots
         self.coverLetterDraft = coverLetterDraft
+        self.matchAssessment = matchAssessment
+        self.atsAssessment = atsAssessment
         self.attachments = attachments
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -601,6 +611,18 @@ public final class JobApplication {
     public func assignCoverLetterDraft(_ draft: CoverLetterDraft?) {
         guard coverLetterDraft?.id != draft?.id else { return }
         coverLetterDraft = draft
+        updateTimestamp()
+    }
+
+    public func assignMatchAssessment(_ assessment: JobMatchAssessment?) {
+        guard matchAssessment?.id != assessment?.id else { return }
+        matchAssessment = assessment
+        updateTimestamp()
+    }
+
+    public func assignATSAssessment(_ assessment: ATSCompatibilityAssessment?) {
+        guard atsAssessment?.id != assessment?.id else { return }
+        atsAssessment = assessment
         updateTimestamp()
     }
 

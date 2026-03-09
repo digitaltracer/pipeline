@@ -977,6 +977,32 @@ struct AnalyticsSettingsView: View {
             } footer: {
                 Text("Salary analytics convert compensation into this currency using cached Frankfurter exchange rates.")
             }
+
+            Section {
+                Picker("Preference Currency", selection: $viewModel.jobMatchPreferredCurrency) {
+                    ForEach(Currency.allCases) { currency in
+                        Text("\(currency.displayName) (\(currency.symbol))").tag(currency)
+                    }
+                }
+
+                TextField("Preferred base min", text: $viewModel.jobMatchPreferredSalaryMinText)
+
+                TextField("Preferred base max", text: $viewModel.jobMatchPreferredSalaryMaxText)
+
+                ForEach(JobMatchWorkMode.allCases) { mode in
+                    Toggle(mode.displayName, isOn: Binding(
+                        get: { viewModel.isJobMatchWorkModeAllowed(mode) },
+                        set: { viewModel.setJobMatchWorkMode(mode, allowed: $0) }
+                    ))
+                }
+
+                TextField("Preferred locations (comma separated)", text: $viewModel.jobMatchPreferredLocationsText, axis: .vertical)
+                    .lineLimit(2...4)
+            } header: {
+                Text("Job Match Preferences")
+            } footer: {
+                Text("These preferences power salary and location alignment in Job Match scoring. Per-application expected compensation overrides the global salary target.")
+            }
         }
         .formStyle(.grouped)
         .navigationTitle("Analytics")
@@ -999,6 +1025,55 @@ struct AnalyticsSettingsContent: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+        }
+
+        SettingsFormSectionCard(
+            title: "Job Match Preferences",
+            subtitle: "Set the salary and location guardrails used by AI Job Match scoring.",
+            icon: "bolt.badge.checkmark"
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                Picker("Preference Currency", selection: $viewModel.jobMatchPreferredCurrency) {
+                    ForEach(Currency.allCases) { currency in
+                        Text("\(currency.displayName) (\(currency.symbol))").tag(currency)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                HStack(spacing: 10) {
+                    TextField("Preferred base min", text: $viewModel.jobMatchPreferredSalaryMinText)
+                        .textFieldStyle(.roundedBorder)
+
+                    TextField("Preferred base max", text: $viewModel.jobMatchPreferredSalaryMaxText)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Allowed Work Modes")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.secondary)
+
+                    HStack(spacing: 8) {
+                        ForEach(JobMatchWorkMode.allCases) { mode in
+                            Toggle(mode.displayName, isOn: Binding(
+                                get: { viewModel.isJobMatchWorkModeAllowed(mode) },
+                                set: { viewModel.setJobMatchWorkMode(mode, allowed: $0) }
+                            ))
+                            .toggleStyle(.button)
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Preferred Locations")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.secondary)
+
+                    TextField("Remote, New York, Bengaluru", text: $viewModel.jobMatchPreferredLocationsText, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(2...4)
+                }
+            }
         }
     }
 }

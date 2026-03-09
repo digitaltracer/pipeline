@@ -304,6 +304,7 @@ import Testing
         ApplicationTask.self,
         ApplicationChecklistSuggestion.self,
         CoverLetterDraft.self,
+        ATSCompatibilityAssessment.self,
         ResumeMasterRevision.self,
         ResumeJobSnapshot.self,
         AIUsageRecord.self,

@@ -28,6 +28,8 @@ public enum SharedContainer {
             CoverLetterDraft.self,
             ResumeMasterRevision.self,
             ResumeJobSnapshot.self,
+            JobMatchAssessment.self,
+            ATSCompatibilityAssessment.self,
             AIUsageRecord.self,
             AIModelRate.self
         ])

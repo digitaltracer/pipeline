@@ -4,28 +4,38 @@ import PipelineKit
 struct KanbanCardView: View {
     let application: JobApplication
     let isSelected: Bool
+    let currentResumeRevisionID: UUID?
+    let matchPreferences: JobMatchPreferences
 
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        HStack(spacing: 10) {
-            CompanyAvatar(companyName: application.companyName, logoURL: application.googleS2FaviconURL(size: 64)?.absoluteString, size: 32)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                CompanyAvatar(companyName: application.companyName, logoURL: application.googleS2FaviconURL(size: 64)?.absoluteString, size: 32)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(application.role)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(application.role)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
 
-                Text(application.companyName)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
+                    Text(application.companyName)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 4)
+
+                PriorityFlag(priority: application.priority, size: 12)
             }
 
-            Spacer(minLength: 4)
-
-            PriorityFlag(priority: application.priority, size: 12)
+            JobMatchBadge(
+                application: application,
+                currentResumeRevisionID: currentResumeRevisionID,
+                matchPreferences: matchPreferences
+            )
         }
         .padding(10)
         .appCard(cornerRadius: 10, elevated: isSelected, shadow: isSelected)

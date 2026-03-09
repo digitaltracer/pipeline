@@ -57,4 +57,43 @@ public enum AIServicePrompts {
         \(description)
         """
     }
+
+    public static let jobMatchScoringPrompt = """
+    You are evaluating how well a candidate's master resume matches a job description.
+
+    Return exactly one valid JSON object with this schema:
+    {
+      "skillsScore": number,
+      "experienceScore": number,
+      "matchedSkills": [string],
+      "missingSkills": [string],
+      "summary": string,
+      "gapAnalysis": string
+    }
+
+    Rules:
+    - `skillsScore` and `experienceScore` must be integers from 0 to 100.
+    - Focus only on evidence present in the provided resume JSON and job description.
+    - `matchedSkills` and `missingSkills` should be short skill or requirement phrases.
+    - Keep `matchedSkills` and `missingSkills` to at most 8 items each.
+    - `summary` should be one or two sentences explaining the fit at a glance.
+    - `gapAnalysis` should explain the main missing requirements or concerns in plain language.
+    - Do not invent experience or skills not present in the resume.
+    - Output raw JSON only. No markdown fences. No prose outside the JSON.
+    """
+
+    public static func jobMatchScoringUserPrompt(
+        resumeJSON: String,
+        jobDescription: String
+    ) -> String {
+        """
+        Compare this candidate resume to the job description and return the required JSON.
+
+        Resume JSON:
+        \(resumeJSON)
+
+        Job Description:
+        \(jobDescription)
+        """
+    }
 }

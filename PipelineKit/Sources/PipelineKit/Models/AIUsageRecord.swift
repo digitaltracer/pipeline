@@ -10,6 +10,8 @@ public enum AIUsageFeature: String, Codable, CaseIterable, Sendable, Identifiabl
     case jobParsing = "job_parsing"
     case companyResearch = "company_research"
     case jobDescriptionDenoise = "job_description_denoise"
+    case jobMatchScoring = "job_match_scoring"
+    case resumeATSFixes = "resume_ats_fixes"
 
     public var id: String { rawValue }
 
@@ -31,6 +33,10 @@ public enum AIUsageFeature: String, Codable, CaseIterable, Sendable, Identifiabl
             return "Company Research"
         case .jobDescriptionDenoise:
             return "Job Description Denoise"
+        case .jobMatchScoring:
+            return "Job Match Scoring"
+        case .resumeATSFixes:
+            return "Resume ATS Fixes"
         }
     }
 }

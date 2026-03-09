@@ -29,6 +29,7 @@ struct JobDetailView: View {
     @State private var showingFollowUpDrafter = false
     @State private var showingCoverLetterEditor = false
     @State private var showingTailorResume = false
+    @State private var resumeTailoringMode: ResumeTailoringMode = .standard
     @State private var showingCompanyWorkspace = false
     @State private var companyWorkspaceTab: CompanyWorkspaceTab = .overview
     @State private var actionErrorMessage: String?
@@ -123,6 +124,29 @@ struct JobDetailView: View {
                             }
                         )
                     }
+
+                    JobMatchSection(
+                        application: application,
+                        settingsViewModel: SettingsViewModel(),
+                        onRefresh: {
+                            Task {
+                                await JobMatchScoringCoordinator.shared.refresh(
+                                    application: application,
+                                    modelContext: modelContext,
+                                    settingsViewModel: SettingsViewModel(),
+                                    force: true
+                                )
+                            }
+                        }
+                    )
+
+                    ATSCompatibilitySection(
+                        application: application,
+                        onGenerateFixes: { assessment in
+                            resumeTailoringMode = .atsFixes(ATSFixContext(assessment: assessment))
+                            showingTailorResume = true
+                        }
+                    )
 
                     ApplicationContactsSection(
                         application: application,
@@ -219,7 +243,10 @@ struct JobDetailView: View {
             ApplicationTaskEditorView(application: application, taskToEdit: task)
         }
         .sheet(isPresented: $showingTailorResume) {
-            ResumeTailoringView(application: application)
+            ResumeTailoringView(
+                application: application,
+                mode: resumeTailoringMode
+            )
         }
         .sheet(isPresented: $showingInterviewPrep) {
             InterviewPrepView(
@@ -355,6 +382,7 @@ struct JobDetailView: View {
         case .none:
             break
         case .resumeTailoring:
+            resumeTailoringMode = .standard
             showingTailorResume = true
         case .coverLetter:
             showingCoverLetterEditor = true
@@ -2375,6 +2403,8 @@ private struct JobDescriptionDenoiseReviewSheet: View {
             ApplicationChecklistSuggestion.self,
             ApplicationAttachment.self,
             CoverLetterDraft.self,
+            JobMatchAssessment.self,
+            ATSCompatibilityAssessment.self,
             ResumeMasterRevision.self,
             ResumeJobSnapshot.self,
             AIUsageRecord.self,

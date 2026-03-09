@@ -33,6 +33,62 @@ public enum ResumeTailoringService {
         jobDescription: String,
         onProgress: (@Sendable (ResumeTailoringProgressEvent) -> Void)? = nil
     ) async throws -> ResumeTailoringResult {
+        try await generateSuggestions(
+            provider: provider,
+            apiKey: apiKey,
+            model: model,
+            resumeJSON: resumeJSON,
+            company: company,
+            role: role,
+            jobDescription: jobDescription,
+            additionalInstructions: nil,
+            onProgress: onProgress
+        )
+    }
+
+    public static func generateATSFixSuggestions(
+        provider: AIProvider,
+        apiKey: String,
+        model: String,
+        resumeJSON: String,
+        company: String,
+        role: String,
+        jobDescription: String,
+        summary: String,
+        missingKeywords: [String],
+        criticalFindings: [String],
+        warningFindings: [String],
+        onProgress: (@Sendable (ResumeTailoringProgressEvent) -> Void)? = nil
+    ) async throws -> ResumeTailoringResult {
+        try await generateSuggestions(
+            provider: provider,
+            apiKey: apiKey,
+            model: model,
+            resumeJSON: resumeJSON,
+            company: company,
+            role: role,
+            jobDescription: jobDescription,
+            additionalInstructions: ResumeTailoringPrompts.atsFixInstructions(
+                summary: summary,
+                missingKeywords: missingKeywords,
+                criticalFindings: criticalFindings,
+                warningFindings: warningFindings
+            ),
+            onProgress: onProgress
+        )
+    }
+
+    private static func generateSuggestions(
+        provider: AIProvider,
+        apiKey: String,
+        model: String,
+        resumeJSON: String,
+        company: String,
+        role: String,
+        jobDescription: String,
+        additionalInstructions: String?,
+        onProgress: (@Sendable (ResumeTailoringProgressEvent) -> Void)? = nil
+    ) async throws -> ResumeTailoringResult {
         AIParseDebugLogger.info(
             "ResumeTailoringService: generating suggestions provider=\(provider.rawValue) model=\(model) resumeChars=\(resumeJSON.count) jobDescriptionChars=\(jobDescription.count)."
         )
@@ -42,7 +98,8 @@ public enum ResumeTailoringService {
             resumeJSON: resumeJSON,
             company: company,
             role: role,
-            jobDescription: jobDescription
+            jobDescription: jobDescription,
+            additionalInstructions: additionalInstructions
         )
 
         let attemptPrompts = [

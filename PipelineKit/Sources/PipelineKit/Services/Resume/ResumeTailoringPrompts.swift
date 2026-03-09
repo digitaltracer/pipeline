@@ -129,9 +129,10 @@ public enum ResumeTailoringPrompts {
         resumeJSON: String,
         company: String,
         role: String,
-        jobDescription: String
+        jobDescription: String,
+        additionalInstructions: String? = nil
     ) -> String {
-        """
+        var prompt = """
         Tailor the resume to this job.
 
         Company: \(company)
@@ -143,6 +144,43 @@ public enum ResumeTailoringPrompts {
         Resume JSON:
         \(resumeJSON)
         """
+
+        if let additionalInstructions,
+           !additionalInstructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            prompt += "\n\nAdditional tailoring instructions:\n\(additionalInstructions)"
+        }
+
+        return prompt
+    }
+
+    public static func atsFixInstructions(
+        summary: String,
+        missingKeywords: [String],
+        criticalFindings: [String],
+        warningFindings: [String]
+    ) -> String {
+        var lines: [String] = [
+            "This run is specifically for ATS compatibility fixes."
+        ]
+
+        if !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            lines.append("ATS summary: \(summary)")
+        }
+
+        if !missingKeywords.isEmpty {
+            lines.append("Prioritize these missing keywords when the resume already provides supporting evidence: \(missingKeywords.joined(separator: ", ")).")
+        }
+
+        if !criticalFindings.isEmpty {
+            lines.append("Address these critical ATS findings: \(criticalFindings.joined(separator: " | ")).")
+        }
+
+        if !warningFindings.isEmpty {
+            lines.append("Address these warning ATS findings: \(warningFindings.joined(separator: " | ")).")
+        }
+
+        lines.append("Favor patches that improve ATS keyword coverage, section clarity, and parseability without inventing experience.")
+        return lines.joined(separator: "\n")
     }
 
     public static func patchRevisionUserPrompt(

@@ -1052,6 +1052,7 @@ struct ResumeTailoringView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     @Bindable var application: JobApplication
+    private let mode: ResumeTailoringMode
     private let onClose: (() -> Void)?
     private let onUnsavedChangesChanged: ((Bool) -> Void)?
 
@@ -1094,10 +1095,12 @@ struct ResumeTailoringView: View {
 
     init(
         application: JobApplication,
+        mode: ResumeTailoringMode = .standard,
         onClose: (() -> Void)? = nil,
         onUnsavedChangesChanged: ((Bool) -> Void)? = nil
     ) {
         self.application = application
+        self.mode = mode
         self.onClose = onClose
         self.onUnsavedChangesChanged = onUnsavedChangesChanged
     }
@@ -1111,7 +1114,7 @@ struct ResumeTailoringView: View {
                     contentView
                 }
             }
-            .navigationTitle("Tailor Resume")
+            .navigationTitle(mode.navigationTitle)
             .toolbar {
 #if !os(macOS)
                 ToolbarItem(placement: .cancellationAction) {
@@ -1191,11 +1194,15 @@ struct ResumeTailoringView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Text("Target: \(application.role) at \(application.companyName)")
+                    Text("\(mode.targetLabel): \(application.role) at \(application.companyName)")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
 
                     Spacer()
+                }
+
+                if case .atsFixes(let context) = mode {
+                    atsFocusCard(context)
                 }
 
                 if isGenerating {
@@ -1272,6 +1279,33 @@ struct ResumeTailoringView: View {
         }
     }
 
+    private func atsFocusCard(_ context: ATSFixContext) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("ATS-focused tailoring run", systemImage: "text.badge.checkmark")
+                .font(.headline)
+
+            if !context.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(context.summary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !context.missingKeywords.isEmpty {
+                Text("Missing keywords: \(context.missingKeywords.joined(separator: ", "))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !context.criticalFindings.isEmpty {
+                Text("Critical findings: \(context.criticalFindings.joined(separator: " | "))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .appCard(cornerRadius: 10, elevated: true, shadow: false)
+    }
+
     private var generationInProgressCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
@@ -1284,9 +1318,9 @@ struct ResumeTailoringView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Generating Tailored Suggestions")
+                    Text(mode.generationTitle)
                         .font(.headline)
-                    Text("Live timeline of resume tailoring steps.")
+                    Text(mode.generationSubtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -1923,7 +1957,7 @@ struct ResumeTailoringView: View {
             .buttonStyle(.bordered)
 
             Button("Save Tailored Resume") {
-                saveSnapshot()
+                Task { await saveSnapshot() }
             }
             .buttonStyle(.borderedProminent)
             .tint(DesignSystem.Colors.accent)
@@ -2624,20 +2658,42 @@ struct ResumeTailoringView: View {
             )
 
             let result = try await settingsViewModel.withAPIKeyWaterfall(for: provider) { apiKey in
-                try await ResumeTailoringService.generateSuggestions(
-                    provider: provider,
-                    apiKey: apiKey,
-                    model: model,
-                    resumeJSON: masterRevision.rawJSON,
-                    company: application.companyName,
-                    role: application.role,
-                    jobDescription: jobDescription,
-                    onProgress: { progress in
-                        Task { @MainActor in
-                            handleTailoringProgress(progress)
+                switch mode {
+                case .standard:
+                    return try await ResumeTailoringService.generateSuggestions(
+                        provider: provider,
+                        apiKey: apiKey,
+                        model: model,
+                        resumeJSON: masterRevision.rawJSON,
+                        company: application.companyName,
+                        role: application.role,
+                        jobDescription: jobDescription,
+                        onProgress: { progress in
+                            Task { @MainActor in
+                                handleTailoringProgress(progress)
+                            }
                         }
-                    }
-                )
+                    )
+                case .atsFixes(let context):
+                    return try await ResumeTailoringService.generateATSFixSuggestions(
+                        provider: provider,
+                        apiKey: apiKey,
+                        model: model,
+                        resumeJSON: masterRevision.rawJSON,
+                        company: application.companyName,
+                        role: application.role,
+                        jobDescription: jobDescription,
+                        summary: context.summary,
+                        missingKeywords: context.missingKeywords,
+                        criticalFindings: context.criticalFindings,
+                        warningFindings: context.warningFindings,
+                        onProgress: { progress in
+                            Task { @MainActor in
+                                handleTailoringProgress(progress)
+                            }
+                        }
+                    )
+                }
             }
 
             try applyTailoringResult(result, originalJSON: masterRevision.rawJSON)
@@ -2685,7 +2741,7 @@ struct ResumeTailoringView: View {
         errorMessage: String?
     ) {
         _ = try? AIUsageLedgerService.record(
-            feature: .resumeTailoring,
+            feature: mode.usageFeature,
             provider: provider,
             model: model,
             usage: usage,
@@ -2736,7 +2792,8 @@ struct ResumeTailoringView: View {
         }
     }
 
-    private func saveSnapshot() {
+    @MainActor
+    private func saveSnapshot() async {
         do {
             let validated = try ResumeSchemaValidator.validate(jsonText: editedJSON)
             _ = try ResumeStoreService.createJobSnapshot(
@@ -2747,6 +2804,11 @@ struct ResumeTailoringView: View {
                 sectionGaps: sectionGaps,
                 sourceMasterRevisionID: masterRevision?.id,
                 in: modelContext
+            )
+            await ATSCompatibilityCoordinator.shared.refresh(
+                application: application,
+                modelContext: modelContext,
+                force: true
             )
             lastPersistedJSON = validated.normalizedJSON
             lastPersistedAcceptedPatchIDs = acceptedPatchIDs

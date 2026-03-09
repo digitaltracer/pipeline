@@ -12,6 +12,8 @@ struct ApplicationListView: View {
     let applications: [JobApplication]
     @Binding var selectedApplication: JobApplication?
     @Binding var searchText: String
+    let currentResumeRevisionID: UUID?
+    let matchPreferences: JobMatchPreferences
     @State private var actionErrorMessage: String?
     private let detailViewModel = ApplicationDetailViewModel()
 
@@ -44,7 +46,9 @@ struct ApplicationListView: View {
                         ForEach(applications) { application in
                             JobCardView(
                                 application: application,
-                                isSelected: selectedApplication?.id == application.id
+                                isSelected: selectedApplication?.id == application.id,
+                                currentResumeRevisionID: currentResumeRevisionID,
+                                matchPreferences: matchPreferences
                             )
                             .applicationCardHandCursor()
                             .onTapGesture {
@@ -193,7 +197,9 @@ private extension View {
     ApplicationListView(
         applications: [],
         selectedApplication: .constant(nil),
-        searchText: .constant("")
+        searchText: .constant(""),
+        currentResumeRevisionID: nil,
+        matchPreferences: JobMatchPreferences()
     )
     .modelContainer(
         for: [
@@ -211,7 +217,9 @@ private extension View {
             ApplicationTask.self,
             ApplicationChecklistSuggestion.self,
             ApplicationAttachment.self,
-            CoverLetterDraft.self
+            CoverLetterDraft.self,
+            JobMatchAssessment.self,
+            ATSCompatibilityAssessment.self
         ],
         inMemory: true
     )

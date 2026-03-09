@@ -431,6 +431,7 @@ private func makeContactsContainer() throws -> ModelContainer {
         ApplicationActivity.self,
         ApplicationTask.self,
         ApplicationChecklistSuggestion.self,
+        ATSCompatibilityAssessment.self,
         CoverLetterDraft.self
     ])
     let configuration = ModelConfiguration(isStoredInMemoryOnly: true)

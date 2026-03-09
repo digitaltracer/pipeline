@@ -138,6 +138,8 @@ public struct DashboardAnalyticsResult {
     public let averageOfferedComp: Double?
     public let currentChecklist: DashboardChecklistSnapshot
     public let previousChecklist: DashboardChecklistSnapshot
+    public let averageMatchScore: Double?
+    public let staleMatchCount: Int
     public let goalProgress: [DashboardGoalProgress]
     public let activeCycle: JobSearchCycle?
     public let previousCycle: JobSearchCycle?
@@ -157,6 +159,8 @@ public struct DashboardAnalyticsResult {
         averageOfferedComp: Double?,
         currentChecklist: DashboardChecklistSnapshot,
         previousChecklist: DashboardChecklistSnapshot,
+        averageMatchScore: Double?,
+        staleMatchCount: Int,
         goalProgress: [DashboardGoalProgress],
         activeCycle: JobSearchCycle?,
         previousCycle: JobSearchCycle?,
@@ -175,6 +179,8 @@ public struct DashboardAnalyticsResult {
         self.averageOfferedComp = averageOfferedComp
         self.currentChecklist = currentChecklist
         self.previousChecklist = previousChecklist
+        self.averageMatchScore = averageMatchScore
+        self.staleMatchCount = staleMatchCount
         self.goalProgress = goalProgress
         self.activeCycle = activeCycle
         self.previousCycle = previousCycle
@@ -202,6 +208,8 @@ public final class DashboardAnalyticsService: @unchecked Sendable {
         goals: [SearchGoal],
         scope: AnalyticsComparisonScope,
         baseCurrency: Currency,
+        currentResumeRevisionID: UUID? = nil,
+        matchPreferences: JobMatchPreferences = JobMatchPreferences(),
         referenceDate: Date = Date()
     ) async -> DashboardAnalyticsResult {
         let cycleTimeline = cycles.sorted { $0.startDate < $1.startDate }
@@ -225,6 +233,11 @@ public final class DashboardAnalyticsService: @unchecked Sendable {
         let cadenceHeatmap = makeCadenceHeatmap(for: scopedApps.current, referenceDate: referenceDate)
         let currentChecklist = makeChecklistSnapshot(for: scopedApps.current, referenceDate: referenceDate)
         let previousChecklist = makeChecklistSnapshot(for: scopedApps.previous, referenceDate: referenceDate)
+        let matchAnalytics = makeMatchAnalytics(
+            for: scopedApps.current,
+            currentResumeRevisionID: currentResumeRevisionID,
+            preferences: matchPreferences
+        )
 
         let salaryAnalytics = await makeSalaryAnalytics(
             for: scopedApps.current,
@@ -259,6 +272,8 @@ public final class DashboardAnalyticsService: @unchecked Sendable {
             averageOfferedComp: salaryAnalytics.averageOfferedComp,
             currentChecklist: currentChecklist,
             previousChecklist: previousChecklist,
+            averageMatchScore: matchAnalytics.averageScore,
+            staleMatchCount: matchAnalytics.staleCount,
             goalProgress: goalProgress,
             activeCycle: activeCycle,
             previousCycle: previousCycle,
@@ -320,6 +335,43 @@ public final class DashboardAnalyticsService: @unchecked Sendable {
             overdueItems: overdueItems,
             completionRate: checklistTasks.isEmpty ? 0 : Double(completedItems) / Double(checklistTasks.count)
         )
+    }
+
+    private func makeMatchAnalytics(
+        for applications: [JobApplication],
+        currentResumeRevisionID: UUID?,
+        preferences: JobMatchPreferences
+    ) -> (averageScore: Double?, staleCount: Int) {
+        let assessedApplications = applications.compactMap { application -> (JobApplication, JobMatchAssessment)? in
+            guard let assessment = application.matchAssessment else { return nil }
+            return (application, assessment)
+        }
+
+        let staleCount = assessedApplications.filter { application, assessment in
+            JobMatchScoringService.isStale(
+                assessment,
+                application: application,
+                currentResumeRevisionID: currentResumeRevisionID,
+                preferences: preferences
+            )
+        }.count
+
+        let freshScores = assessedApplications.compactMap { application, assessment -> Int? in
+            guard assessment.status == .ready,
+                  !JobMatchScoringService.isStale(
+                    assessment,
+                    application: application,
+                    currentResumeRevisionID: currentResumeRevisionID,
+                    preferences: preferences
+                  ) else {
+                return nil
+            }
+            return assessment.overallScore
+        }
+
+        guard !freshScores.isEmpty else { return (nil, staleCount) }
+        let total = freshScores.reduce(0, +)
+        return (Double(total) / Double(freshScores.count), staleCount)
     }
 
     private func snapshot(for applications: [JobApplication]) -> DashboardSnapshot {

@@ -137,7 +137,9 @@ struct EditApplicationView: View {
             ApplicationTask.self,
             ApplicationChecklistSuggestion.self,
             ApplicationAttachment.self,
-            CoverLetterDraft.self
+            CoverLetterDraft.self,
+            JobMatchAssessment.self,
+            ATSCompatibilityAssessment.self
         ],
         inMemory: true
     )

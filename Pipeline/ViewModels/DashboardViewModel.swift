@@ -27,7 +27,9 @@ final class DashboardViewModel {
         applications: [JobApplication],
         cycles: [JobSearchCycle],
         goals: [SearchGoal],
-        baseCurrency: Currency
+        baseCurrency: Currency,
+        currentResumeRevisionID: UUID?,
+        matchPreferences: JobMatchPreferences
     ) async {
         isRefreshing = true
         defer { isRefreshing = false }
@@ -37,7 +39,9 @@ final class DashboardViewModel {
             cycles: cycles,
             goals: goals,
             scope: selectedScope,
-            baseCurrency: baseCurrency
+            baseCurrency: baseCurrency,
+            currentResumeRevisionID: currentResumeRevisionID,
+            matchPreferences: matchPreferences
         )
     }
 
@@ -116,6 +120,14 @@ final class DashboardViewModel {
                     previous: analytics.previousChecklist.completionRate
                 ),
                 icon: "checklist"
+            ),
+            SummaryCard(
+                id: "avg-match",
+                title: "Avg Match",
+                value: analytics.averageMatchScore.map(percentString) ?? "—",
+                deltaText: analytics.staleMatchCount > 0 ? "\(analytics.staleMatchCount) stale" : "Fresh scores",
+                deltaColorName: analytics.staleMatchCount > 0 ? "secondary" : "positive",
+                icon: "bolt.badge.checkmark"
             )
         ]
     }

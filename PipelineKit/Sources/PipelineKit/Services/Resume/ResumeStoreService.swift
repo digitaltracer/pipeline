@@ -10,17 +10,20 @@ public struct ResumeSourceSelection: Sendable {
     public let kind: Kind
     public let rawJSON: String
     public let snapshotID: UUID?
+    public let masterRevisionID: UUID?
     public let createdAt: Date
 
     public init(
         kind: Kind,
         rawJSON: String,
         snapshotID: UUID?,
+        masterRevisionID: UUID?,
         createdAt: Date
     ) {
         self.kind = kind
         self.rawJSON = rawJSON
         self.snapshotID = snapshotID
+        self.masterRevisionID = masterRevisionID
         self.createdAt = createdAt
     }
 
@@ -102,6 +105,7 @@ public enum ResumeStoreService {
                 kind: .tailoredSnapshot,
                 rawJSON: snapshot.rawJSON,
                 snapshotID: snapshot.id,
+                masterRevisionID: snapshot.sourceMasterRevisionID,
                 createdAt: snapshot.createdAt
             )
         }
@@ -111,6 +115,7 @@ public enum ResumeStoreService {
                 kind: .masterResume,
                 rawJSON: masterRevision.rawJSON,
                 snapshotID: nil,
+                masterRevisionID: masterRevision.id,
                 createdAt: masterRevision.createdAt
             )
         }

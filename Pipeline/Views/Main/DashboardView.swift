@@ -8,6 +8,7 @@ struct DashboardView: View {
     @Query(sort: \JobApplication.updatedAt, order: .reverse) private var applications: [JobApplication]
     @Query(sort: \JobSearchCycle.updatedAt, order: .reverse) private var cycles: [JobSearchCycle]
     @Query(sort: \SearchGoal.updatedAt, order: .reverse) private var goals: [SearchGoal]
+    @Query(sort: \ResumeMasterRevision.createdAt, order: .reverse) private var resumeRevisions: [ResumeMasterRevision]
     @State private var viewModel = DashboardViewModel()
     @Environment(\.colorScheme) private var colorScheme
 
@@ -24,7 +25,11 @@ struct DashboardView: View {
         let appToken = applications.map { "\($0.id.uuidString)-\($0.updatedAt.timeIntervalSinceReferenceDate)" }.joined(separator: "|")
         let cycleToken = cycles.map { "\($0.id.uuidString)-\($0.updatedAt.timeIntervalSinceReferenceDate)" }.joined(separator: "|")
         let goalToken = goals.map { "\($0.id.uuidString)-\($0.updatedAt.timeIntervalSinceReferenceDate)" }.joined(separator: "|")
-        return "\(viewModel.selectedScope.rawValue)|\(settingsViewModel.analyticsBaseCurrency.rawValue)|\(appToken)|\(cycleToken)|\(goalToken)"
+        return "\(viewModel.selectedScope.rawValue)|\(settingsViewModel.analyticsBaseCurrency.rawValue)|\(currentResumeRevision?.id.uuidString ?? "none")|\(settingsViewModel.jobMatchPreferences.fingerprint)|\(appToken)|\(cycleToken)|\(goalToken)"
+    }
+
+    private var currentResumeRevision: ResumeMasterRevision? {
+        resumeRevisions.first(where: \.isCurrent) ?? resumeRevisions.first
     }
 
     var body: some View {
@@ -59,7 +64,9 @@ struct DashboardView: View {
                 applications: applications,
                 cycles: cycles,
                 goals: goals,
-                baseCurrency: settingsViewModel.analyticsBaseCurrency
+                baseCurrency: settingsViewModel.analyticsBaseCurrency,
+                currentResumeRevisionID: currentResumeRevision?.id,
+                matchPreferences: settingsViewModel.jobMatchPreferences
             )
         }
         .sheet(isPresented: $showingCycleManager) {
@@ -875,7 +882,9 @@ private struct GoalManagementSheet: View {
                 ApplicationTask.self,
                 ApplicationChecklistSuggestion.self,
                 ApplicationAttachment.self,
-                CoverLetterDraft.self
+                CoverLetterDraft.self,
+                JobMatchAssessment.self,
+                ATSCompatibilityAssessment.self
             ],
             inMemory: true
         )

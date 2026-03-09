@@ -187,6 +187,8 @@ struct ContentView: View {
                 ApplicationChecklistSuggestion.self,
                 ApplicationAttachment.self,
                 CoverLetterDraft.self,
+                JobMatchAssessment.self,
+                ATSCompatibilityAssessment.self,
                 ResumeMasterRevision.self,
                 ResumeJobSnapshot.self,
                 AIUsageRecord.self,
