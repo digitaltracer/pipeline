@@ -6,6 +6,7 @@ public final class ApplicationActivity {
     public var id: UUID = UUID()
     private var kindRawValue: String = ApplicationActivityKind.note.rawValue
     private var interviewStageRawValue: String?
+    public var scheduledDurationMinutes: Int?
     public var fromStatusRawValue: String?
     public var toStatusRawValue: String?
     public var fromFollowUpDate: Date?
@@ -22,6 +23,7 @@ public final class ApplicationActivity {
 
     public var application: JobApplication?
     public var contact: Contact?
+    public var debrief: InterviewDebrief?
 
     public var kind: ApplicationActivityKind {
         get { ApplicationActivityKind(rawValue: kindRawValue) }
@@ -69,6 +71,7 @@ public final class ApplicationActivity {
         application: JobApplication? = nil,
         contact: Contact? = nil,
         interviewStage: InterviewStage? = nil,
+        scheduledDurationMinutes: Int? = nil,
         legacyInterviewLogID: UUID? = nil,
         fromStatus: ApplicationStatus? = nil,
         toStatus: ApplicationStatus? = nil,
@@ -88,6 +91,7 @@ public final class ApplicationActivity {
         self.application = application
         self.contact = contact
         self.interviewStageRawValue = interviewStage?.rawValue
+        self.scheduledDurationMinutes = Self.normalizedScheduledDuration(scheduledDurationMinutes)
         self.legacyInterviewLogID = legacyInterviewLogID
         self.fromStatusRawValue = fromStatus?.rawValue
         self.toStatusRawValue = toStatus?.rawValue
@@ -151,7 +155,36 @@ public final class ApplicationActivity {
         }
     }
 
+    public var scheduledEndAt: Date {
+        guard let scheduledDurationMinutes = Self.normalizedScheduledDuration(scheduledDurationMinutes) else {
+            return occurredAt
+        }
+        return Calendar.current.date(
+            byAdding: .minute,
+            value: scheduledDurationMinutes,
+            to: occurredAt
+        ) ?? occurredAt
+    }
+
+    public var isScheduledInterview: Bool {
+        kind == .interview && occurredAt > Date()
+    }
+
+    public var hasDebrief: Bool {
+        debrief != nil
+    }
+
+    public var needsDebrief: Bool {
+        kind == .interview && !isScheduledInterview && debrief == nil
+    }
+
     public func updateTimestamp() {
         updatedAt = Date()
+    }
+
+    private static func normalizedScheduledDuration(_ value: Int?) -> Int? {
+        guard let value else { return nil }
+        let clamped = min(max(value, 15), 8 * 60)
+        return clamped
     }
 }

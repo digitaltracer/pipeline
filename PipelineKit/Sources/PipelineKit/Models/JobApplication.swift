@@ -233,6 +233,14 @@ public final class JobApplication {
         }
     }
 
+    public var sortedInterviewActivities: [ApplicationActivity] {
+        sortedActivities.filter { $0.kind == .interview }
+    }
+
+    public var pendingInterviewDebriefs: [ApplicationActivity] {
+        sortedInterviewActivities.filter(\.needsDebrief)
+    }
+
     public var sortedTasks: [ApplicationTask] {
         (tasks ?? []).sorted { lhs, rhs in
             if lhs.isCompleted != rhs.isCompleted {

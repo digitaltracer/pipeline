@@ -22,6 +22,9 @@ public enum SharedContainer {
             Contact.self,
             ApplicationContactLink.self,
             ApplicationActivity.self,
+            InterviewDebrief.self,
+            InterviewQuestionEntry.self,
+            InterviewLearningSnapshot.self,
             ApplicationTask.self,
             ApplicationChecklistSuggestion.self,
             ApplicationAttachment.self,
@@ -31,7 +34,10 @@ public enum SharedContainer {
             JobMatchAssessment.self,
             ATSCompatibilityAssessment.self,
             AIUsageRecord.self,
-            AIModelRate.self
+            AIModelRate.self,
+            WeeklyDigestSnapshot.self,
+            WeeklyDigestInsight.self,
+            WeeklyDigestActionItem.self
         ])
 
         let storeURL = resolvedStoreURL()

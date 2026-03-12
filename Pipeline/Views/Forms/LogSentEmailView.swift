@@ -90,6 +90,7 @@ struct LogSentEmailView: View {
                     application.sortedContactLinks.compactMap(\.contact).first(where: { $0.id == id })
                 },
                 interviewStage: nil,
+                scheduledDurationMinutes: nil,
                 rating: nil,
                 emailSubject: normalized(subject),
                 emailBodySnapshot: normalized(bodySnapshot),

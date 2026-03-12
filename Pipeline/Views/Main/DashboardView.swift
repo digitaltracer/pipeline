@@ -34,21 +34,15 @@ struct DashboardView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 24) {
                 header
 
                 if let analytics = viewModel.analytics {
                     if viewModel.summaryCards.isEmpty {
                         emptyStateCard
                     } else {
-                        summaryCards
-                        checklistSection(analytics: analytics)
-                        goalTrackingSection(analytics: analytics)
-                        cadenceHeatmapSection(analytics: analytics)
-                        salarySection(analytics: analytics)
-                        funnelSection(analytics: analytics)
-                        timeInStageSection(analytics: analytics)
-                        ratesSection(analytics: analytics)
+                        overviewSection(analytics: analytics)
+                        dashboardContent(analytics: analytics)
                     }
                 } else if viewModel.isRefreshing {
                     loadingCard
@@ -56,6 +50,7 @@ struct DashboardView: View {
                     emptyStateCard
                 }
             }
+            .frame(maxWidth: 1480, alignment: .leading)
             .padding(20)
         }
         .background(DesignSystem.Colors.contentBackground(colorScheme))
@@ -78,150 +73,548 @@ struct DashboardView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Dashboard")
-                        .font(.largeTitle.weight(.bold))
-
-                    Text(viewModel.analytics?.comparisonLabel ?? "Track search momentum, cycle progress, and compensation signals.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 18) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 20) {
+                    headerTitleBlock
+                    Spacer(minLength: 12)
+                    dashboardHeaderControls
                 }
 
-                Spacer()
-
-                HStack(spacing: 10) {
-                    Picker("Scope", selection: $viewModel.selectedScope) {
-                        ForEach(AnalyticsComparisonScope.allCases) { scope in
-                            Text(scope.title).tag(scope)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: 320)
-
-                    Button("Cycles") {
-                        showingCycleManager = true
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button("Goals") {
-                        showingGoalManager = true
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(DesignSystem.Colors.accent)
+                VStack(alignment: .leading, spacing: 18) {
+                    headerTitleBlock
+                    dashboardHeaderControls
                 }
             }
 
-            HStack(spacing: 12) {
-                dashboardBadge(
-                    icon: "arrow.left.arrow.right.circle.fill",
-                    title: "Base Currency",
-                    value: settingsViewModel.analyticsBaseCurrency.rawValue
-                )
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    dashboardContextBadges
+                }
 
-                dashboardBadge(
-                    icon: "viewfinder.circle",
-                    title: "Active Cycle",
-                    value: viewModel.analytics?.activeCycle?.name ?? "None"
-                )
-
-                if let analytics = viewModel.analytics, analytics.fxUsedFallback || analytics.missingSalaryConversionCount > 0 {
-                    dashboardBadge(
-                        icon: "arrow.clockwise",
-                        title: "FX Status",
-                        value: analytics.fxUsedFallback ? "Using cached rates" : "\(analytics.missingSalaryConversionCount) missing conversions"
+                VStack(alignment: .leading, spacing: 10) {
+                    dashboardContextBadges
+                }
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            DesignSystem.Colors.surfaceElevated(colorScheme),
+                            DesignSystem.Colors.surface(colorScheme),
+                            DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.18 : 0.10)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
                     )
-                }
-            }
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(colorScheme == .dark ? 0.10 : 0.22),
+                            DesignSystem.Colors.accent.opacity(0.20),
+                            Color.clear
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
+    }
+
+    private var headerTitleBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Executive Overview")
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.secondary)
+                .textCase(.uppercase)
+
+            Text("Dashboard")
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+
+            Text(headerSummaryText)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: 640, alignment: .leading)
+        }
+    }
+
+    private var headerSummaryText: String {
+        guard let analytics = viewModel.analytics else {
+            return "Track search momentum, conversion quality, and cycle execution from one place."
+        }
+
+        if let activeCycle = analytics.activeCycle {
+            return "Monitoring \(analytics.comparisonLabel) for \(activeCycle.name), with hiring momentum, goals, and compensation signals in one view."
+        }
+
+        return "Monitoring \(analytics.comparisonLabel) with conversion, checklist, and compensation signals in one view."
+    }
+
+    @ViewBuilder
+    private var dashboardContextBadges: some View {
+        dashboardBadge(
+            icon: "calendar.badge.clock",
+            title: "Window",
+            value: viewModel.analytics?.comparisonLabel.capitalized ?? viewModel.selectedScope.title
+        )
+
+        dashboardBadge(
+            icon: "arrow.left.arrow.right.circle.fill",
+            title: "Base Currency",
+            value: settingsViewModel.analyticsBaseCurrency.rawValue
+        )
+
+        dashboardBadge(
+            icon: "viewfinder.circle",
+            title: "Active Cycle",
+            value: viewModel.analytics?.activeCycle?.name ?? "No active cycle"
+        )
+
+        if let analytics = viewModel.analytics, analytics.fxUsedFallback || analytics.missingSalaryConversionCount > 0 {
+            dashboardBadge(
+                icon: "arrow.clockwise",
+                title: "FX Status",
+                value: analytics.fxUsedFallback ? "Using cached rates" : "\(analytics.missingSalaryConversionCount) missing conversions"
+            )
         }
     }
 
     private func dashboardBadge(icon: String, title: String, value: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .foregroundColor(DesignSystem.Colors.accent)
+        HStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.16 : 0.10))
+                Image(systemName: icon)
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(DesignSystem.Colors.accent)
+            }
+            .frame(width: 30, height: 30)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Text(value)
                     .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(DesignSystem.Colors.surface(colorScheme).opacity(colorScheme == .dark ? 0.55 : 0.9))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+        )
+    }
+
+    private var dashboardHeaderControls: some View {
+        VStack(alignment: .trailing, spacing: 10) {
+            Label("Analytics Window", systemImage: "slider.horizontal.3")
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.secondary)
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    dashboardScopeSwitcher
+                    dashboardToolbarActions
+                }
+
+                VStack(alignment: .trailing, spacing: 10) {
+                    dashboardScopeSwitcher
+                    dashboardToolbarActions
+                }
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(DesignSystem.Colors.surface(colorScheme).opacity(colorScheme == .dark ? 0.68 : 0.96))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+        )
+    }
+
+    private var dashboardScopeSwitcher: some View {
+        HStack(spacing: 4) {
+            ForEach(AnalyticsComparisonScope.allCases) { scope in
+                Button {
+                    viewModel.selectedScope = scope
+                } label: {
+                    Text(scope.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(viewModel.selectedScope == scope ? .white : .secondary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(scopeBackground(for: scope))
+                        )
+                        .overlay(
+                            Capsule(style: .continuous)
+                                .stroke(scopeBorder(for: scope), lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(
+            Capsule(style: .continuous)
+                .fill(DesignSystem.Colors.inputBackground(colorScheme))
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+        )
+    }
+
+    private var dashboardToolbarActions: some View {
+        HStack(spacing: 8) {
+            dashboardToolbarButton(
+                title: "Cycles",
+                systemImage: "arrow.triangle.branch",
+                accent: false
+            ) {
+                showingCycleManager = true
+            }
+
+            dashboardToolbarButton(
+                title: "Goals",
+                systemImage: "target",
+                accent: true
+            ) {
+                showingGoalManager = true
+            }
+        }
+    }
+
+    private func dashboardToolbarButton(
+        title: String,
+        systemImage: String,
+        accent: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(accent ? .white : .primary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(accent ? DesignSystem.Colors.accent : DesignSystem.Colors.inputBackground(colorScheme))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(accent ? DesignSystem.Colors.accent.opacity(0.45) : DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func scopeBackground(for scope: AnalyticsComparisonScope) -> AnyShapeStyle {
+        if viewModel.selectedScope == scope {
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [
+                        DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.82 : 0.92),
+                        DesignSystem.Colors.accent
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+        }
+
+        return AnyShapeStyle(Color.clear)
+    }
+
+    private func scopeBorder(for scope: AnalyticsComparisonScope) -> Color {
+        viewModel.selectedScope == scope
+            ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.65 : 0.4)
+            : .clear
+    }
+
+    private func overviewSection(analytics: DashboardAnalyticsResult) -> some View {
+        dashboardSectionCard {
+            VStack(alignment: .leading, spacing: 20) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Performance Snapshot")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.secondary)
+                                .textCase(.uppercase)
+
+                            Text(overviewHeadline(for: analytics))
+                                .font(.title2.weight(.bold))
+
+                            Text(overviewSubheadline(for: analytics))
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: 620, alignment: .leading)
+                        }
+
+                        Spacer(minLength: 12)
+
+                        overviewSpotlightCard(analytics: analytics)
+                            .frame(maxWidth: 290)
+                    }
+
+                    VStack(alignment: .leading, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Performance Snapshot")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.secondary)
+                                .textCase(.uppercase)
+
+                            Text(overviewHeadline(for: analytics))
+                                .font(.title2.weight(.bold))
+
+                            Text(overviewSubheadline(for: analytics))
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+
+                        overviewSpotlightCard(analytics: analytics)
+                    }
+                }
+
+                summaryCards
+            }
+        }
+    }
+
+    private func overviewHeadline(for analytics: DashboardAnalyticsResult) -> String {
+        if analytics.currentSnapshot.offeredApplications > 0 {
+            return "\(analytics.currentSnapshot.offeredApplications) offer\(analytics.currentSnapshot.offeredApplications == 1 ? "" : "s") currently in play."
+        }
+
+        if analytics.currentSnapshot.interviewingApplications > 0 {
+            return "\(analytics.currentSnapshot.interviewingApplications) interview-stage application\(analytics.currentSnapshot.interviewingApplications == 1 ? "" : "s") active \(analytics.comparisonLabel)."
+        }
+
+        if analytics.currentSnapshot.submittedApplications > 0 {
+            return "\(analytics.currentSnapshot.submittedApplications) submitted application\(analytics.currentSnapshot.submittedApplications == 1 ? "" : "s") in the current window."
+        }
+
+        return "No pipeline movement in the current analytics window yet."
+    }
+
+    private func overviewSubheadline(for analytics: DashboardAnalyticsResult) -> String {
+        var parts: [String] = [checklistDeltaSummary(analytics)]
+
+        if let activeCycle = analytics.activeCycle {
+            parts.append("Active cycle: \(activeCycle.name).")
+        } else {
+            parts.append("No active search cycle is selected.")
+        }
+
+        return parts.joined(separator: " ")
+    }
+
+    private func overviewSpotlightCard(analytics: DashboardAnalyticsResult) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Search Pulse")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.secondary)
+                    .textCase(.uppercase)
+                Spacer()
+                Image(systemName: "waveform.path.ecg")
+                    .foregroundColor(DesignSystem.Colors.accent)
+            }
+
+            Text(viewModel.percentString(analytics.currentSnapshot.responseRate))
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+
+            Text("Response rate across submitted applications")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            HStack(spacing: 8) {
+                overviewMetricPill(
+                    title: "Interviews",
+                    value: "\(analytics.currentSnapshot.interviewingApplications)",
+                    tint: .orange
+                )
+                overviewMetricPill(
+                    title: "Offers",
+                    value: "\(analytics.currentSnapshot.offeredApplications)",
+                    tint: .green
+                )
+            }
+        }
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.12 : 0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(DesignSystem.Colors.accent.opacity(0.22), lineWidth: 1)
+        )
+    }
+
+    private func overviewMetricPill(title: String, value: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundColor(.secondary)
+            Text(value)
+                .font(.headline.weight(.semibold))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(tint.opacity(colorScheme == .dark ? 0.14 : 0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(tint.opacity(0.25), lineWidth: 1)
         )
     }
 
     private var summaryCards: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: 12)], spacing: 12) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 170, maximum: 240), spacing: 14)], spacing: 14) {
             ForEach(viewModel.summaryCards) { card in
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Image(systemName: card.icon)
-                            .foregroundColor(DesignSystem.Colors.accent)
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.14 : 0.10))
+                            Image(systemName: card.icon)
+                                .foregroundColor(DesignSystem.Colors.accent)
+                        }
+                        .frame(width: 34, height: 34)
+
                         Spacer()
+
                         Text(card.deltaText)
                             .font(.caption.weight(.semibold))
                             .foregroundColor(deltaColor(named: card.deltaColorName))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(deltaColor(named: card.deltaColorName).opacity(colorScheme == .dark ? 0.14 : 0.10))
+                            )
                     }
 
-                    Text(card.value)
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-
-                    Text(card.title)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(card.value)
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                        Text(card.title)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
                 }
-                .padding(16)
-                .appCard(cornerRadius: 14, elevated: true, shadow: false)
+                .padding(18)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(DesignSystem.Colors.surface(colorScheme).opacity(colorScheme == .dark ? 0.86 : 0.98))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+                )
+            }
+        }
+    }
+
+    private func dashboardContent(analytics: DashboardAnalyticsResult) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(spacing: 16) {
+                    funnelSection(analytics: analytics)
+                    salarySection(analytics: analytics)
+                    timeInStageSection(analytics: analytics)
+                }
+                .frame(maxWidth: .infinity, alignment: .top)
+
+                VStack(spacing: 16) {
+                    ratesSection(analytics: analytics)
+                    goalTrackingSection(analytics: analytics)
+                    checklistSection(analytics: analytics)
+                    cadenceHeatmapSection(analytics: analytics)
+                }
+                .frame(maxWidth: .infinity, alignment: .top)
+            }
+
+            VStack(spacing: 16) {
+                funnelSection(analytics: analytics)
+                ratesSection(analytics: analytics)
+                goalTrackingSection(analytics: analytics)
+                checklistSection(analytics: analytics)
+                salarySection(analytics: analytics)
+                cadenceHeatmapSection(analytics: analytics)
+                timeInStageSection(analytics: analytics)
             }
         }
     }
 
     private func checklistSection(analytics: DashboardAnalyticsResult) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Label("Checklist Performance", systemImage: "checklist")
-                    .font(.headline)
-                Spacer()
-                Text(viewModel.percentString(analytics.currentChecklist.completionRate))
-                    .font(.subheadline.weight(.semibold))
-            }
+        dashboardSectionCard {
+            VStack(alignment: .leading, spacing: 16) {
+                dashboardSectionHeader(
+                    title: "Checklist Performance",
+                    systemImage: "checklist",
+                    eyebrow: "Execution",
+                    trailingText: viewModel.percentString(analytics.currentChecklist.completionRate)
+                )
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
-                checklistMetricCard(
-                    title: "Completed",
-                    value: "\(analytics.currentChecklist.completedItems) / \(analytics.currentChecklist.totalItems)",
-                    subtitle: analytics.comparisonLabel
-                )
-                checklistMetricCard(
-                    title: "Open",
-                    value: "\(analytics.currentChecklist.openItems)",
-                    subtitle: "Checklist items in scope"
-                )
-                checklistMetricCard(
-                    title: "Overdue",
-                    value: "\(analytics.currentChecklist.overdueItems)",
-                    subtitle: "Past due and incomplete"
-                )
-            }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
+                    checklistMetricCard(
+                        title: "Completed",
+                        value: "\(analytics.currentChecklist.completedItems) / \(analytics.currentChecklist.totalItems)",
+                        subtitle: analytics.comparisonLabel,
+                        tint: DesignSystem.Colors.accent
+                    )
+                    checklistMetricCard(
+                        title: "Open",
+                        value: "\(analytics.currentChecklist.openItems)",
+                        subtitle: "Checklist items in scope",
+                        tint: .orange
+                    )
+                    checklistMetricCard(
+                        title: "Overdue",
+                        value: "\(analytics.currentChecklist.overdueItems)",
+                        subtitle: "Past due and incomplete",
+                        tint: .red
+                    )
+                }
 
-            Text(checklistDeltaSummary(analytics))
-                .font(.caption)
-                .foregroundColor(.secondary)
+                Text(checklistDeltaSummary(analytics))
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
         }
-        .padding(16)
-        .appCard(cornerRadius: 14, elevated: true, shadow: false)
     }
 
-    private func checklistMetricCard(title: String, value: String, subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private func checklistMetricCard(title: String, value: String, subtitle: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Capsule(style: .continuous)
+                .fill(tint.opacity(colorScheme == .dark ? 0.18 : 0.12))
+                .frame(width: 36, height: 6)
+
             Text(title)
                 .font(.caption.weight(.semibold))
                 .foregroundColor(.secondary)
@@ -232,10 +625,14 @@ struct DashboardView: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(DesignSystem.Colors.surface(colorScheme).opacity(colorScheme == .dark ? 0.82 : 0.98))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
         )
     }
 
@@ -253,130 +650,196 @@ struct DashboardView: View {
     }
 
     private func goalTrackingSection(analytics: DashboardAnalyticsResult) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Label("Goal Tracking", systemImage: "target")
-                    .font(.headline)
-
-                Spacer()
-
-                if let activeCycle = analytics.activeCycle {
-                    Text(activeCycle.name)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            if analytics.goalProgress.isEmpty {
-                ContentUnavailableView(
-                    "No goals yet",
+        dashboardSectionCard {
+            VStack(alignment: .leading, spacing: 16) {
+                dashboardSectionHeader(
+                    title: "Goal Tracking",
                     systemImage: "target",
-                    description: Text("Create weekly or monthly goals for the active search cycle.")
+                    eyebrow: "Progress",
+                    trailingText: analytics.activeCycle?.name ?? "No active cycle"
                 )
-            } else {
-                ForEach(analytics.goalProgress) { progress in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Label(progress.title, systemImage: progress.metric.icon)
-                                .font(.subheadline.weight(.semibold))
-                            Spacer()
-                            Text("\(progress.progress) / \(progress.target)")
-                                .font(.subheadline.weight(.semibold))
+
+                if analytics.goalProgress.isEmpty {
+                    dashboardEmptyState(
+                        title: analytics.activeCycle == nil ? "No active cycle" : "No goals yet",
+                        systemImage: "target",
+                        message: analytics.activeCycle == nil
+                            ? "Start or activate a search cycle before tracking weekly or monthly goals."
+                            : "Create weekly or monthly goals for the active search cycle to make this dashboard actionable.",
+                        actionTitle: analytics.activeCycle == nil ? "Manage Cycles" : "Create Goals"
+                    ) {
+                        if analytics.activeCycle == nil {
+                            showingCycleManager = true
+                        } else {
+                            showingGoalManager = true
                         }
-
-                        ProgressView(value: min(Double(progress.progress), Double(progress.target)), total: Double(progress.target))
-                            .tint(DesignSystem.Colors.accent)
-
-                        Text(progress.periodLabel)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
                     }
-                    .padding(14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
-                    )
+                } else {
+                    ForEach(analytics.goalProgress) { progress in
+                        let completion = min(Double(progress.progress), Double(progress.target)) / Double(progress.target)
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(alignment: .center) {
+                                Label(progress.title, systemImage: progress.metric.icon)
+                                    .font(.subheadline.weight(.semibold))
+
+                                Spacer()
+
+                                Text("\(progress.progress) / \(progress.target)")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(.secondary)
+                            }
+
+                            ProgressView(value: completion)
+                                .tint(DesignSystem.Colors.accent)
+
+                            HStack {
+                                Text(progress.periodLabel)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+
+                                Spacer()
+
+                                Text(viewModel.percentString(completion))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundColor(DesignSystem.Colors.accent)
+                            }
+                        }
+                        .padding(16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(DesignSystem.Colors.surface(colorScheme).opacity(colorScheme == .dark ? 0.82 : 0.98))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+                        )
+                    }
                 }
             }
         }
-        .padding(16)
-        .appCard(cornerRadius: 14, elevated: true, shadow: false)
     }
 
     private func cadenceHeatmapSection(analytics: DashboardAnalyticsResult) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Label("Application Cadence", systemImage: "calendar")
-                    .font(.headline)
-                Spacer()
-                Text("Last 12 weeks")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
+        dashboardSectionCard {
+            VStack(alignment: .leading, spacing: 16) {
+                dashboardSectionHeader(
+                    title: "Application Cadence",
+                    systemImage: "calendar",
+                    eyebrow: "Rhythm",
+                    trailingText: "Last 12 weeks"
+                )
 
-            if analytics.cadenceHeatmap.isEmpty {
-                Text("No submitted applications in this scope yet.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            } else {
-                CadenceHeatmapView(cells: analytics.cadenceHeatmap)
+                if analytics.cadenceHeatmap.isEmpty {
+                    dashboardEmptyState(
+                        title: "No application activity yet",
+                        systemImage: "calendar.badge.exclamationmark",
+                        message: "Submitted applications in the current scope will appear here as a weekly activity pattern."
+                    )
+                } else {
+                    CadenceHeatmapView(cells: analytics.cadenceHeatmap)
+                }
             }
         }
-        .padding(16)
-        .appCard(cornerRadius: 14, elevated: true, shadow: false)
     }
 
     private func salarySection(analytics: DashboardAnalyticsResult) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Label("Salary Analytics", systemImage: "banknote")
-                    .font(.headline)
-                Spacer()
-                Text("Base currency: \(settingsViewModel.analyticsBaseCurrency.rawValue)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            if analytics.salaryDistribution.isEmpty && analytics.averageExpectedComp == nil && analytics.averageOfferedComp == nil {
-                ContentUnavailableView(
-                    "No compensation analytics yet",
-                    systemImage: "chart.bar.xaxis",
-                    description: Text("Add posted, expected, or offer compensation to applications in this scope.")
+        dashboardSectionCard {
+            VStack(alignment: .leading, spacing: 16) {
+                dashboardSectionHeader(
+                    title: "Salary Analytics",
+                    systemImage: "banknote",
+                    eyebrow: "Compensation",
+                    trailingText: settingsViewModel.analyticsBaseCurrency.rawValue
                 )
-            } else {
-                if !analytics.salaryDistribution.isEmpty {
-                    Chart(analytics.salaryDistribution) { bin in
-                        BarMark(
-                            x: .value("Range", bin.label),
-                            y: .value("Applications", bin.count)
-                        )
-                        .foregroundStyle(DesignSystem.Colors.accent)
-                        .cornerRadius(4)
+
+                if analytics.salaryDistribution.isEmpty && analytics.averageExpectedComp == nil && analytics.averageOfferedComp == nil {
+                    dashboardEmptyState(
+                        title: "No compensation analytics yet",
+                        systemImage: "chart.bar.xaxis",
+                        message: "Add posted, expected, or offer compensation to applications in this scope to build salary benchmarks."
+                    )
+                } else {
+                    if !analytics.salaryDistribution.isEmpty {
+                        Chart(analytics.salaryDistribution) { bin in
+                            BarMark(
+                                x: .value("Range", bin.label),
+                                y: .value("Applications", bin.count)
+                            )
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [
+                                        DesignSystem.Colors.accent.opacity(0.7),
+                                        DesignSystem.Colors.accent
+                                    ],
+                                    startPoint: .bottom,
+                                    endPoint: .top
+                                )
+                            )
+                            .cornerRadius(5)
+                        }
+                        .chartYAxis {
+                            AxisMarks(position: .leading) { value in
+                                AxisGridLine(stroke: StrokeStyle(lineWidth: 1))
+                                    .foregroundStyle(Color.secondary.opacity(0.16))
+                                AxisValueLabel()
+                            }
+                        }
+                        .chartXAxis {
+                            AxisMarks { _ in
+                                AxisValueLabel()
+                            }
+                        }
+                        .chartPlotStyle { plot in
+                            plot
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(DesignSystem.Colors.surface(colorScheme).opacity(colorScheme == .dark ? 0.82 : 0.98))
+                                )
+                        }
+                        .frame(height: 240)
                     }
-                    .frame(height: 220)
-                }
 
-                HStack(spacing: 12) {
-                    salarySummaryCard(
-                        title: "Average Expected",
-                        value: analytics.averageExpectedComp.map {
-                            viewModel.currencyString($0, currency: settingsViewModel.analyticsBaseCurrency)
-                        } ?? "—",
-                        icon: "flag.fill"
-                    )
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 12) {
+                            salarySummaryCard(
+                                title: "Average Expected",
+                                value: analytics.averageExpectedComp.map {
+                                    viewModel.currencyString($0, currency: settingsViewModel.analyticsBaseCurrency)
+                                } ?? "—",
+                                icon: "flag.fill"
+                            )
 
-                    salarySummaryCard(
-                        title: "Average Offered",
-                        value: analytics.averageOfferedComp.map {
-                            viewModel.currencyString($0, currency: settingsViewModel.analyticsBaseCurrency)
-                        } ?? "—",
-                        icon: "gift.fill"
-                    )
+                            salarySummaryCard(
+                                title: "Average Offered",
+                                value: analytics.averageOfferedComp.map {
+                                    viewModel.currencyString($0, currency: settingsViewModel.analyticsBaseCurrency)
+                                } ?? "—",
+                                icon: "gift.fill"
+                            )
+                        }
+
+                        VStack(spacing: 12) {
+                            salarySummaryCard(
+                                title: "Average Expected",
+                                value: analytics.averageExpectedComp.map {
+                                    viewModel.currencyString($0, currency: settingsViewModel.analyticsBaseCurrency)
+                                } ?? "—",
+                                icon: "flag.fill"
+                            )
+
+                            salarySummaryCard(
+                                title: "Average Offered",
+                                value: analytics.averageOfferedComp.map {
+                                    viewModel.currencyString($0, currency: settingsViewModel.analyticsBaseCurrency)
+                                } ?? "—",
+                                icon: "gift.fill"
+                            )
+                        }
+                    }
                 }
             }
         }
-        .padding(16)
-        .appCard(cornerRadius: 14, elevated: true, shadow: false)
     }
 
     private func salarySummaryCard(title: String, value: String, icon: String) -> some View {
@@ -388,136 +851,350 @@ struct DashboardView: View {
                 .font(.title3.weight(.bold))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(DesignSystem.Colors.surface(colorScheme).opacity(colorScheme == .dark ? 0.82 : 0.98))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
         )
     }
 
     private func funnelSection(analytics: DashboardAnalyticsResult) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Application Funnel", systemImage: "chart.bar.fill")
-                .font(.headline)
-
-            Chart(analytics.funnel) { item in
-                BarMark(
-                    x: .value("Status", item.status.displayName),
-                    y: .value("Count", item.count)
+        dashboardSectionCard {
+            VStack(alignment: .leading, spacing: 16) {
+                dashboardSectionHeader(
+                    title: "Application Funnel",
+                    systemImage: "chart.bar.fill",
+                    eyebrow: "Outcomes",
+                    trailingText: analytics.comparisonLabel.capitalized
                 )
-                .foregroundStyle(item.status.color)
-                .cornerRadius(4)
+
+                Chart(analytics.funnel) { item in
+                    BarMark(
+                        x: .value("Status", item.status.displayName),
+                        y: .value("Count", item.count)
+                    )
+                    .foregroundStyle(item.status.color.gradient)
+                    .cornerRadius(5)
+                    .annotation(position: .top) {
+                        if item.count > 0 {
+                            Text("\(item.count)")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks(position: .leading) { _ in
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 1))
+                            .foregroundStyle(Color.secondary.opacity(0.16))
+                        AxisValueLabel()
+                    }
+                }
+                .chartPlotStyle { plot in
+                    plot
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(DesignSystem.Colors.surface(colorScheme).opacity(colorScheme == .dark ? 0.82 : 0.98))
+                        )
+                }
+                .frame(height: 240)
             }
-            .chartYAxis {
-                AxisMarks(position: .leading)
-            }
-            .frame(height: 220)
         }
-        .padding(16)
-        .appCard(cornerRadius: 14, elevated: true, shadow: false)
     }
 
     private func timeInStageSection(analytics: DashboardAnalyticsResult) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Average Time in Stage", systemImage: "clock.fill")
-                .font(.headline)
+        dashboardSectionCard {
+            VStack(alignment: .leading, spacing: 16) {
+                dashboardSectionHeader(
+                    title: "Average Time in Stage",
+                    systemImage: "clock.fill",
+                    eyebrow: "Cycle Friction",
+                    trailingText: analytics.timeInStage.isEmpty ? nil : "Average days"
+                )
 
-            if analytics.timeInStage.isEmpty {
-                Text("Not enough in-scope data for stage timing yet.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            } else {
-                Chart(analytics.timeInStage) { item in
-                    BarMark(
-                        x: .value("Days", item.averageDays),
-                        y: .value("Stage", item.status.displayName)
+                if analytics.timeInStage.isEmpty {
+                    dashboardEmptyState(
+                        title: "Not enough timing data yet",
+                        systemImage: "clock.badge.questionmark",
+                        message: "Stage timing appears once enough in-scope applications move through the pipeline."
                     )
-                    .foregroundStyle(item.status.color)
-                    .cornerRadius(4)
-                    .annotation(position: .trailing) {
-                        Text("\(Int(item.averageDays.rounded()))d")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+                } else {
+                    Chart(analytics.timeInStage) { item in
+                        BarMark(
+                            x: .value("Days", item.averageDays),
+                            y: .value("Stage", item.status.displayName)
+                        )
+                        .foregroundStyle(item.status.color.gradient)
+                        .cornerRadius(5)
+                        .annotation(position: .trailing) {
+                            Text("\(Int(item.averageDays.rounded()))d")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundColor(.secondary)
+                        }
                     }
+                    .chartXAxis {
+                        AxisMarks { _ in
+                            AxisGridLine(stroke: StrokeStyle(lineWidth: 1))
+                                .foregroundStyle(Color.secondary.opacity(0.14))
+                            AxisValueLabel()
+                        }
+                    }
+                    .chartPlotStyle { plot in
+                        plot
+                            .background(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(DesignSystem.Colors.surface(colorScheme).opacity(colorScheme == .dark ? 0.82 : 0.98))
+                            )
+                    }
+                    .frame(height: CGFloat(analytics.timeInStage.count) * 52 + 20)
                 }
-                .frame(height: CGFloat(analytics.timeInStage.count) * 52 + 12)
             }
         }
-        .padding(16)
-        .appCard(cornerRadius: 14, elevated: true, shadow: false)
     }
 
     private func ratesSection(analytics: DashboardAnalyticsResult) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Conversion Rates", systemImage: "percent")
-                .font(.headline)
+        dashboardSectionCard {
+            VStack(alignment: .leading, spacing: 16) {
+                dashboardSectionHeader(
+                    title: "Conversion Rates",
+                    systemImage: "percent",
+                    eyebrow: "Efficiency",
+                    trailingText: analytics.comparisonLabel.capitalized
+                )
 
-            HStack(spacing: 16) {
-                rateGauge(label: "Response", value: analytics.currentSnapshot.responseRate, color: .green)
-                rateGauge(
-                    label: "Interview",
-                    value: analytics.currentSnapshot.submittedApplications == 0
-                        ? 0
-                        : Double(analytics.currentSnapshot.interviewingApplications) / Double(analytics.currentSnapshot.submittedApplications),
-                    color: .orange
-                )
-                rateGauge(
-                    label: "Offer",
-                    value: analytics.currentSnapshot.submittedApplications == 0
-                        ? 0
-                        : Double(analytics.currentSnapshot.offeredApplications) / Double(analytics.currentSnapshot.submittedApplications),
-                    color: .purple
-                )
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) {
+                        rateGauge(label: "Response", value: analytics.currentSnapshot.responseRate, color: .green)
+                        rateGauge(
+                            label: "Interview",
+                            value: analytics.currentSnapshot.submittedApplications == 0
+                                ? 0
+                                : Double(analytics.currentSnapshot.interviewingApplications) / Double(analytics.currentSnapshot.submittedApplications),
+                            color: .orange
+                        )
+                        rateGauge(
+                            label: "Offer",
+                            value: analytics.currentSnapshot.submittedApplications == 0
+                                ? 0
+                                : Double(analytics.currentSnapshot.offeredApplications) / Double(analytics.currentSnapshot.submittedApplications),
+                            color: .purple
+                        )
+                    }
+
+                    VStack(spacing: 12) {
+                        rateGauge(label: "Response", value: analytics.currentSnapshot.responseRate, color: .green)
+                        rateGauge(
+                            label: "Interview",
+                            value: analytics.currentSnapshot.submittedApplications == 0
+                                ? 0
+                                : Double(analytics.currentSnapshot.interviewingApplications) / Double(analytics.currentSnapshot.submittedApplications),
+                            color: .orange
+                        )
+                        rateGauge(
+                            label: "Offer",
+                            value: analytics.currentSnapshot.submittedApplications == 0
+                                ? 0
+                                : Double(analytics.currentSnapshot.offeredApplications) / Double(analytics.currentSnapshot.submittedApplications),
+                            color: .purple
+                        )
+                    }
+                }
             }
         }
-        .padding(16)
-        .appCard(cornerRadius: 14, elevated: true, shadow: false)
     }
 
     private func rateGauge(label: String, value: Double, color: Color) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 12) {
             ZStack {
                 Circle()
-                    .stroke(color.opacity(0.18), lineWidth: 8)
+                    .stroke(color.opacity(0.16), lineWidth: 10)
 
                 Circle()
                     .trim(from: 0, to: max(0, min(value, 1)))
-                    .stroke(color, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                    .stroke(color, style: StrokeStyle(lineWidth: 10, lineCap: .round))
                     .rotationEffect(.degrees(-90))
 
-                Text(viewModel.percentString(value))
-                    .font(.system(size: 14, weight: .bold))
+                VStack(spacing: 2) {
+                    Text(viewModel.percentString(value))
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                    Text(label)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
             }
-            .frame(width: 76, height: 76)
-
-            Text(label)
-                .font(.caption)
-                .foregroundColor(.secondary)
+            .frame(width: 88, height: 88)
         }
         .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(DesignSystem.Colors.surface(colorScheme).opacity(colorScheme == .dark ? 0.82 : 0.98))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+        )
     }
 
     private var loadingCard: some View {
-        VStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             ProgressView()
-            Text("Refreshing analytics…")
+
+            Text("Refreshing analytics")
+                .font(.title3.weight(.semibold))
+
+            Text("Recomputing search momentum, conversion rates, and dashboard benchmarks.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }
-        .frame(maxWidth: .infinity)
-        .padding(32)
-        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(28)
+        .appCard(cornerRadius: 18, elevated: true, shadow: false)
     }
 
     private var emptyStateCard: some View {
-        ContentUnavailableView(
-            "No analytics yet",
-            systemImage: "chart.xyaxis.line",
-            description: Text("Add a few applications or create a search cycle to populate the dashboard.")
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.16 : 0.10))
+                    Image(systemName: "chart.xyaxis.line")
+                        .font(.title3.weight(.semibold))
+                        .foregroundColor(DesignSystem.Colors.accent)
+                }
+                .frame(width: 48, height: 48)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("No analytics yet")
+                        .font(.title3.weight(.semibold))
+                    Text("Add a few applications or create a search cycle to populate the dashboard.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            HStack(spacing: 10) {
+                dashboardToolbarButton(
+                    title: "Manage Cycles",
+                    systemImage: "arrow.triangle.branch",
+                    accent: false
+                ) {
+                    showingCycleManager = true
+                }
+
+                dashboardToolbarButton(
+                    title: "Create Goals",
+                    systemImage: "target",
+                    accent: true
+                ) {
+                    showingGoalManager = true
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(28)
+        .appCard(cornerRadius: 18, elevated: true, shadow: false)
+    }
+
+    private func dashboardSectionCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                DesignSystem.Colors.surfaceElevated(colorScheme),
+                                DesignSystem.Colors.surface(colorScheme)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+            )
+    }
+
+    private func dashboardSectionHeader(
+        title: String,
+        systemImage: String,
+        eyebrow: String,
+        trailingText: String?
+    ) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(eyebrow)
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.secondary)
+                    .textCase(.uppercase)
+
+                Label(title, systemImage: systemImage)
+                    .font(.headline)
+            }
+
+            Spacer()
+
+            if let trailingText {
+                Text(trailingText)
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(DesignSystem.Colors.surface(colorScheme).opacity(colorScheme == .dark ? 0.80 : 0.96))
+                    )
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+                    )
+            }
+        }
+    }
+
+    private func dashboardEmptyState(
+        title: String,
+        systemImage: String,
+        message: String,
+        actionTitle: String? = nil,
+        action: (() -> Void)? = nil
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.title3.weight(.semibold))
+                .foregroundColor(.secondary)
+
+            Text(title)
+                .font(.title3.weight(.semibold))
+
+            Text(message)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .buttonStyle(.borderedProminent)
+                    .tint(DesignSystem.Colors.accent)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(DesignSystem.Colors.surface(colorScheme).opacity(colorScheme == .dark ? 0.82 : 0.98))
         )
-        .frame(maxWidth: .infinity)
-        .padding(32)
-        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+        )
     }
 
     private func deltaColor(named name: String) -> Color {
@@ -533,6 +1210,8 @@ struct DashboardView: View {
 }
 
 private struct CadenceHeatmapView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let cells: [DashboardHeatmapCell]
 
     private let weekdayLabels = Calendar.current.shortStandaloneWeekdaySymbols
@@ -546,40 +1225,74 @@ private struct CadenceHeatmapView: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(0..<7, id: \.self) { index in
-                    Text(weekdayLabels[index])
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Activity density")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                HStack(spacing: 6) {
+                    Text("Quiet")
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                        .frame(height: 18)
+
+                    ForEach(0..<4, id: \.self) { level in
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(heatColor(for: level))
+                            .frame(width: 14, height: 14)
+                    }
+
+                    Text("Active")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                 }
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 6) {
-                    ForEach(grouped, id: \.week) { column in
-                        VStack(spacing: 6) {
-                            ForEach(column.cells) { cell in
-                                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                    .fill(heatColor(for: cell.count))
-                                    .frame(width: 18, height: 18)
-                                    .overlay {
-                                        if cell.count > 0 {
-                                            Text("\(cell.count)")
-                                                .font(.system(size: 8, weight: .bold))
-                                                .foregroundColor(.white)
-                                        }
-                                    }
-                            }
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(0..<7, id: \.self) { index in
+                        Text(weekdayLabels[index])
+                            .font(.caption2.weight(.medium))
+                            .foregroundColor(.secondary)
+                            .frame(width: 28, height: 20, alignment: .leading)
+                    }
+                }
 
-                            Text(column.week, format: .dateTime.month(.abbreviated).day())
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                                .rotationEffect(.degrees(-45))
-                                .frame(width: 36, height: 28, alignment: .topLeading)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 8) {
+                        ForEach(grouped, id: \.week) { column in
+                            VStack(spacing: 8) {
+                                ForEach(column.cells) { cell in
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .fill(heatColor(for: cell.count))
+                                        .frame(width: 20, height: 20)
+                                        .overlay {
+                                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                                .stroke(Color.white.opacity(colorScheme == .dark ? 0.06 : 0.10), lineWidth: 1)
+
+                                            if cell.count > 0 {
+                                                Text("\(cell.count)")
+                                                    .font(.system(size: 8, weight: .bold))
+                                                    .foregroundColor(.white)
+                                            }
+                                        }
+                                }
+
+                                VStack(spacing: 1) {
+                                    Text(column.week, format: .dateTime.month(.abbreviated))
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundColor(.secondary)
+                                    Text(column.week, format: .dateTime.day())
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                                .frame(width: 28)
+                            }
                         }
                     }
+                    .padding(.vertical, 2)
                 }
             }
         }
@@ -588,7 +1301,7 @@ private struct CadenceHeatmapView: View {
     private func heatColor(for count: Int) -> Color {
         switch count {
         case 0:
-            return Color.secondary.opacity(0.12)
+            return DesignSystem.Colors.inputBackground(colorScheme)
         case 1:
             return DesignSystem.Colors.accent.opacity(0.35)
         case 2:
@@ -879,6 +1592,9 @@ private struct GoalManagementSheet: View {
                 Contact.self,
                 ApplicationContactLink.self,
                 ApplicationActivity.self,
+                InterviewDebrief.self,
+                InterviewQuestionEntry.self,
+                InterviewLearningSnapshot.self,
                 ApplicationTask.self,
                 ApplicationChecklistSuggestion.self,
                 ApplicationAttachment.self,

@@ -226,54 +226,61 @@ struct SettingsView: View {
     private var settingsDetailPanel: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                HStack(alignment: .top) {
-                    HStack(spacing: 12) {
-                        Image(systemName: selectedCategory.icon)
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(DesignSystem.Colors.accent)
-                            .frame(width: 34, height: 34)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.24 : 0.12))
-                            )
+                if selectedCategory == .notifications {
+                    NotificationSettingsContent(
+                        viewModel: viewModel,
+                        isPresentedInSheet: isPresentedInSheet
+                    )
+                } else {
+                    HStack(alignment: .top) {
+                        HStack(spacing: 12) {
+                            Image(systemName: selectedCategory.icon)
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(DesignSystem.Colors.accent)
+                                .frame(width: 34, height: 34)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.24 : 0.12))
+                                )
 
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Preferences")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .textCase(.uppercase)
-                                .tracking(0.8)
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Preferences")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .textCase(.uppercase)
+                                    .tracking(0.8)
 
-                            Text(selectedCategory.title)
-                                .font(.title3)
-                                .fontWeight(.semibold)
+                                Text(selectedCategory.title)
+                                    .font(.title3)
+                                    .fontWeight(.semibold)
 
-                            Text(selectedCategory.subtitle)
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                Text(selectedCategory.subtitle)
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        Spacer()
+
+                        if isPresentedInSheet {
+                            Button("Done") {
+                                dismiss()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                            .tint(DesignSystem.Colors.accent)
                         }
                     }
+                    .padding(20)
+                    .appCard(cornerRadius: 16, elevated: true, shadow: false)
 
-                    Spacer()
-
-                    if isPresentedInSheet {
-                        Button("Done") {
-                            dismiss()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .tint(DesignSystem.Colors.accent)
+                    SettingsPanelCard(
+                        title: selectedCategory.title,
+                        subtitle: selectedCategory.subtitle,
+                        icon: selectedCategory.icon
+                    ) {
+                        selectedCategoryContent
                     }
-                }
-                .padding(20)
-                .appCard(cornerRadius: 16, elevated: true, shadow: false)
-
-                SettingsPanelCard(
-                    title: selectedCategory.title,
-                    subtitle: selectedCategory.subtitle,
-                    icon: selectedCategory.icon
-                ) {
-                    selectedCategoryContent
                 }
             }
             .padding(24)
@@ -782,11 +789,7 @@ struct NotificationSettingsView: View {
             .onChange(of: viewModel.reminderTiming) { _, timing in
                 guard viewModel.notificationsEnabled else { return }
                 Task {
-                    await NotificationService.shared.syncReminderState(
-                        for: applications,
-                        notificationsEnabled: true,
-                        timing: timing
-                    )
+                    await syncNotificationPreferences(reminderTiming: timing)
                 }
             }
             .alert("Notifications Are Disabled", isPresented: $showPermissionDeniedAlert) {
@@ -913,11 +916,7 @@ struct NotificationSettingsView: View {
         permissionStatus = await NotificationService.shared.checkPermissionStatus()
 
         guard viewModel.notificationsEnabled else { return }
-        await NotificationService.shared.syncReminderState(
-            for: applications,
-            notificationsEnabled: true,
-            timing: viewModel.reminderTiming
-        )
+        await syncNotificationPreferences(reminderTiming: viewModel.reminderTiming)
     }
 
     @MainActor
@@ -926,11 +925,7 @@ struct NotificationSettingsView: View {
         permissionStatus = updatedStatus
 
         if NotificationService.shared.isPermissionGranted(updatedStatus) {
-            await NotificationService.shared.syncReminderState(
-                for: applications,
-                notificationsEnabled: true,
-                timing: viewModel.reminderTiming
-            )
+            await syncNotificationPreferences(reminderTiming: viewModel.reminderTiming)
         } else {
             showPermissionDeniedAlert = true
         }
@@ -949,15 +944,25 @@ struct NotificationSettingsView: View {
                 return
             }
 
-            await NotificationService.shared.syncReminderState(
-                for: applications,
-                notificationsEnabled: true,
-                timing: viewModel.reminderTiming
-            )
+            await syncNotificationPreferences(reminderTiming: viewModel.reminderTiming)
         } else {
             NotificationService.shared.removeAllNotifications()
             permissionStatus = await NotificationService.shared.checkPermissionStatus()
         }
+    }
+
+    @MainActor
+    private func syncNotificationPreferences(reminderTiming: ReminderTiming) async {
+        await NotificationService.shared.syncReminderState(
+            for: applications,
+            notificationsEnabled: true,
+            timing: reminderTiming
+        )
+        await NotificationService.shared.syncWeeklyDigestReminder(
+            schedule: viewModel.weeklyDigestSchedule,
+            notificationsEnabled: viewModel.notificationsEnabled,
+            digestNotificationsEnabled: viewModel.weeklyDigestNotificationsEnabled
+        )
     }
 }
 
@@ -1080,9 +1085,12 @@ struct AnalyticsSettingsContent: View {
 
 struct NotificationSettingsContent: View {
     @Bindable var viewModel: SettingsViewModel
+    var isPresentedInSheet: Bool = false
     @Query private var applications: [JobApplication]
     @State private var permissionStatus: UNAuthorizationStatus = .notDetermined
     @State private var showPermissionDeniedAlert = false
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         settingsContent
@@ -1097,11 +1105,27 @@ struct NotificationSettingsContent: View {
             .onChange(of: viewModel.reminderTiming) { _, timing in
                 guard viewModel.notificationsEnabled else { return }
                 Task {
-                    await NotificationService.shared.syncReminderState(
-                        for: applications,
-                        notificationsEnabled: true,
-                        timing: timing
-                    )
+                    await syncNotificationPreferences(reminderTiming: timing)
+                }
+            }
+            .onChange(of: viewModel.weeklyDigestNotificationsEnabled) { _, _ in
+                Task {
+                    await syncWeeklyDigestReminder()
+                }
+            }
+            .onChange(of: viewModel.weeklyDigestWeekday) { _, _ in
+                Task {
+                    await syncWeeklyDigestReminder()
+                }
+            }
+            .onChange(of: viewModel.weeklyDigestHour) { _, _ in
+                Task {
+                    await syncWeeklyDigestReminder()
+                }
+            }
+            .onChange(of: viewModel.weeklyDigestMinute) { _, _ in
+                Task {
+                    await syncWeeklyDigestReminder()
                 }
             }
             .alert("Notifications Are Disabled", isPresented: $showPermissionDeniedAlert) {
@@ -1117,75 +1141,268 @@ struct NotificationSettingsContent: View {
     }
 
     private var settingsContent: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            SettingsFormSectionCard(
-                title: "Notifications",
-                subtitle: "Get reminders for follow-up dates and task due dates you set on job applications.",
-                icon: "bell.badge.fill"
-            ) {
-                Toggle("Enable Notifications", isOn: $viewModel.notificationsEnabled)
-                    .tint(DesignSystem.Colors.accent)
-            }
+        VStack(alignment: .leading, spacing: 18) {
+            heroContent
 
             if viewModel.notificationsEnabled {
                 reminderTimingContent
-                permissionContent
+                weeklyDigestContent
+            } else {
+                inactiveStateContent
+            }
+
+            permissionContent
+        }
+    }
+
+    private var heroContent: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top, spacing: 16) {
+                HStack(alignment: .top, spacing: 14) {
+                    Image(systemName: "bell.badge.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(DesignSystem.Colors.accent.gradient)
+                        .frame(width: 46, height: 46)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.20 : 0.10))
+                        )
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Preferences")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .textCase(.uppercase)
+                            .tracking(0.8)
+
+                        Text("Notifications")
+                            .font(.title3)
+                            .fontWeight(.semibold)
+
+                        Text("Manage reminders for follow-ups, task due dates, and your optional weekly digest.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Spacer(minLength: 16)
+
+                HStack(spacing: 12) {
+                    if isPresentedInSheet {
+                        Button("Done") {
+                            dismiss()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .tint(DesignSystem.Colors.accent)
+                    }
+
+                    VStack(alignment: .trailing, spacing: 6) {
+                        Text(viewModel.notificationsEnabled ? "Notifications On" : "Notifications Off")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        Toggle("", isOn: $viewModel.notificationsEnabled)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .tint(DesignSystem.Colors.accent)
+                    }
+                }
+            }
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    summaryBadges
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    summaryBadges
+                }
+            }
+
+            if let heroActionTitle {
+                Divider()
+                    .overlay(.secondary.opacity(0.12))
+
+                HStack(alignment: .center, spacing: 12) {
+                    Label(heroActionMessage, systemImage: permissionStatusIcon)
+                        .font(.subheadline)
+                        .foregroundColor(permissionStatusColor)
+
+                    Spacer(minLength: 12)
+
+                    Button(heroActionTitle) {
+                        Task {
+                            await performHeroAction()
+                        }
+                    }
+                    .tint(heroActionIsProminent ? DesignSystem.Colors.accent : permissionStatusColor)
+                    .modifier(NotificationHeroActionButtonStyle(isProminent: heroActionIsProminent))
+                }
             }
         }
+        .padding(22)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(
+                    viewModel.notificationsEnabled
+                        ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.34 : 0.18)
+                        : DesignSystem.Colors.stroke(colorScheme),
+                    lineWidth: 1
+                )
+        )
+    }
+
+    @ViewBuilder
+    private var summaryBadges: some View {
+        NotificationStatusChip(
+            icon: permissionStatusIcon,
+            title: permissionBadgeTitle,
+            tint: permissionStatusColor
+        )
+
+        NotificationStatusChip(
+            icon: "clock.fill",
+            title: viewModel.notificationsEnabled ? reminderCompactSummary : "Reminders paused",
+            tint: DesignSystem.Colors.accent
+        )
+
+        NotificationStatusChip(
+            icon: "chart.line.text.clipboard",
+            title: viewModel.weeklyDigestNotificationsEnabled ? weeklyDigestCompactSummary : "Digest off",
+            tint: viewModel.weeklyDigestNotificationsEnabled ? DesignSystem.Colors.accent : .secondary
+        )
     }
 
     private var reminderTimingContent: some View {
-        SettingsFormSectionCard(
-            title: "Reminder Timing",
-            subtitle: "Choose when reminders should arrive before a follow-up date.",
-            icon: "clock.fill"
+        NotificationSettingsSectionCard(
+            title: "Reminders",
+            subtitle: "Choose when Pipeline should nudge you before a follow-up date or task deadline."
         ) {
-            Picker("When to Remind", selection: $viewModel.reminderTiming) {
+            HStack(spacing: 10) {
                 ForEach(ReminderTiming.allCases) { timing in
-                    Text(timing.rawValue).tag(timing)
+                    NotificationTimingButton(
+                        title: reminderTimingTitle(for: timing),
+                        subtitle: reminderTimingSubtitle(for: timing),
+                        isSelected: viewModel.reminderTiming == timing
+                    ) {
+                        viewModel.reminderTiming = timing
+                    }
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+
+            Label(reminderPreviewText, systemImage: "sparkles")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
         }
     }
 
-    private var permissionContent: some View {
-        SettingsFormSectionCard(
-            title: "Notification Permission",
-            subtitle: notificationPermissionFooterText,
-            icon: "checkmark.shield.fill"
+    private var weeklyDigestContent: some View {
+        NotificationSettingsSectionCard(
+            title: "Weekly Digest",
+            subtitle: "Send a single weekly summary notification when you want a lightweight review of your search."
         ) {
-            Label(permissionStatusText, systemImage: permissionStatusIcon)
-                .foregroundColor(permissionStatusColor)
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle(isOn: $viewModel.weeklyDigestNotificationsEnabled) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Send Weekly Digest Notification")
+                            .font(.subheadline.weight(.semibold))
 
-            if permissionStatus == .denied {
-                Button("Open System Settings") {
-                    Task { @MainActor in
-                        NotificationService.shared.openNotificationSettings()
+                        Text(
+                            viewModel.weeklyDigestNotificationsEnabled
+                                ? weeklyDigestScheduleText
+                                : "Disabled. Turn this on to choose a delivery day and time."
+                        )
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .toggleStyle(.switch)
                 .tint(DesignSystem.Colors.accent)
-            } else if permissionStatus == .notDetermined {
-                Button("Allow Notifications") {
-                    Task {
-                        await requestPermissionFromAction()
+
+                if viewModel.weeklyDigestNotificationsEnabled {
+                    HStack(alignment: .top, spacing: 14) {
+                        NotificationField(label: "Day") {
+                            Picker("Day", selection: $viewModel.weeklyDigestWeekday) {
+                                ForEach(weekdayOptions, id: \.value) { option in
+                                    Text(option.label).tag(option.value)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
+                        NotificationField(label: "Time") {
+                            DatePicker(
+                                "Time",
+                                selection: weeklyDigestTimeBinding,
+                                displayedComponents: .hourAndMinute
+                            )
+                            .datePickerStyle(.field)
+                            .labelsHidden()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
+
+                    Label(weeklyDigestScheduleText, systemImage: "calendar.badge.clock")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
                 }
-                .buttonStyle(.bordered)
             }
+        }
+    }
+
+    private var inactiveStateContent: some View {
+        NotificationPermissionBanner(
+            icon: "bell.slash.fill",
+            title: "Notifications are currently off",
+            message: "Turn them on to configure reminder timing and optionally deliver a weekly digest notification.",
+            tint: .secondary
+        )
+    }
+
+    private var permissionContent: some View {
+        NotificationSettingsSectionCard(
+            title: "Permission",
+            subtitle: "Keep this visible so you can quickly diagnose why reminders are or are not arriving."
+        ) {
+            NotificationPermissionBanner(
+                icon: permissionStatusIcon,
+                title: permissionStatusText,
+                message: notificationPermissionFooterText,
+                tint: permissionStatusColor
+            )
+        }
+    }
+
+    private var permissionBadgeTitle: String {
+        switch permissionStatus {
+        case .authorized, .provisional, .ephemeral:
+            return "Permission granted"
+        case .denied:
+            return "Permission blocked"
+        case .notDetermined:
+            return "Permission pending"
+        @unknown default:
+            return "Permission unknown"
         }
     }
 
     private var permissionStatusText: String {
         switch permissionStatus {
         case .authorized, .provisional, .ephemeral:
-            return "Permission granted"
+            return "Notifications are allowed"
         case .denied:
-            return "Permission denied in system settings"
+            return "Notifications are blocked in System Settings"
         case .notDetermined:
-            return "Permission not requested yet"
+            return "Notification permission has not been requested yet"
         @unknown default:
             return "Permission status unavailable"
         }
@@ -1207,9 +1424,9 @@ struct NotificationSettingsContent: View {
     private var permissionStatusColor: Color {
         switch permissionStatus {
         case .authorized, .provisional, .ephemeral:
-            return .green
+            return .pipelineGreen
         case .denied:
-            return .red
+            return .pipelineOrange
         case .notDetermined:
             return .secondary
         @unknown default:
@@ -1220,14 +1437,91 @@ struct NotificationSettingsContent: View {
     private var notificationPermissionFooterText: String {
         switch permissionStatus {
         case .authorized, .provisional, .ephemeral:
-            return "Pipeline can send reminders for follow-up dates and task due dates."
+            return "Pipeline can send reminders and weekly digest notifications."
         case .denied:
-            return "Notifications are blocked. Open system settings to enable them for Pipeline."
+            return "Reminders are blocked until you allow notifications for Pipeline in System Settings."
         case .notDetermined:
-            return "Get reminders for follow-up dates and task due dates you set on job applications."
+            return "Allow notifications when prompted to receive reminders and the optional weekly digest."
         @unknown default:
             return "Check your system settings if reminders are not arriving."
         }
+    }
+
+    private var reminderCompactSummary: String {
+        switch viewModel.reminderTiming {
+        case .dayBefore:
+            return "Day before"
+        case .morningOf:
+            return "9:00 AM same day"
+        case .both:
+            return "Day before + 9:00 AM"
+        }
+    }
+
+    private var reminderPreviewText: String {
+        switch viewModel.reminderTiming {
+        case .dayBefore:
+            return "Pipeline will remind you one day before each follow-up date and task deadline."
+        case .morningOf:
+            return "Pipeline will remind you at 9:00 AM on the day each follow-up date or task is due."
+        case .both:
+            return "Pipeline will send a reminder the day before and again at 9:00 AM on the due date."
+        }
+    }
+
+    private var weeklyDigestCompactSummary: String {
+        "\(weekdayLabel(for: viewModel.weeklyDigestWeekday)) at \(formattedTime(hour: viewModel.weeklyDigestHour, minute: viewModel.weeklyDigestMinute))"
+    }
+
+    private var weeklyDigestScheduleText: String {
+        "Every \(weeklyDigestCompactSummary)"
+    }
+
+    private var heroActionTitle: String? {
+        switch permissionStatus {
+        case .denied:
+            return "Open System Settings"
+        case .notDetermined:
+            return "Allow Notifications"
+        default:
+            return nil
+        }
+    }
+
+    private var heroActionMessage: String {
+        switch permissionStatus {
+        case .denied:
+            return "Pipeline cannot deliver reminders until notifications are enabled in System Settings."
+        case .notDetermined:
+            return "Allow notifications now so reminders can be delivered when you turn them on."
+        default:
+            return ""
+        }
+    }
+
+    private var heroActionIsProminent: Bool {
+        permissionStatus == .denied
+    }
+
+    private var weekdayOptions: [(value: Int, label: String)] {
+        Calendar.current.weekdaySymbols.enumerated().map { index, label in
+            (index + 1, label)
+        }
+    }
+
+    private var weeklyDigestTimeBinding: Binding<Date> {
+        Binding(
+            get: {
+                var components = DateComponents()
+                components.hour = viewModel.weeklyDigestHour
+                components.minute = viewModel.weeklyDigestMinute
+                return Calendar.current.date(from: components) ?? Date()
+            },
+            set: { newValue in
+                viewModel.weeklyDigestHour = Calendar.current.component(.hour, from: newValue)
+                viewModel.weeklyDigestMinute = Calendar.current.component(.minute, from: newValue)
+            }
+        )
     }
 
     @MainActor
@@ -1235,11 +1529,7 @@ struct NotificationSettingsContent: View {
         permissionStatus = await NotificationService.shared.checkPermissionStatus()
 
         guard viewModel.notificationsEnabled else { return }
-        await NotificationService.shared.syncReminderState(
-            for: applications,
-            notificationsEnabled: true,
-            timing: viewModel.reminderTiming
-        )
+        await syncNotificationPreferences(reminderTiming: viewModel.reminderTiming)
     }
 
     @MainActor
@@ -1248,11 +1538,7 @@ struct NotificationSettingsContent: View {
         permissionStatus = updatedStatus
 
         if NotificationService.shared.isPermissionGranted(updatedStatus) {
-            await NotificationService.shared.syncReminderState(
-                for: applications,
-                notificationsEnabled: true,
-                timing: viewModel.reminderTiming
-            )
+            await syncNotificationPreferences(reminderTiming: viewModel.reminderTiming)
         } else {
             showPermissionDeniedAlert = true
         }
@@ -1271,15 +1557,274 @@ struct NotificationSettingsContent: View {
                 return
             }
 
-            await NotificationService.shared.syncReminderState(
-                for: applications,
-                notificationsEnabled: true,
-                timing: viewModel.reminderTiming
-            )
+            await syncNotificationPreferences(reminderTiming: viewModel.reminderTiming)
         } else {
             NotificationService.shared.removeAllNotifications()
             permissionStatus = await NotificationService.shared.checkPermissionStatus()
         }
+    }
+
+    @MainActor
+    private func performHeroAction() async {
+        switch permissionStatus {
+        case .denied:
+            NotificationService.shared.openNotificationSettings()
+        case .notDetermined:
+            await requestPermissionFromAction()
+        default:
+            break
+        }
+    }
+
+    @MainActor
+    private func syncNotificationPreferences(reminderTiming: ReminderTiming) async {
+        await NotificationService.shared.syncReminderState(
+            for: applications,
+            notificationsEnabled: true,
+            timing: reminderTiming
+        )
+        await syncWeeklyDigestReminder()
+    }
+
+    @MainActor
+    private func syncWeeklyDigestReminder() async {
+        await NotificationService.shared.syncWeeklyDigestReminder(
+            schedule: viewModel.weeklyDigestSchedule,
+            notificationsEnabled: viewModel.notificationsEnabled,
+            digestNotificationsEnabled: viewModel.weeklyDigestNotificationsEnabled
+        )
+    }
+
+    private func reminderTimingTitle(for timing: ReminderTiming) -> String {
+        switch timing {
+        case .dayBefore:
+            return "Day Before"
+        case .morningOf:
+            return "Morning Of"
+        case .both:
+            return "Both"
+        }
+    }
+
+    private func reminderTimingSubtitle(for timing: ReminderTiming) -> String {
+        switch timing {
+        case .dayBefore:
+            return "24 hours earlier"
+        case .morningOf:
+            return "9:00 AM same day"
+        case .both:
+            return "Early + same-day"
+        }
+    }
+
+    private func weekdayLabel(for weekday: Int) -> String {
+        weekdayOptions.first(where: { $0.value == weekday })?.label ?? "Sunday"
+    }
+
+    private func formattedTime(hour: Int, minute: Int) -> String {
+        var components = DateComponents()
+        components.hour = hour
+        components.minute = minute
+        let date = Calendar.current.date(from: components) ?? Date()
+        return date.formatted(date: .omitted, time: .shortened)
+    }
+}
+
+private struct NotificationSettingsSectionCard<Content: View>: View {
+    let title: String
+    let subtitle: String
+    let content: Content
+    @Environment(\.colorScheme) private var colorScheme
+
+    init(title: String, subtitle: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.subtitle = subtitle
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+
+            content
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(DesignSystem.Colors.surface(colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+        )
+    }
+}
+
+private struct NotificationStatusChip: View {
+    let icon: String
+    let title: String
+    let tint: Color
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.caption.weight(.semibold))
+
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+        }
+        .foregroundColor(tint)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 8)
+        .background(
+            Capsule()
+                .fill(tint.opacity(colorScheme == .dark ? 0.14 : 0.08))
+        )
+        .overlay(
+            Capsule()
+                .stroke(tint.opacity(colorScheme == .dark ? 0.28 : 0.16), lineWidth: 1)
+        )
+    }
+}
+
+private struct NotificationHeroActionButtonStyle: ViewModifier {
+    let isProminent: Bool
+
+    func body(content: Content) -> some View {
+        Group {
+            if isProminent {
+                content.buttonStyle(.borderedProminent)
+            } else {
+                content.buttonStyle(.bordered)
+            }
+        }
+    }
+}
+
+private struct NotificationTimingButton: View {
+    let title: String
+    let subtitle: String
+    let isSelected: Bool
+    let action: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.primary)
+
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(
+                        isSelected
+                            ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.24 : 0.12)
+                            : DesignSystem.Colors.inputBackground(colorScheme)
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(
+                        isSelected
+                            ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.60 : 0.24)
+                            : DesignSystem.Colors.stroke(colorScheme),
+                        lineWidth: 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct NotificationField<Content: View>: View {
+    let label: String
+    let content: Content
+    @Environment(\.colorScheme) private var colorScheme
+
+    init(label: String, @ViewBuilder content: () -> Content) {
+        self.label = label
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.secondary)
+
+            content
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(DesignSystem.Colors.inputBackground(colorScheme))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+                )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct NotificationPermissionBanner: View {
+    let icon: String
+    let title: String
+    let message: String
+    let tint: Color
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(tint)
+                .frame(width: 30, height: 30)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(tint.opacity(colorScheme == .dark ? 0.14 : 0.08))
+                )
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(tint.opacity(colorScheme == .dark ? 0.10 : 0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(tint.opacity(colorScheme == .dark ? 0.24 : 0.14), lineWidth: 1)
+        )
     }
 }
 

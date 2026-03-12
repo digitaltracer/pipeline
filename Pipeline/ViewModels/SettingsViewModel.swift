@@ -39,6 +39,10 @@ final class SettingsViewModel {
 
         static let notificationsEnabled = "notificationsEnabled"
         static let reminderTiming = "reminderTiming"
+        static let weeklyDigestNotificationsEnabled = Constants.UserDefaultsKeys.weeklyDigestNotificationsEnabled
+        static let weeklyDigestWeekday = Constants.UserDefaultsKeys.weeklyDigestWeekday
+        static let weeklyDigestHour = Constants.UserDefaultsKeys.weeklyDigestHour
+        static let weeklyDigestMinute = Constants.UserDefaultsKeys.weeklyDigestMinute
         static let analyticsBaseCurrency = Constants.UserDefaultsKeys.analyticsBaseCurrency
         static let jobMatchPreferredCurrency = "jobMatchPreferredCurrency"
         static let jobMatchPreferredSalaryMinText = "jobMatchPreferredSalaryMinText"
@@ -110,6 +114,33 @@ final class SettingsViewModel {
     var reminderTiming: ReminderTiming {
         didSet {
             UserDefaults.standard.set(reminderTiming.rawValue, forKey: StorageKeys.reminderTiming)
+        }
+    }
+
+    var weeklyDigestNotificationsEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(
+                weeklyDigestNotificationsEnabled,
+                forKey: StorageKeys.weeklyDigestNotificationsEnabled
+            )
+        }
+    }
+
+    var weeklyDigestWeekday: Int {
+        didSet {
+            UserDefaults.standard.set(weeklyDigestWeekday, forKey: StorageKeys.weeklyDigestWeekday)
+        }
+    }
+
+    var weeklyDigestHour: Int {
+        didSet {
+            UserDefaults.standard.set(weeklyDigestHour, forKey: StorageKeys.weeklyDigestHour)
+        }
+    }
+
+    var weeklyDigestMinute: Int {
+        didSet {
+            UserDefaults.standard.set(weeklyDigestMinute, forKey: StorageKeys.weeklyDigestMinute)
         }
     }
 
@@ -217,6 +248,19 @@ final class SettingsViewModel {
             self.reminderTiming = .dayBefore
         }
 
+        self.weeklyDigestNotificationsEnabled = UserDefaults.standard.bool(
+            forKey: StorageKeys.weeklyDigestNotificationsEnabled
+        )
+
+        let storedWeekday = UserDefaults.standard.integer(forKey: StorageKeys.weeklyDigestWeekday)
+        self.weeklyDigestWeekday = (1...7).contains(storedWeekday) ? storedWeekday : WeeklyDigestSchedule.sundayEvening.weekday
+
+        let storedHour = UserDefaults.standard.integer(forKey: StorageKeys.weeklyDigestHour)
+        self.weeklyDigestHour = (0...23).contains(storedHour) ? storedHour : WeeklyDigestSchedule.sundayEvening.hour
+
+        let storedMinute = UserDefaults.standard.integer(forKey: StorageKeys.weeklyDigestMinute)
+        self.weeklyDigestMinute = (0...59).contains(storedMinute) ? storedMinute : WeeklyDigestSchedule.sundayEvening.minute
+
         if let rawValue = UserDefaults.standard.string(forKey: StorageKeys.analyticsBaseCurrency),
            let currency = Currency(rawValue: rawValue) {
             self.analyticsBaseCurrency = currency
@@ -259,6 +303,14 @@ final class SettingsViewModel {
         case .dark: return .dark
         case .system: return nil
         }
+    }
+
+    var weeklyDigestSchedule: WeeklyDigestSchedule {
+        WeeklyDigestSchedule(
+            weekday: weeklyDigestWeekday,
+            hour: weeklyDigestHour,
+            minute: weeklyDigestMinute
+        )
     }
 
     func availableModels(for provider: AIProvider) -> [String] {

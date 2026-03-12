@@ -12,9 +12,14 @@ private enum CompanyWorkspaceTab: String, CaseIterable, Identifiable {
 
 struct JobDetailView: View {
     @Environment(\.modelContext) private var modelContext
+    @Query private var allApplications: [JobApplication]
+    @Query(sort: \InterviewLearningSnapshot.generatedAt, order: .reverse)
+    private var interviewLearningSnapshots: [InterviewLearningSnapshot]
     @Bindable var application: JobApplication
     var onClose: (() -> Void)? = nil
     var onSelectContact: ((Contact) -> Void)? = nil
+    var pendingNotificationOpenRequest: NotificationOpenRequest? = nil
+    var onHandledNotificationOpenRequest: (() -> Void)? = nil
 
     @State private var viewModel = ApplicationDetailViewModel()
     @State private var showingEditSheet = false
@@ -26,6 +31,7 @@ struct JobDetailView: View {
     @State private var editingTask: ApplicationTask?
     @State private var showingDeleteAlert = false
     @State private var showingInterviewPrep = false
+    @State private var showingInterviewLearnings = false
     @State private var showingFollowUpDrafter = false
     @State private var showingCoverLetterEditor = false
     @State private var showingTailorResume = false
@@ -35,16 +41,21 @@ struct JobDetailView: View {
     @State private var actionErrorMessage: String?
     @State private var descriptionDenoiseViewModel: JobDescriptionDenoiseViewModel
     @State private var checklistSuggestionsViewModel: ChecklistSuggestionsViewModel
+    @State private var selectedInterviewActivityForDebrief: ApplicationActivity?
     @Environment(\.colorScheme) private var colorScheme
 
     init(
         application: JobApplication,
         onClose: (() -> Void)? = nil,
-        onSelectContact: ((Contact) -> Void)? = nil
+        onSelectContact: ((Contact) -> Void)? = nil,
+        pendingNotificationOpenRequest: NotificationOpenRequest? = nil,
+        onHandledNotificationOpenRequest: (() -> Void)? = nil
     ) {
         self.application = application
         self.onClose = onClose
         self.onSelectContact = onSelectContact
+        self.pendingNotificationOpenRequest = pendingNotificationOpenRequest
+        self.onHandledNotificationOpenRequest = onHandledNotificationOpenRequest
         _descriptionDenoiseViewModel = State(
             initialValue: JobDescriptionDenoiseViewModel(
                 application: application,
@@ -163,6 +174,24 @@ struct JobDetailView: View {
                         viewModel: viewModel
                     )
 
+                    if !application.sortedInterviewActivities.isEmpty {
+                        InterviewLearningsSection(
+                            application: application,
+                            applications: allApplications,
+                            latestSnapshot: interviewLearningSnapshots.first,
+                            onDebriefLatest: {
+                                if let latestInterviewNeedingDebrief {
+                                    openDebrief(for: latestInterviewNeedingDebrief)
+                                } else if let latestInterviewActivity {
+                                    openDebrief(for: latestInterviewActivity)
+                                }
+                            },
+                            onViewLearnings: {
+                                showingInterviewLearnings = true
+                            }
+                        )
+                    }
+
                     ApplicationChecklistSection(
                         application: application,
                         viewModel: viewModel,
@@ -210,6 +239,9 @@ struct JobDetailView: View {
                             } catch {
                                 actionErrorMessage = error.localizedDescription
                             }
+                        },
+                        onDebrief: { activity in
+                            openDebrief(for: activity)
                         }
                     )
                 }
@@ -252,6 +284,23 @@ struct JobDetailView: View {
             InterviewPrepView(
                 viewModel: InterviewPrepViewModel(
                     application: application,
+                    settingsViewModel: SettingsViewModel(),
+                    modelContext: modelContext
+                )
+            )
+        }
+        .sheet(item: $selectedInterviewActivityForDebrief) { activity in
+            InterviewDebriefSheet(
+                viewModel: InterviewDebriefViewModel(
+                    activity: activity,
+                    application: application,
+                    modelContext: modelContext
+                )
+            )
+        }
+        .sheet(isPresented: $showingInterviewLearnings) {
+            InterviewLearningsView(
+                viewModel: InterviewLearningsViewModel(
                     settingsViewModel: SettingsViewModel(),
                     modelContext: modelContext
                 )
@@ -364,6 +413,10 @@ struct JobDetailView: View {
             } catch {
                 actionErrorMessage = error.localizedDescription
             }
+            handlePendingOpenRequestIfNeeded()
+        }
+        .onChange(of: pendingNotificationOpenRequest) { _, _ in
+            handlePendingOpenRequestIfNeeded()
         }
     }
 
@@ -399,6 +452,35 @@ struct JobDetailView: View {
         }
     }
 
+    private var latestInterviewActivity: ApplicationActivity? {
+        application.sortedInterviewActivities.first
+    }
+
+    private var latestInterviewNeedingDebrief: ApplicationActivity? {
+        application.pendingInterviewDebriefs.first
+    }
+
+    private func openDebrief(for activity: ApplicationActivity) {
+        selectedInterviewActivityForDebrief = activity
+    }
+
+    private func handlePendingOpenRequestIfNeeded() {
+        guard let pendingNotificationOpenRequest,
+              pendingNotificationOpenRequest.applicationID == application.id,
+              pendingNotificationOpenRequest.kind == .interviewDebrief else {
+            return
+        }
+
+        if let activityID = pendingNotificationOpenRequest.interviewActivityID,
+           let activity = application.sortedInterviewActivities.first(where: { $0.id == activityID }) {
+            selectedInterviewActivityForDebrief = activity
+        } else if let latestInterviewNeedingDebrief {
+            selectedInterviewActivityForDebrief = latestInterviewNeedingDebrief
+        }
+
+        onHandledNotificationOpenRequest?()
+    }
+
     private var bottomActionBar: some View {
         HStack(spacing: 12) {
             Button {
@@ -427,10 +509,26 @@ struct JobDetailView: View {
 
             Menu {
                 if application.status == .interviewing {
+                    if let latestInterviewNeedingDebrief {
+                        Button {
+                            openDebrief(for: latestInterviewNeedingDebrief)
+                        } label: {
+                            Label("Debrief Latest", systemImage: "square.and.pencil")
+                        }
+                    }
+
                     Button {
                         showingInterviewPrep = true
                     } label: {
                         Label("Interview Prep", systemImage: "sparkles")
+                    }
+                }
+
+                if !application.sortedInterviewActivities.isEmpty {
+                    Button {
+                        showingInterviewLearnings = true
+                    } label: {
+                        Label("Interview Learnings", systemImage: "brain")
                     }
                 }
 
@@ -2364,6 +2462,482 @@ private struct JobDescriptionDenoiseReviewSheet: View {
     }
 }
 
+private struct InterviewLearningsSection: View {
+    let application: JobApplication
+    let applications: [JobApplication]
+    let latestSnapshot: InterviewLearningSnapshot?
+    let onDebriefLatest: () -> Void
+    let onViewLearnings: () -> Void
+
+    private let builder = InterviewLearningContextBuilder()
+
+    private var context: InterviewLearningContext {
+        builder.build(from: applications)
+    }
+
+    private var previewSignals: [String] {
+        if let latestSnapshot {
+            let combined = latestSnapshot.strengths + latestSnapshot.growthAreas
+            if !combined.isEmpty {
+                return Array(combined.prefix(3))
+            }
+        }
+
+        return Array(builder.fallbackInsights(from: context).recommendedFocusAreas.prefix(3))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Interview Learnings", systemImage: "brain")
+                    .font(.headline)
+
+                Spacer()
+
+                Button("View Learnings") {
+                    onViewLearnings()
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(DesignSystem.Colors.accent)
+            }
+
+            HStack(spacing: 10) {
+                metricCapsule("\(application.pendingInterviewDebriefs.count) pending debrief\(application.pendingInterviewDebriefs.count == 1 ? "" : "s")")
+                metricCapsule("\(context.questionCount) question\(context.questionCount == 1 ? "" : "s")")
+                metricCapsule("\(context.companyCount) compan\(context.companyCount == 1 ? "y" : "ies")")
+            }
+
+            if previewSignals.isEmpty {
+                Text("Save a few interview debriefs to surface personalized strengths, patterns, and prep prompts.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(previewSignals, id: \.self) { signal in
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "sparkles")
+                                .foregroundColor(DesignSystem.Colors.accent)
+                                .font(.caption)
+                                .padding(.top, 2)
+                            Text(signal)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: 12) {
+                Button {
+                    onDebriefLatest()
+                } label: {
+                    Label("Debrief Latest", systemImage: "square.and.pencil")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DesignSystem.Colors.accent)
+
+                Button {
+                    onViewLearnings()
+                } label: {
+                    Label("Question Bank", systemImage: "text.book.closed")
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(16)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+    }
+
+    private func metricCapsule(_ value: String) -> some View {
+        Text(value)
+            .font(.caption.weight(.semibold))
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.secondary.opacity(0.12))
+            .clipShape(Capsule())
+    }
+}
+
+private struct InterviewDebriefSheet: View {
+    @State var viewModel: InterviewDebriefViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        @Bindable var bindableViewModel = viewModel
+
+        NavigationStack {
+            Form {
+                Section("Questions Asked") {
+                    ForEach($bindableViewModel.questions) { $question in
+                        VStack(alignment: .leading, spacing: 10) {
+                            TextField("Question asked", text: $question.prompt, axis: .vertical)
+                                .lineLimit(2 ... 4)
+
+                            Picker("Category", selection: $question.category) {
+                                ForEach(InterviewQuestionCategory.allCases) { category in
+                                    Text(category.displayName).tag(category)
+                                }
+                            }
+
+                            TextField("How did you answer?", text: $question.answerNotes, axis: .vertical)
+                                .lineLimit(2 ... 4)
+
+                            TextField("Interviewer hint or context", text: $question.interviewerHint, axis: .vertical)
+                                .lineLimit(1 ... 3)
+
+                            HStack {
+                                Spacer()
+                                Button("Remove", role: .destructive) {
+                                    viewModel.removeQuestion(id: question.id)
+                                }
+                                .font(.caption)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+
+                    Button {
+                        viewModel.addQuestion()
+                    } label: {
+                        Label("Add Question", systemImage: "plus")
+                    }
+                }
+
+                Section("Confidence") {
+                    Stepper(value: $bindableViewModel.confidence, in: 1 ... 5) {
+                        HStack {
+                            Text("How confident do you feel?")
+                            Spacer()
+                            Text("\(viewModel.confidence)/5")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+
+                Section("Reflection") {
+                    TextField("What went well?", text: $bindableViewModel.whatWentWell, axis: .vertical)
+                        .lineLimit(2 ... 5)
+                    TextField("What would you do differently?", text: $bindableViewModel.wouldDoDifferently, axis: .vertical)
+                        .lineLimit(2 ... 5)
+                    TextField("Anything else to remember?", text: $bindableViewModel.overallNotes, axis: .vertical)
+                        .lineLimit(2 ... 5)
+                }
+
+                Section("Follow-up Action Items") {
+                    Text("These become real tasks when you save the debrief.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    ForEach($bindableViewModel.followUpItems) { $item in
+                        VStack(alignment: .leading, spacing: 10) {
+                            TextField("Action item", text: $item.title)
+                            TextField("Optional notes", text: $item.notes, axis: .vertical)
+                                .lineLimit(1 ... 3)
+
+                            HStack {
+                                Spacer()
+                                Button("Remove", role: .destructive) {
+                                    viewModel.removeFollowUpItem(id: item.id)
+                                }
+                                .font(.caption)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+
+                    Button {
+                        viewModel.addFollowUpItem()
+                    } label: {
+                        Label("Add Action Item", systemImage: "plus")
+                    }
+                }
+            }
+            .navigationTitle("Interview Debrief")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        do {
+                            try viewModel.save()
+                            dismiss()
+                        } catch {
+                            viewModel.errorMessage = error.localizedDescription
+                        }
+                    }
+                }
+            }
+            #if os(macOS)
+            .frame(minWidth: 620, idealWidth: 720, minHeight: 640, idealHeight: 760)
+            #endif
+        }
+        .alert("Unable to Save Debrief", isPresented: Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { if !$0 { viewModel.errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(viewModel.errorMessage ?? "An unknown error occurred.")
+        }
+    }
+}
+
+private struct InterviewLearningsView: View {
+    enum Tab: String, CaseIterable, Identifiable {
+        case patterns = "Patterns"
+        case questionBank = "Question Bank"
+
+        var id: String { rawValue }
+    }
+
+    @State var viewModel: InterviewLearningsViewModel
+    @State private var selectedTab: Tab = .patterns
+    @State private var searchText = ""
+    @State private var selectedCategory: InterviewQuestionCategory?
+    @State private var selectedCompany = "All Companies"
+    @State private var selectedStage = "All Stages"
+    @Environment(\.dismiss) private var dismiss
+
+    private var effectiveSnapshot: InterviewLearningSnapshot? {
+        viewModel.snapshot ?? viewModel.fallbackSnapshot
+    }
+
+    private var availableCompanies: [String] {
+        ["All Companies"] + Array(Set(viewModel.questionBankEntries.map(\.companyName))).sorted()
+    }
+
+    private var availableStages: [String] {
+        ["All Stages"] + Array(
+            Set(viewModel.questionBankEntries.compactMap { $0.interviewStage?.displayName })
+        ).sorted()
+    }
+
+    private var filteredEntries: [InterviewQuestionBankEntry] {
+        viewModel.questionBankEntries.filter { entry in
+            let matchesSearch = searchText.isEmpty ||
+                entry.question.localizedCaseInsensitiveContains(searchText) ||
+                entry.companyName.localizedCaseInsensitiveContains(searchText) ||
+                entry.role.localizedCaseInsensitiveContains(searchText) ||
+                (entry.answerNotes?.localizedCaseInsensitiveContains(searchText) ?? false)
+
+            let matchesCategory = selectedCategory == nil || entry.category == selectedCategory
+            let matchesCompany = selectedCompany == "All Companies" || entry.companyName == selectedCompany
+            let matchesStage = selectedStage == "All Stages" || entry.interviewStage?.displayName == selectedStage
+            return matchesSearch && matchesCategory && matchesCompany && matchesStage
+        }
+    }
+
+    private var groupedEntries: [(InterviewQuestionCategory, [InterviewQuestionBankEntry])] {
+        Dictionary(grouping: filteredEntries, by: \.category)
+            .map { category, entries in
+                (category, entries.sorted { $0.occurredAt > $1.occurredAt })
+            }
+            .sorted { $0.0.displayName < $1.0.displayName }
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                Picker("View", selection: $selectedTab) {
+                    ForEach(Tab.allCases) { tab in
+                        Text(tab.rawValue).tag(tab)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding()
+
+                if selectedTab == .patterns {
+                    patternsView
+                } else {
+                    questionBankView
+                }
+            }
+            .navigationTitle("Interview Learnings")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+                ToolbarItem(placement: .automatic) {
+                    Button {
+                        Task { await viewModel.refresh() }
+                    } label: {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(viewModel.isLoading)
+                }
+            }
+            #if os(macOS)
+            .frame(minWidth: 760, idealWidth: 900, minHeight: 640, idealHeight: 760)
+            #endif
+        }
+        .task {
+            viewModel.load()
+        }
+        .alert("Interview Learnings Error", isPresented: Binding(
+            get: { viewModel.error != nil },
+            set: { if !$0 { viewModel.error = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(viewModel.error ?? "An unknown error occurred.")
+        }
+    }
+
+    private var patternsView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if viewModel.isLoading {
+                    ProgressView("Refreshing interview learnings…")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if let effectiveSnapshot {
+                    patternCard("Strengths", items: effectiveSnapshot.strengths, icon: "bolt.fill", tint: .green)
+                    patternCard("Growth Areas", items: effectiveSnapshot.growthAreas, icon: "scope", tint: .orange)
+                    patternCard("Recurring Themes", items: effectiveSnapshot.recurringThemes, icon: "repeat", tint: .blue)
+                    patternCard("Company Patterns", items: effectiveSnapshot.companyPatterns, icon: "building.2.fill", tint: .purple)
+                    patternCard("Recommended Focus", items: effectiveSnapshot.recommendedFocusAreas, icon: "target", tint: DesignSystem.Colors.accent)
+                } else {
+                    ContentUnavailableView(
+                        "No learnings yet",
+                        systemImage: "brain",
+                        description: Text("Complete at least one interview debrief to build your personal question bank and patterns.")
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 260)
+                }
+            }
+            .padding(20)
+        }
+    }
+
+    private var questionBankView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                SearchBar(text: $searchText, placeholder: "Search questions, companies, or notes...")
+
+                HStack(spacing: 12) {
+                    Menu {
+                        Button("All Categories") { selectedCategory = nil }
+                        ForEach(InterviewQuestionCategory.allCases) { category in
+                            Button(category.displayName) {
+                                selectedCategory = category
+                            }
+                        }
+                    } label: {
+                        filterLabel(selectedCategory?.displayName ?? "All Categories")
+                    }
+
+                    Menu {
+                        ForEach(availableCompanies, id: \.self) { company in
+                            Button(company) { selectedCompany = company }
+                        }
+                    } label: {
+                        filterLabel(selectedCompany)
+                    }
+
+                    Menu {
+                        ForEach(availableStages, id: \.self) { stage in
+                            Button(stage) { selectedStage = stage }
+                        }
+                    } label: {
+                        filterLabel(selectedStage)
+                    }
+
+                    Spacer()
+                }
+
+                if filteredEntries.isEmpty {
+                    ContentUnavailableView(
+                        "No matching questions",
+                        systemImage: "text.book.closed",
+                        description: Text("Adjust your filters or complete more debriefs to build the question bank.")
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 260)
+                } else {
+                    ForEach(groupedEntries, id: \.0) { category, entries in
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(category.displayName)
+                                .font(.headline)
+
+                            ForEach(entries, id: \.id) { entry in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(entry.question)
+                                        .font(.subheadline.weight(.semibold))
+                                    Text("\(entry.companyName) • \(entry.role)")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    if let stage = entry.interviewStage {
+                                        Text(stage.displayName)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    if let answerNotes = entry.answerNotes, !answerNotes.isEmpty {
+                                        Text(answerNotes)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(14)
+                                .appCard(cornerRadius: 14, elevated: true, shadow: false)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(20)
+        }
+    }
+
+    private func patternCard(_ title: String, items: [String], icon: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .foregroundColor(tint)
+                Text(title)
+                    .font(.headline)
+            }
+
+            if items.isEmpty {
+                Text("Not enough history yet.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(items, id: \.self) { item in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "circle.fill")
+                            .font(.system(size: 6))
+                            .foregroundColor(tint)
+                            .padding(.top, 6)
+                        Text(item)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+    }
+
+    private func filterLabel(_ title: String) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+            Image(systemName: "chevron.down")
+                .font(.caption2)
+        }
+        .font(.caption.weight(.semibold))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.secondary.opacity(0.12))
+        .clipShape(Capsule())
+    }
+}
+
 #Preview {
     NavigationStack {
         JobDetailView(
@@ -2399,6 +2973,9 @@ private struct JobDescriptionDenoiseReviewSheet: View {
             Contact.self,
             ApplicationContactLink.self,
             ApplicationActivity.self,
+            InterviewDebrief.self,
+            InterviewQuestionEntry.self,
+            InterviewLearningSnapshot.self,
             ApplicationTask.self,
             ApplicationChecklistSuggestion.self,
             ApplicationAttachment.self,

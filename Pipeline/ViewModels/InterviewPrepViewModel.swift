@@ -8,10 +8,13 @@ final class InterviewPrepViewModel {
     var isLoading = false
     var error: String?
     var result: InterviewPrepResult?
+    var personalQuestionHighlights: [InterviewQuestionBankEntry] = []
+    var personalHistorySignals: [String] = []
 
     private let application: JobApplication
     private let settingsViewModel: SettingsViewModel
     private let modelContext: ModelContext?
+    private let learningBuilder = InterviewLearningContextBuilder()
 
     init(
         application: JobApplication,
@@ -63,6 +66,7 @@ final class InterviewPrepViewModel {
         }
 
         let notes = notesContext()
+        let prepHistory = loadPersonalHistory()
 
         do {
             let prepResult = try await settingsViewModel.withAPIKeyWaterfall(for: provider) { apiKey in
@@ -74,7 +78,9 @@ final class InterviewPrepViewModel {
                     company: application.companyName,
                     jobDescription: application.jobDescription ?? "",
                     interviewStage: interviewStage,
-                    notes: notes
+                    notes: notes,
+                    personalQuestionBankContext: prepHistory.questionContext,
+                    learningSummary: prepHistory.learningSummary
                 )
             }
             result = prepResult
@@ -172,5 +178,49 @@ final class InterviewPrepViewModel {
         }
 
         return sections.joined(separator: "\n\n")
+    }
+
+    private func loadPersonalHistory() -> (questionContext: String, learningSummary: String) {
+        guard let modelContext else {
+            personalQuestionHighlights = []
+            personalHistorySignals = []
+            return ("", "")
+        }
+
+        let applications = (try? modelContext.fetch(FetchDescriptor<JobApplication>())) ?? []
+        let personalizedContext = learningBuilder.personalizedPrepContext(
+            for: application,
+            in: applications
+        )
+        personalQuestionHighlights = personalizedContext.boostedQuestions
+
+        let latestSnapshot = ((try? modelContext.fetch(FetchDescriptor<InterviewLearningSnapshot>())) ?? [])
+            .sorted { $0.generatedAt > $1.generatedAt }
+            .first
+        personalHistorySignals = Array(
+            ((latestSnapshot?.strengths ?? []) + (latestSnapshot?.growthAreas ?? []))
+                .prefix(6)
+        )
+
+        let questionContext = personalizedContext.boostedQuestions.map { entry in
+            var line = "- [\(entry.category.displayName)] \(entry.question)"
+            line += " (\(entry.companyName)"
+            if let stage = entry.interviewStage {
+                line += ", \(stage.displayName)"
+            }
+            line += ")"
+            if let answerNotes = entry.answerNotes, !answerNotes.isEmpty {
+                line += " :: \(answerNotes)"
+            }
+            return line
+        }.joined(separator: "\n")
+
+        return (
+            questionContext,
+            latestSnapshot.map { snapshot in
+                ((snapshot.strengths + snapshot.growthAreas + snapshot.recommendedFocusAreas).prefix(8))
+                    .joined(separator: "\n")
+            } ?? personalizedContext.learningSummary
+        )
     }
 }

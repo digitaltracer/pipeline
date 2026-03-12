@@ -3,8 +3,12 @@ import SwiftData
 import PipelineKit
 
 struct ContentView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @Query(sort: \JobApplication.updatedAt, order: .reverse) private var applications: [JobApplication]
     @Query(sort: \Contact.updatedAt, order: .reverse) private var contacts: [Contact]
+    @Query(sort: \ResumeMasterRevision.createdAt, order: .reverse) private var resumeRevisions: [ResumeMasterRevision]
+    @Query(sort: \WeeklyDigestSnapshot.weekStart, order: .reverse) private var weeklyDigests: [WeeklyDigestSnapshot]
     @State private var selectedDestination: MainDestination = .applications(.all)
     @State private var selectedApplication: JobApplication?
     @State private var selectedContact: Contact?
@@ -12,7 +16,10 @@ struct ContentView: View {
     @State private var showingAddContact = false
     @State private var showingSettings = false
     @State private var searchText = ""
+    @State private var pendingNotificationOpenRequest: NotificationOpenRequest?
     @Bindable var settingsViewModel: SettingsViewModel
+
+    private let weeklyDigestService = WeeklyDigestService()
 
     private var filteredApplications: [JobApplication] {
         let visibleApplications: [JobApplication]
@@ -41,6 +48,10 @@ struct ContentView: View {
         }
     }
 
+    private var currentResumeRevision: ResumeMasterRevision? {
+        resumeRevisions.first(where: \.isCurrent) ?? resumeRevisions.first
+    }
+
     var body: some View {
         #if os(macOS)
         MainView(
@@ -50,12 +61,24 @@ struct ContentView: View {
             showingAddApplication: $showingAddApplication,
             showingAddContact: $showingAddContact,
             searchText: $searchText,
-            settingsViewModel: settingsViewModel
+            settingsViewModel: settingsViewModel,
+            pendingNotificationOpenRequest: pendingNotificationOpenRequest,
+            onHandledNotificationOpenRequest: {
+                pendingNotificationOpenRequest = nil
+            }
         )
         .preferredColorScheme(settingsViewModel.getColorScheme())
         .appWindowBackground()
         .task {
             prewarmJSONEditorIfNeeded()
+            await configureNotificationRouting()
+            await syncNotifications()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            Task {
+                await syncNotifications()
+            }
         }
         #else
         NavigationStack {
@@ -63,6 +86,18 @@ struct ContentView: View {
                 switch selectedDestination {
                 case .dashboard:
                     DashboardView(settingsViewModel: settingsViewModel)
+                case .weeklyDigest:
+                    WeeklyDigestView(
+                        settingsViewModel: settingsViewModel,
+                        onOpenApplication: { application in
+                            selectedDestination = .applications(.all)
+                            selectedApplication = application
+                        },
+                        highlightedDigestID: pendingNotificationOpenRequest?.weeklyDigestSnapshotID,
+                        onHandledNotificationOpenRequest: {
+                            pendingNotificationOpenRequest = nil
+                        }
+                    )
                 case .upcoming:
                     UpcomingView(
                         items: UpcomingItem.build(from: applications, searchText: searchText),
@@ -86,7 +121,9 @@ struct ContentView: View {
                     ApplicationListView(
                         applications: filteredApplications,
                         selectedApplication: $selectedApplication,
-                        searchText: $searchText
+                        searchText: $searchText,
+                        currentResumeRevisionID: nil,
+                        matchPreferences: settingsViewModel.jobMatchPreferences
                     )
                 }
             }
@@ -96,6 +133,7 @@ struct ContentView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
                         Button("Dashboard") { selectedDestination = .dashboard }
+                        Button("Weekly Digest") { selectedDestination = .weeklyDigest }
                         Button("Upcoming") { selectedDestination = .upcoming }
                         Divider()
                         ForEach(SidebarFilter.allCases) { filter in
@@ -147,6 +185,10 @@ struct ContentView: View {
                     onSelectContact: { contact in
                         selectedDestination = .contacts
                         selectedContact = contact
+                    },
+                    pendingNotificationOpenRequest: pendingNotificationOpenRequest,
+                    onHandledNotificationOpenRequest: {
+                        pendingNotificationOpenRequest = nil
                     }
                 )
             }
@@ -161,8 +203,78 @@ struct ContentView: View {
         }
         .task {
             prewarmJSONEditorIfNeeded()
+            await configureNotificationRouting()
+            await syncNotifications()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            Task {
+                await syncNotifications()
+            }
         }
         #endif
+    }
+
+    @MainActor
+    private func configureNotificationRouting() async {
+        NotificationService.shared.setOpenRequestHandler { request in
+            handleNotificationOpenRequest(request)
+        }
+
+        if let pendingRequest = NotificationService.shared.consumePendingOpenRequest() {
+            handleNotificationOpenRequest(pendingRequest)
+        }
+    }
+
+    @MainActor
+    private func handleNotificationOpenRequest(_ request: NotificationOpenRequest) {
+        selectedContact = nil
+
+        switch request.kind {
+        case .interviewDebrief:
+            selectedDestination = .applications(.all)
+            if let applicationID = request.applicationID {
+                selectedApplication = applications.first(where: { $0.id == applicationID })
+            }
+        case .weeklyDigest:
+            selectedDestination = .weeklyDigest
+            selectedApplication = nil
+        }
+
+        pendingNotificationOpenRequest = request
+    }
+
+    @MainActor
+    private func syncNotifications(referenceDate: Date = Date()) async {
+        await NotificationService.shared.syncReminderState(
+            for: applications,
+            notificationsEnabled: settingsViewModel.notificationsEnabled,
+            timing: settingsViewModel.reminderTiming
+        )
+        await NotificationService.shared.syncWeeklyDigestReminder(
+            schedule: settingsViewModel.weeklyDigestSchedule,
+            notificationsEnabled: settingsViewModel.notificationsEnabled,
+            digestNotificationsEnabled: settingsViewModel.weeklyDigestNotificationsEnabled
+        )
+        await maybeGenerateWeeklyDigest(referenceDate: referenceDate)
+    }
+
+    @MainActor
+    private func maybeGenerateWeeklyDigest(referenceDate: Date = Date()) async {
+        do {
+            let result = try weeklyDigestService.generateLatestDigestIfNeeded(
+                applications: applications,
+                existingDigests: weeklyDigests,
+                in: modelContext,
+                currentResumeRevisionID: currentResumeRevision?.id,
+                matchPreferences: settingsViewModel.jobMatchPreferences,
+                schedule: settingsViewModel.weeklyDigestSchedule,
+                referenceDate: referenceDate
+            )
+            guard case .created = result else { return }
+        } catch {
+            print("Weekly digest generation failed: \(error)")
+        }
     }
 }
 
@@ -183,6 +295,9 @@ struct ContentView: View {
                 Contact.self,
                 ApplicationContactLink.self,
                 ApplicationActivity.self,
+                InterviewDebrief.self,
+                InterviewQuestionEntry.self,
+                InterviewLearningSnapshot.self,
                 ApplicationTask.self,
                 ApplicationChecklistSuggestion.self,
                 ApplicationAttachment.self,
@@ -192,7 +307,10 @@ struct ContentView: View {
                 ResumeMasterRevision.self,
                 ResumeJobSnapshot.self,
                 AIUsageRecord.self,
-                AIModelRate.self
+                AIModelRate.self,
+                WeeklyDigestSnapshot.self,
+                WeeklyDigestInsight.self,
+                WeeklyDigestActionItem.self
             ],
             inMemory: true
         )

@@ -6,6 +6,7 @@ struct ApplicationTimelineView: View {
     var onAddActivity: ((ApplicationActivityKind) -> Void)? = nil
     var onEditActivity: ((ApplicationActivity) -> Void)? = nil
     var onDeleteActivity: ((ApplicationActivity) -> Void)? = nil
+    var onDebrief: ((ApplicationActivity) -> Void)? = nil
     var emptyTitle: String = "No activity yet"
     var emptyDescription: String = "Log interviews, calls, emails, texts, and notes to build a full timeline for this application. Status and follow-up changes will appear automatically."
 
@@ -45,7 +46,8 @@ struct ApplicationTimelineView: View {
                     ActivityRowView(
                         activity: activity,
                         onEdit: onEditActivity.map { callback in { callback(activity) } },
-                        onDelete: onDeleteActivity.map { callback in { callback(activity) } }
+                        onDelete: onDeleteActivity.map { callback in { callback(activity) } },
+                        onDebrief: onDebrief.map { callback in { callback(activity) } }
                     )
                 }
             }
@@ -78,6 +80,7 @@ private struct ActivityRowView: View {
     let activity: ApplicationActivity
     var onEdit: (() -> Void)? = nil
     var onDelete: (() -> Void)? = nil
+    var onDebrief: (() -> Void)? = nil
 
     @State private var showingDeleteConfirmation = false
 
@@ -105,9 +108,22 @@ private struct ActivityRowView: View {
                     .foregroundColor(.secondary)
 
                     if activity.kind == .interview, let stage = activity.interviewStage {
-                        Text(stage.displayName)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        HStack(spacing: 6) {
+                            Text(stage.displayName)
+                            if let scheduledDurationMinutes = activity.scheduledDurationMinutes {
+                                Text("•")
+                                Text("\(scheduledDurationMinutes) min")
+                            }
+                            if activity.isScheduledInterview {
+                                statusCapsule("Scheduled", tint: .blue)
+                            } else if activity.hasDebrief {
+                                statusCapsule("Debrief Saved", tint: .green)
+                            } else {
+                                statusCapsule("Debrief Pending", tint: .orange)
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                     }
                 }
 
@@ -140,6 +156,17 @@ private struct ActivityRowView: View {
                         .foregroundColor(DesignSystem.Colors.accent)
                     }
 
+                    if activity.kind == .interview, let onDebrief {
+                        Button {
+                            onDebrief()
+                        } label: {
+                            Label(activity.hasDebrief ? "Edit Debrief" : "Debrief", systemImage: "square.and.pencil")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(activity.hasDebrief ? .green : .orange)
+                    }
+
                     if let onDelete {
                         Button(role: .destructive) {
                             showingDeleteConfirmation = true
@@ -167,5 +194,15 @@ private struct ActivityRowView: View {
         }
         .padding(14)
         .appCard(cornerRadius: 14, elevated: true, shadow: false)
+    }
+
+    private func statusCapsule(_ title: String, tint: Color) -> some View {
+        Text(title)
+            .font(.caption2.weight(.semibold))
+            .foregroundColor(tint)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(tint.opacity(0.12))
+            .clipShape(Capsule())
     }
 }

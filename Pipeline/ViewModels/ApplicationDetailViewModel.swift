@@ -544,6 +544,7 @@ final class ApplicationDetailViewModel {
         notes: String?,
         contact: Contact?,
         interviewStage: InterviewStage?,
+        scheduledDurationMinutes: Int?,
         rating: Int?,
         emailSubject: String?,
         emailBodySnapshot: String?,
@@ -574,6 +575,7 @@ final class ApplicationDetailViewModel {
         activity.notes = notes
         activity.contact = contact
         activity.interviewStage = kind == .interview ? interviewStage : nil
+        activity.scheduledDurationMinutes = kind == .interview ? scheduledDurationMinutes : nil
         activity.rating = kind == .interview ? rating : nil
         activity.emailSubject = kind == .email ? emailSubject : nil
         activity.emailBodySnapshot = kind == .email ? emailBodySnapshot : nil
@@ -595,6 +597,9 @@ final class ApplicationDetailViewModel {
 
         do {
             try syncChecklist(for: application, trigger: .statusChanged, context: context)
+            Task { @MainActor in
+                await NotificationService.shared.syncReminderState(for: application)
+            }
         } catch {
             context.rollback()
             throw error
@@ -611,6 +616,9 @@ final class ApplicationDetailViewModel {
 
         do {
             try context.save()
+            Task { @MainActor in
+                await NotificationService.shared.syncReminderState(for: application)
+            }
         } catch {
             context.rollback()
             throw error
@@ -733,6 +741,312 @@ final class ApplicationDetailViewModel {
         context: ModelContext
     ) throws {
         try checklistService.sync(for: application, trigger: trigger, in: context)
+    }
+}
+
+@Observable
+final class InterviewDebriefViewModel {
+    struct QuestionDraft: Identifiable, Equatable {
+        let id: UUID
+        var prompt: String
+        var category: InterviewQuestionCategory
+        var answerNotes: String
+        var interviewerHint: String
+
+        init(
+            id: UUID = UUID(),
+            prompt: String = "",
+            category: InterviewQuestionCategory = .behavioral,
+            answerNotes: String = "",
+            interviewerHint: String = ""
+        ) {
+            self.id = id
+            self.prompt = prompt
+            self.category = category
+            self.answerNotes = answerNotes
+            self.interviewerHint = interviewerHint
+        }
+    }
+
+    struct FollowUpDraft: Identifiable, Equatable {
+        let id: UUID
+        var title: String
+        var notes: String
+
+        init(id: UUID = UUID(), title: String = "", notes: String = "") {
+            self.id = id
+            self.title = title
+            self.notes = notes
+        }
+    }
+
+    var confidence: Int = 3
+    var whatWentWell: String = ""
+    var wouldDoDifferently: String = ""
+    var overallNotes: String = ""
+    var questions: [QuestionDraft] = []
+    var followUpItems: [FollowUpDraft] = []
+    var errorMessage: String?
+
+    private let activity: ApplicationActivity
+    private let application: JobApplication
+    private let modelContext: ModelContext
+
+    init(activity: ApplicationActivity, application: JobApplication, modelContext: ModelContext) {
+        self.activity = activity
+        self.application = application
+        self.modelContext = modelContext
+
+        if let debrief = activity.debrief {
+            confidence = debrief.confidence
+            whatWentWell = debrief.whatWentWell ?? ""
+            wouldDoDifferently = debrief.wouldDoDifferently ?? ""
+            overallNotes = debrief.overallNotes ?? ""
+            questions = debrief.sortedQuestionEntries.map {
+                QuestionDraft(
+                    id: $0.id,
+                    prompt: $0.prompt,
+                    category: $0.category,
+                    answerNotes: $0.answerNotes ?? "",
+                    interviewerHint: $0.interviewerHint ?? ""
+                )
+            }
+        }
+
+        if questions.isEmpty {
+            questions = [QuestionDraft()]
+        }
+        if followUpItems.isEmpty {
+            followUpItems = [FollowUpDraft()]
+        }
+    }
+
+    func addQuestion() {
+        questions.append(QuestionDraft())
+    }
+
+    func removeQuestion(id: UUID) {
+        questions.removeAll { $0.id == id }
+        if questions.isEmpty {
+            questions = [QuestionDraft()]
+        }
+    }
+
+    func addFollowUpItem() {
+        followUpItems.append(FollowUpDraft())
+    }
+
+    func removeFollowUpItem(id: UUID) {
+        followUpItems.removeAll { $0.id == id }
+        if followUpItems.isEmpty {
+            followUpItems = [FollowUpDraft()]
+        }
+    }
+
+    func save() throws {
+        let debrief: InterviewDebrief
+        if let existing = activity.debrief {
+            debrief = existing
+        } else {
+            debrief = InterviewDebrief(activity: activity)
+            modelContext.insert(debrief)
+            activity.debrief = debrief
+        }
+
+        debrief.update(
+            confidence: confidence,
+            whatWentWell: normalized(whatWentWell),
+            wouldDoDifferently: normalized(wouldDoDifferently),
+            overallNotes: normalized(overallNotes)
+        )
+        activity.updateTimestamp()
+        application.updateTimestamp()
+
+        let existingQuestions = Dictionary(uniqueKeysWithValues: debrief.sortedQuestionEntries.map { ($0.id, $0) })
+        let incomingQuestions = questions.enumerated().compactMap { index, draft -> (UUID, QuestionDraft, Int)? in
+            guard let prompt = normalized(draft.prompt) else { return nil }
+            return (draft.id, QuestionDraft(
+                id: draft.id,
+                prompt: prompt,
+                category: draft.category,
+                answerNotes: draft.answerNotes,
+                interviewerHint: draft.interviewerHint
+            ), index)
+        }
+
+        let incomingIDs = Set(incomingQuestions.map(\.0))
+        for question in debrief.sortedQuestionEntries where !incomingIDs.contains(question.id) {
+            modelContext.delete(question)
+        }
+        debrief.questionEntries?.removeAll { !incomingIDs.contains($0.id) }
+
+        for (id, draft, orderIndex) in incomingQuestions {
+            if let existing = existingQuestions[id] {
+                existing.update(
+                    prompt: draft.prompt,
+                    category: draft.category,
+                    answerNotes: normalized(draft.answerNotes),
+                    interviewerHint: normalized(draft.interviewerHint),
+                    orderIndex: orderIndex
+                )
+            } else {
+                let question = InterviewQuestionEntry(
+                    id: id,
+                    prompt: draft.prompt,
+                    category: draft.category,
+                    answerNotes: normalized(draft.answerNotes),
+                    interviewerHint: normalized(draft.interviewerHint),
+                    orderIndex: orderIndex,
+                    debrief: debrief
+                )
+                modelContext.insert(question)
+                if debrief.questionEntries == nil {
+                    debrief.questionEntries = []
+                }
+                debrief.questionEntries?.append(question)
+            }
+        }
+
+        try createFollowUpTasksIfNeeded(for: debrief)
+        try modelContext.save()
+
+        Task { @MainActor in
+            await NotificationService.shared.syncReminderState(for: application)
+        }
+    }
+
+    private func createFollowUpTasksIfNeeded(for debrief: InterviewDebrief) throws {
+        let existingTaskIDs = Set(debrief.createdTaskIDs)
+        var existingTaskTitles = Set(application.sortedTasks.map { normalizeForLookup($0.displayTitle) })
+
+        for draft in followUpItems {
+            guard let title = normalized(draft.title) else { continue }
+            let normalizedTitle = normalizeForLookup(title)
+            guard !existingTaskTitles.contains(normalizedTitle) else { continue }
+
+            let task = ApplicationTask(
+                title: title,
+                notes: normalized(draft.notes),
+                priority: .medium,
+                application: application,
+                origin: .manual
+            )
+            modelContext.insert(task)
+            application.addTask(task)
+            existingTaskTitles.insert(normalizedTitle)
+            if !existingTaskIDs.contains(task.id) {
+                debrief.appendCreatedTaskID(task.id)
+            }
+        }
+    }
+
+    private func normalized(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func normalizeForLookup(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}
+
+@MainActor
+@Observable
+final class InterviewLearningsViewModel {
+    var isLoading = false
+    var error: String?
+    var snapshot: InterviewLearningSnapshot?
+    var questionBankEntries: [InterviewQuestionBankEntry] = []
+    var fallbackSnapshot: InterviewLearningSnapshot?
+
+    private let settingsViewModel: SettingsViewModel
+    private let modelContext: ModelContext
+    private let builder = InterviewLearningContextBuilder()
+
+    init(settingsViewModel: SettingsViewModel, modelContext: ModelContext) {
+        self.settingsViewModel = settingsViewModel
+        self.modelContext = modelContext
+    }
+
+    func load() {
+        do {
+            let applications = try modelContext.fetch(FetchDescriptor<JobApplication>())
+            let context = builder.build(from: applications)
+            questionBankEntries = context.questionBankEntries
+            fallbackSnapshot = builder.fallbackInsights(from: context)
+            snapshot = try latestSnapshot()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func refresh() async {
+        let provider = settingsViewModel.selectedAIProvider
+        let model = settingsViewModel.preferredModel(for: provider)
+
+        guard !model.isEmpty else {
+            error = "No AI model configured. Please check Settings."
+            return
+        }
+
+        let keys: [String]
+        do {
+            keys = try settingsViewModel.apiKeys(for: provider)
+        } catch {
+            self.error = "Could not access API key. Please check Settings."
+            return
+        }
+
+        guard !keys.isEmpty else {
+            error = "API key not configured for \(provider.rawValue). Please check Settings."
+            return
+        }
+
+        do {
+            let applications = try modelContext.fetch(FetchDescriptor<JobApplication>())
+            let requestStartedAt = Date()
+            isLoading = true
+            defer { isLoading = false }
+
+            let result = try await settingsViewModel.withAPIKeyWaterfall(for: provider) { apiKey in
+                try await InterviewLearningService.generateSnapshot(
+                    provider: provider,
+                    apiKey: apiKey,
+                    model: model,
+                    applications: applications,
+                    in: modelContext
+                )
+            }
+
+            snapshot = result.snapshot
+            let context = builder.build(from: applications)
+            questionBankEntries = context.questionBankEntries
+            fallbackSnapshot = builder.fallbackInsights(from: context)
+
+            _ = try? AIUsageLedgerService.record(
+                feature: .interviewLearnings,
+                provider: provider,
+                model: model,
+                usage: result.usage,
+                status: .succeeded,
+                startedAt: requestStartedAt,
+                finishedAt: Date(),
+                errorMessage: nil,
+                in: modelContext
+            )
+        } catch let keyError as SettingsViewModel.APIKeyValidationError {
+            self.error = keyError.localizedDescription
+        } catch let aiError as AIServiceError {
+            self.error = aiError.localizedDescription
+        } catch {
+            self.error = "Failed to refresh interview learnings: \(error.localizedDescription)"
+        }
+    }
+
+    private func latestSnapshot() throws -> InterviewLearningSnapshot? {
+        try modelContext.fetch(FetchDescriptor<InterviewLearningSnapshot>())
+            .sorted { $0.generatedAt > $1.generatedAt }
+            .first
     }
 }
 

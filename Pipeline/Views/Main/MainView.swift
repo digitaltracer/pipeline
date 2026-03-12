@@ -19,6 +19,8 @@ struct MainView: View {
     @Binding var showingAddContact: Bool
     @Binding var searchText: String
     @Bindable var settingsViewModel: SettingsViewModel
+    var pendingNotificationOpenRequest: NotificationOpenRequest? = nil
+    var onHandledNotificationOpenRequest: (() -> Void)? = nil
 
     enum ViewMode: String, CaseIterable {
         case grid = "Grid"
@@ -136,6 +138,17 @@ struct MainView: View {
         case .dashboard:
             DashboardView(settingsViewModel: settingsViewModel)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        case .weeklyDigest:
+            WeeklyDigestView(
+                settingsViewModel: settingsViewModel,
+                onOpenApplication: { application in
+                    selectedDestination = .applications(.all)
+                    selectedApplication = application
+                },
+                highlightedDigestID: pendingNotificationOpenRequest?.weeklyDigestSnapshotID,
+                onHandledNotificationOpenRequest: onHandledNotificationOpenRequest
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         case .upcoming:
             upcomingColumn
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -293,7 +306,9 @@ struct MainView: View {
                     selectedDestination = .contacts
                     selectedContact = contact
                     selectedApplication = nil
-                }
+                },
+                pendingNotificationOpenRequest: pendingNotificationOpenRequest,
+                onHandledNotificationOpenRequest: onHandledNotificationOpenRequest
             )
             .navigationSplitViewColumnWidth(min: 360, ideal: 460)
             .background(DesignSystem.Colors.contentBackground(colorScheme))

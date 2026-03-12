@@ -33,7 +33,9 @@ public enum InterviewPrepService {
         company: String,
         jobDescription: String,
         interviewStage: String,
-        notes: String
+        notes: String,
+        personalQuestionBankContext: String = "",
+        learningSummary: String = ""
     ) async throws -> InterviewPrepResult {
         let systemPrompt = """
         You are an expert career coach and interview preparation specialist.
@@ -53,16 +55,15 @@ public enum InterviewPrepService {
         - Output raw JSON only. No markdown fences. No prose outside the JSON.
         """
 
-        var userContext = "Role: \(role)\nCompany: \(company)"
-        if !jobDescription.isEmpty {
-            userContext += "\n\nJob Description:\n\(String(jobDescription.prefix(3000)))"
-        }
-        if !interviewStage.isEmpty {
-            userContext += "\n\nInterview Stage: \(interviewStage)"
-        }
-        if !notes.isEmpty {
-            userContext += "\n\nCandidate Notes:\n\(String(notes.prefix(1000)))"
-        }
+        let userContext = buildUserContext(
+            role: role,
+            company: company,
+            jobDescription: jobDescription,
+            interviewStage: interviewStage,
+            notes: notes,
+            personalQuestionBankContext: personalQuestionBankContext,
+            learningSummary: learningSummary
+        )
 
         let userPrompt = "Prepare interview prep materials for this opportunity:\n\n\(userContext)"
 
@@ -78,6 +79,34 @@ public enum InterviewPrepService {
     }
 
     // MARK: - Parsing
+
+    static func buildUserContext(
+        role: String,
+        company: String,
+        jobDescription: String,
+        interviewStage: String,
+        notes: String,
+        personalQuestionBankContext: String,
+        learningSummary: String
+    ) -> String {
+        var userContext = "Role: \(role)\nCompany: \(company)"
+        if !jobDescription.isEmpty {
+            userContext += "\n\nJob Description:\n\(String(jobDescription.prefix(3000)))"
+        }
+        if !interviewStage.isEmpty {
+            userContext += "\n\nInterview Stage: \(interviewStage)"
+        }
+        if !notes.isEmpty {
+            userContext += "\n\nCandidate Notes:\n\(String(notes.prefix(1000)))"
+        }
+        if !personalQuestionBankContext.isEmpty {
+            userContext += "\n\nPersonal Question Bank:\n\(String(personalQuestionBankContext.prefix(1600)))"
+        }
+        if !learningSummary.isEmpty {
+            userContext += "\n\nInterview Learning Summary:\n\(String(learningSummary.prefix(1200)))"
+        }
+        return userContext
+    }
 
     private static func parseResponse(_ rawJSON: String, usage: AIUsageMetrics?) throws -> InterviewPrepResult {
         let cleaned = stripMarkdownFences(from: rawJSON)

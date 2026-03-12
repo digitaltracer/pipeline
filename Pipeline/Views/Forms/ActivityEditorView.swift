@@ -15,6 +15,7 @@ struct ActivityEditorView: View {
     @State private var occurredAt: Date
     @State private var selectedContactID: UUID?
     @State private var interviewStage: InterviewStage
+    @State private var scheduledDurationMinutes: Int
     @State private var rating: Int
     @State private var emailSubject: String
     @State private var emailBodySnapshot: String
@@ -35,6 +36,7 @@ struct ActivityEditorView: View {
         _occurredAt = State(initialValue: activityToEdit?.occurredAt ?? Date())
         _selectedContactID = State(initialValue: activityToEdit?.contact?.id)
         _interviewStage = State(initialValue: activityToEdit?.interviewStage ?? .phoneScreen)
+        _scheduledDurationMinutes = State(initialValue: activityToEdit?.scheduledDurationMinutes ?? 60)
         _rating = State(initialValue: activityToEdit?.rating ?? 3)
         _emailSubject = State(initialValue: activityToEdit?.emailSubject ?? "")
         _emailBodySnapshot = State(initialValue: activityToEdit?.emailBodySnapshot ?? "")
@@ -52,7 +54,7 @@ struct ActivityEditorView: View {
                         }
                     }
 
-                    DatePicker("Occurred At", selection: $occurredAt)
+                    DatePicker(selectedKind == .interview ? "Interview Start" : "Occurred At", selection: $occurredAt)
 
                     Picker("Contact", selection: $selectedContactID) {
                         Text("No Contact").tag(nil as UUID?)
@@ -70,6 +72,15 @@ struct ActivityEditorView: View {
                             }
                         }
 
+                        Stepper(value: $scheduledDurationMinutes, in: 15 ... 240, step: 15) {
+                            HStack {
+                                Text("Duration")
+                                Spacer()
+                                Text("\(scheduledDurationMinutes) min")
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
                         Stepper(value: $rating, in: 1 ... 5) {
                             HStack {
                                 Text("Rating")
@@ -78,6 +89,10 @@ struct ActivityEditorView: View {
                                     .foregroundColor(.secondary)
                             }
                         }
+
+                        Text(interviewTimingHelperText)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
 
@@ -139,6 +154,7 @@ struct ActivityEditorView: View {
                     contacts.first(where: { $0.id == id })
                 },
                 interviewStage: selectedKind == .interview ? interviewStage : nil,
+                scheduledDurationMinutes: selectedKind == .interview ? scheduledDurationMinutes : nil,
                 rating: selectedKind == .interview ? rating : nil,
                 emailSubject: selectedKind == .email ? normalized(emailSubject) : nil,
                 emailBodySnapshot: selectedKind == .email ? normalized(emailBodySnapshot) : nil,
@@ -154,5 +170,18 @@ struct ActivityEditorView: View {
     private func normalized(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private var interviewTimingHelperText: String {
+        if occurredAt > Date() {
+            let endDate = Calendar.current.date(
+                byAdding: .minute,
+                value: scheduledDurationMinutes,
+                to: occurredAt
+            ) ?? occurredAt
+            return "This interview is scheduled. Pipeline will remind you to debrief 30 minutes after \(endDate.formatted(date: .omitted, time: .shortened))."
+        }
+
+        return "If you schedule interviews here in advance, Pipeline can send a debrief reminder after they end."
     }
 }

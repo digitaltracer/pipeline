@@ -134,7 +134,7 @@ public struct ApplicationChecklistService {
             break
         }
 
-        if !application.sortedInterviewLogs.isEmpty {
+        if !application.sortedInterviewActivities.isEmpty || !application.sortedInterviewLogs.isEmpty {
             templates.append(thankYouTemplate)
         }
 
@@ -281,7 +281,9 @@ public struct ApplicationChecklistService {
             priority: .high,
             actionKind: .followUpDrafter,
             dueDateResolver: { application, calendar in
-                let baseline = application.sortedInterviewLogs.first?.date ?? Date()
+                let baseline = application.sortedInterviewActivities.first?.occurredAt
+                    ?? application.sortedInterviewLogs.first?.date
+                    ?? Date()
                 return calendar.date(byAdding: .day, value: 1, to: baseline)
             },
             autoCompletion: { _ in false }

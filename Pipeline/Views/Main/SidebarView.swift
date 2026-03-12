@@ -77,6 +77,15 @@ struct SidebarView: View {
                     }
 
                     destinationButton(
+                        title: "Weekly Digest",
+                        icon: "chart.line.text.clipboard",
+                        isSelected: selectedDestination == .weeklyDigest,
+                        accentColor: .blue
+                    ) {
+                        selectedDestination = .weeklyDigest
+                    }
+
+                    destinationButton(
                         title: "Upcoming",
                         icon: "calendar.badge.clock",
                         isSelected: selectedDestination == .upcoming,
@@ -85,7 +94,9 @@ struct SidebarView: View {
                     ) {
                         selectedDestination = .upcoming
                     }
+                }
 
+                Section {
                     ForEach(SidebarFilter.allCases) { filter in
                         Button {
                             selectedDestination = .applications(filter)
@@ -101,7 +112,6 @@ struct SidebarView: View {
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                     }
-
                 }
             }
             .listStyle(.sidebar)
