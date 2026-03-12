@@ -33,6 +33,18 @@ final class AddEditApplicationViewModel {
     var currency: Currency = .usd
     var salaryMinString: String = ""
     var salaryMaxString: String = ""
+    var postedBonusString: String = ""
+    var postedEquityString: String = ""
+    var expectedSalaryMinString: String = ""
+    var expectedSalaryMaxString: String = ""
+    var expectedBonusString: String = ""
+    var expectedEquityString: String = ""
+    var offerBaseString: String = ""
+    var offerBonusString: String = ""
+    var offerEquityString: String = ""
+    var selectedCycleID: UUID?
+    var showExpectedCompensation = false
+    var showOfferCompensation = false
     var appliedDate: Date?
     var hasAppliedDate: Bool = false
     var nextFollowUpDate: Date?
@@ -66,6 +78,18 @@ final class AddEditApplicationViewModel {
         currency = app.currency
         salaryMinString = app.salaryMin.map { String($0) } ?? ""
         salaryMaxString = app.salaryMax.map { String($0) } ?? ""
+        postedBonusString = app.postedBonusCompensation.map { String($0) } ?? ""
+        postedEquityString = app.postedEquityCompensation.map { String($0) } ?? ""
+        expectedSalaryMinString = app.expectedSalaryMin.map { String($0) } ?? ""
+        expectedSalaryMaxString = app.expectedSalaryMax.map { String($0) } ?? ""
+        expectedBonusString = app.expectedBonusCompensation.map { String($0) } ?? ""
+        expectedEquityString = app.expectedEquityCompensation.map { String($0) } ?? ""
+        offerBaseString = app.offerBaseCompensation.map { String($0) } ?? ""
+        offerBonusString = app.offerBonusCompensation.map { String($0) } ?? ""
+        offerEquityString = app.offerEquityCompensation.map { String($0) } ?? ""
+        selectedCycleID = app.cycle?.id
+        showExpectedCompensation = app.hasExpectedCompensation
+        showOfferCompensation = app.hasOfferCompensation
         appliedDate = app.appliedDate
         hasAppliedDate = app.appliedDate != nil
         nextFollowUpDate = app.nextFollowUpDate
@@ -105,17 +129,57 @@ final class AddEditApplicationViewModel {
             errors.append("Minimum salary cannot exceed maximum salary")
         }
 
+        if let min = expectedSalaryMin, let max = expectedSalaryMax, min > max {
+            errors.append("Expected minimum compensation cannot exceed expected maximum compensation")
+        }
+
         return errors
     }
 
     // MARK: - Computed Properties
 
     var salaryMin: Int? {
-        Int(salaryMinString.replacingOccurrences(of: ",", with: ""))
+        parseInteger(from: salaryMinString)
     }
 
     var salaryMax: Int? {
-        Int(salaryMaxString.replacingOccurrences(of: ",", with: ""))
+        parseInteger(from: salaryMaxString)
+    }
+
+    var postedBonus: Int? {
+        parseInteger(from: postedBonusString)
+    }
+
+    var postedEquity: Int? {
+        parseInteger(from: postedEquityString)
+    }
+
+    var expectedSalaryMin: Int? {
+        parseInteger(from: expectedSalaryMinString)
+    }
+
+    var expectedSalaryMax: Int? {
+        parseInteger(from: expectedSalaryMaxString)
+    }
+
+    var expectedBonus: Int? {
+        parseInteger(from: expectedBonusString)
+    }
+
+    var expectedEquity: Int? {
+        parseInteger(from: expectedEquityString)
+    }
+
+    var offerBase: Int? {
+        parseInteger(from: offerBaseString)
+    }
+
+    var offerBonus: Int? {
+        parseInteger(from: offerBonusString)
+    }
+
+    var offerEquity: Int? {
+        parseInteger(from: offerEquityString)
     }
 
     var title: String {
@@ -137,24 +201,58 @@ final class AddEditApplicationViewModel {
         guard isValid else { throw SaveError.validationFailed(validationErrors) }
 
         let savedApplication: JobApplication
-        if isEditing, let app = editingApplication {
-            updateApplication(app)
-            try context.save()
-            savedApplication = app
-        } else {
-            let app = createApplication()
-            context.insert(app)
-            try context.save()
-            savedApplication = app
+        let saveTimestamp = Date()
+        let checklistService = ApplicationChecklistService()
+
+        do {
+            if isEditing, let app = editingApplication {
+                let previousStatus = app.status
+                let previousFollowUpDate = app.nextFollowUpDate
+
+                try updateApplication(app, context: context)
+                _ = try CompanyLinkingService.ensureCompanyLinked(for: app, in: context)
+                ApplicationTimelineRecorderService.recordStatusChange(
+                    for: app,
+                    from: previousStatus,
+                    to: app.status,
+                    occurredAt: saveTimestamp,
+                    in: context
+                )
+                ApplicationTimelineRecorderService.recordFollowUpChange(
+                    for: app,
+                    from: previousFollowUpDate,
+                    to: app.nextFollowUpDate,
+                    occurredAt: saveTimestamp,
+                    in: context
+                )
+
+                try checklistService.sync(for: app, trigger: .statusChanged, in: context)
+                savedApplication = app
+            } else {
+                let app = try createApplication(context: context)
+                context.insert(app)
+                _ = try CompanyLinkingService.ensureCompanyLinked(for: app, in: context)
+                ApplicationTimelineRecorderService.seedInitialHistory(
+                    for: app,
+                    occurredAt: saveTimestamp,
+                    in: context
+                )
+                try checklistService.sync(for: app, trigger: .applicationCreated, in: context)
+                savedApplication = app
+            }
+        } catch {
+            context.rollback()
+            throw error
         }
 
         Task {
             @MainActor in
-            await NotificationService.shared.syncFollowUpReminder(for: savedApplication)
+            await NotificationService.shared.syncReminderState(for: savedApplication)
         }
     }
 
-    private func createApplication() -> JobApplication {
+    private func createApplication(context: ModelContext) throws -> JobApplication {
+        let cycle = try resolvedCycle(context: context, shouldCreateDefault: true)
         let app = JobApplication(
             companyName: companyName.trimmingCharacters(in: .whitespacesAndNewlines),
             role: role.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -169,8 +267,18 @@ final class AddEditApplicationViewModel {
             currency: currency,
             salaryMin: salaryMin,
             salaryMax: salaryMax,
+            postedBonusCompensation: postedBonus,
+            postedEquityCompensation: postedEquity,
+            expectedSalaryMin: expectedSalaryMin,
+            expectedSalaryMax: expectedSalaryMax,
+            expectedBonusCompensation: showExpectedCompensation ? expectedBonus : nil,
+            expectedEquityCompensation: showExpectedCompensation ? expectedEquity : nil,
+            offerBaseCompensation: showOfferCompensation ? offerBase : nil,
+            offerBonusCompensation: showOfferCompensation ? offerBonus : nil,
+            offerEquityCompensation: showOfferCompensation ? offerEquity : nil,
             appliedDate: hasAppliedDate ? appliedDate : nil,
-            nextFollowUpDate: hasFollowUpDate ? nextFollowUpDate : nil
+            nextFollowUpDate: hasFollowUpDate ? nextFollowUpDate : nil,
+            cycle: cycle
         )
 
         // Auto-detect platform from URL if not manually set
@@ -181,7 +289,7 @@ final class AddEditApplicationViewModel {
         return app
     }
 
-    private func updateApplication(_ app: JobApplication) {
+    private func updateApplication(_ app: JobApplication, context: ModelContext) throws {
         app.companyName = companyName.trimmingCharacters(in: .whitespacesAndNewlines)
         app.role = role.trimmingCharacters(in: .whitespacesAndNewlines)
         app.location = location.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -194,8 +302,23 @@ final class AddEditApplicationViewModel {
         app.interviewStage = interviewStage
         app.currency = currency
         app.setSalaryRange(min: salaryMin, max: salaryMax)
+        app.setPostedAdditionalCompensation(bonus: postedBonus, equity: postedEquity)
+        app.setExpectedSalaryRange(
+            min: showExpectedCompensation ? expectedSalaryMin : nil,
+            max: showExpectedCompensation ? expectedSalaryMax : nil
+        )
+        app.setExpectedAdditionalCompensation(
+            bonus: showExpectedCompensation ? expectedBonus : nil,
+            equity: showExpectedCompensation ? expectedEquity : nil
+        )
+        app.setOfferCompensation(
+            base: showOfferCompensation ? offerBase : nil,
+            bonus: showOfferCompensation ? offerBonus : nil,
+            equity: showOfferCompensation ? offerEquity : nil
+        )
         app.appliedDate = hasAppliedDate ? appliedDate : nil
         app.nextFollowUpDate = hasFollowUpDate ? nextFollowUpDate : nil
+        app.assignCycle(try resolvedCycle(context: context, shouldCreateDefault: false))
         app.updateTimestamp()
 
         // Auto-detect platform from URL if set to other
@@ -216,6 +339,11 @@ final class AddEditApplicationViewModel {
         }
     }
 
+    func ensureDefaultCycleSelection(from cycles: [JobSearchCycle]) {
+        guard selectedCycleID == nil else { return }
+        selectedCycleID = cycles.first(where: \.isActive)?.id ?? cycles.first?.id
+    }
+
     // MARK: - Reset
 
     func reset() {
@@ -232,11 +360,40 @@ final class AddEditApplicationViewModel {
         currency = .usd
         salaryMinString = ""
         salaryMaxString = ""
+        postedBonusString = ""
+        postedEquityString = ""
+        expectedSalaryMinString = ""
+        expectedSalaryMaxString = ""
+        expectedBonusString = ""
+        expectedEquityString = ""
+        offerBaseString = ""
+        offerBonusString = ""
+        offerEquityString = ""
+        selectedCycleID = nil
+        showExpectedCompensation = false
+        showOfferCompensation = false
         appliedDate = nil
         hasAppliedDate = false
         nextFollowUpDate = nil
         hasFollowUpDate = false
         isEditing = false
         editingApplication = nil
+    }
+
+    private func parseInteger(from string: String) -> Int? {
+        Int(
+            string
+                .replacingOccurrences(of: ",", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
+    private func resolvedCycle(context: ModelContext, shouldCreateDefault: Bool) throws -> JobSearchCycle? {
+        if let selectedCycleID {
+            return try JobSearchCycleMigrationService.cycle(withID: selectedCycleID, in: context)
+        }
+
+        guard shouldCreateDefault else { return nil }
+        return try JobSearchCycleMigrationService.ensureActiveCycle(in: context)
     }
 }

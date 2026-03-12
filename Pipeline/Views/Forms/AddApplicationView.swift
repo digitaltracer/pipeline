@@ -136,6 +136,9 @@ struct AddApplicationView: View {
         } message: {
             Text(saveErrorMessage ?? "An unknown error occurred.")
         }
+        .onAppear {
+            aiViewModel.modelContext = modelContext
+        }
     }
 
     #if os(macOS)
@@ -236,5 +239,29 @@ struct TabButton: View {
 
 #Preview {
     AddApplicationView()
-        .modelContainer(for: [JobApplication.self, InterviewLog.self], inMemory: true)
+        .modelContainer(
+            for: [
+                JobApplication.self,
+                JobSearchCycle.self,
+                SearchGoal.self,
+                InterviewLog.self,
+                CompanyProfile.self,
+                CompanyResearchSnapshot.self,
+                CompanyResearchSource.self,
+                CompanySalarySnapshot.self,
+                Contact.self,
+                ApplicationContactLink.self,
+                ApplicationActivity.self,
+                InterviewDebrief.self,
+                InterviewQuestionEntry.self,
+                InterviewLearningSnapshot.self,
+                ApplicationTask.self,
+                ApplicationChecklistSuggestion.self,
+                ApplicationAttachment.self,
+                CoverLetterDraft.self,
+                JobMatchAssessment.self,
+                ATSCompatibilityAssessment.self
+            ],
+            inMemory: true
+        )
 }

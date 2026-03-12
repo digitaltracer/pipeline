@@ -4,13 +4,42 @@ import SwiftData
 import UniformTypeIdentifiers
 import WebKit
 import PipelineKit
+#if canImport(PDFKit)
+import PDFKit
+#endif
 #if os(macOS)
 import AppKit
+#elseif os(iOS)
+import UIKit
 #endif
 
 private enum ResumeExportFormat {
     case json
     case pdf
+}
+
+private enum MasterResumeJSONMode: String {
+    case editor = "Editor"
+    case preview = "Preview"
+
+    var icon: String {
+        switch self {
+        case .editor:
+            return "chevron.left.forwardslash.chevron.right"
+        case .preview:
+            return "eye"
+        }
+    }
+}
+
+private enum MasterResumePreviewParseResult {
+    case valid(ResumeSchema)
+    case invalid(String)
+}
+
+private struct ContactEntry {
+    let text: String
+    let destination: URL?
 }
 
 private enum ResumeExportFilename {
@@ -74,10 +103,25 @@ private extension View {
             ) { _ in }
         }
     }
+
+#if os(macOS)
+    func resumeModeHandCursor() -> some View {
+        onHover { isHovering in
+            if isHovering {
+                NSCursor.pointingHand.set()
+            } else {
+                NSCursor.arrow.set()
+            }
+        }
+    }
+#else
+    func resumeModeHandCursor() -> some View { self }
+#endif
 }
 
 struct ResumeWorkspaceView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) private var colorScheme
     @State private var revisions: [ResumeMasterRevision] = []
 
     @State private var editorJSON: String = ""
@@ -86,6 +130,7 @@ struct ResumeWorkspaceView: View {
     @State private var historySheetWidth: CGFloat = 980
     @State private var validationErrorMessage: String?
     @State private var actionError: String?
+    @State private var masterJSONMode: MasterResumeJSONMode = .editor
 
     @State private var isExportingFile = false
     @State private var exportFormat: ResumeExportFormat = .json
@@ -148,16 +193,28 @@ struct ResumeWorkspaceView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 12) {
-                Text("Master Resume JSON")
-                    .font(.headline)
+                HStack {
+                    Text("Master Resume JSON")
+                        .font(.headline)
 
-                JSONCodeEditor(text: $editorJSON)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.secondary.opacity(0.08))
-                    )
+                    Spacer()
+
+                    masterJSONModeSwitcher
+                }
+
+                Group {
+                    if masterJSONMode == .editor {
+                        JSONCodeEditor(text: $editorJSON)
+                    } else {
+                        masterJSONPreview
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.secondary.opacity(0.08))
+                )
 
                 if let validationErrorMessage {
                     Label(validationErrorMessage, systemImage: "exclamationmark.triangle.fill")
@@ -243,6 +300,343 @@ struct ResumeWorkspaceView: View {
         } message: {
             Text(actionError ?? "Unknown error")
         }
+    }
+
+    private var masterJSONModeSwitcher: some View {
+        HStack(spacing: 4) {
+            ForEach([MasterResumeJSONMode.editor, .preview], id: \.self) { mode in
+                Button {
+                    masterJSONMode = mode
+                } label: {
+                    Label(mode.rawValue, systemImage: mode.icon)
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .foregroundColor(masterJSONMode == mode ? .primary : .secondary)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(masterJSONMode == mode ? DesignSystem.Colors.surfaceElevated(colorScheme) : Color.clear)
+                        )
+                }
+                .buttonStyle(.plain)
+                .resumeModeHandCursor()
+            }
+        }
+        .padding(4)
+        .background(
+            Capsule(style: .continuous)
+                .fill(Color.secondary.opacity(0.14))
+        )
+    }
+
+    private var masterJSONPreview: some View {
+        ScrollView {
+            switch parseMasterResumePreview() {
+            case .valid(let resume):
+                VStack(alignment: .leading, spacing: 14) {
+                    masterResumeHeaderCard(resume)
+
+                    if let summary = resume.summary?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !summary.isEmpty {
+                        masterResumeSectionCard(title: "SUMMARY") {
+                            Text(summary)
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    if !resume.experience.isEmpty {
+                        masterResumeSectionCard(title: "EXPERIENCE") {
+                            VStack(alignment: .leading, spacing: 16) {
+                                ForEach(Array(resume.experience.enumerated()), id: \.offset) { _, entry in
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack {
+                                            Text(entry.title)
+                                                .font(.title3.weight(.semibold))
+                                            Spacer()
+                                            if !entry.dates.isEmpty {
+                                                Text(entry.dates)
+                                                    .font(.subheadline)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
+
+                                        HStack {
+                                            Text(entry.company)
+                                                .font(.headline)
+                                                .foregroundStyle(DesignSystem.Colors.accent)
+                                            if !entry.location.isEmpty {
+                                                Text("·")
+                                                    .foregroundStyle(.secondary)
+                                                Text(entry.location)
+                                                    .font(.subheadline)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
+
+                                        ForEach(entry.responsibilities, id: \.self) { line in
+                                            HStack(alignment: .top, spacing: 8) {
+                                                Text("•")
+                                                    .foregroundStyle(DesignSystem.Colors.accent)
+                                                Text(line)
+                                                    .font(.body)
+                                                    .foregroundStyle(.secondary)
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                            }
+                                        }
+                                    }
+                                    .padding(.leading, 2)
+                                }
+                            }
+                        }
+                    }
+
+                    if !resume.projects.isEmpty {
+                        masterResumeSectionCard(title: "PROJECTS") {
+                            VStack(alignment: .leading, spacing: 14) {
+                                ForEach(Array(resume.projects.enumerated()), id: \.offset) { _, project in
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        HStack {
+                                            Text(project.name)
+                                                .font(.headline)
+                                            Spacer()
+                                            if !project.date.isEmpty {
+                                                Text(project.date)
+                                                    .font(.subheadline)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
+
+                                        if !project.technologies.isEmpty {
+                                            Text(project.technologies.joined(separator: " · "))
+                                                .font(.subheadline)
+                                                .foregroundStyle(DesignSystem.Colors.accent)
+                                        }
+
+                                        ForEach(project.description, id: \.self) { line in
+                                            HStack(alignment: .top, spacing: 8) {
+                                                Text("•")
+                                                    .foregroundStyle(DesignSystem.Colors.accent)
+                                                Text(line)
+                                                    .font(.body)
+                                                    .foregroundStyle(.secondary)
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if !resume.education.isEmpty {
+                        masterResumeSectionCard(title: "EDUCATION") {
+                            VStack(alignment: .leading, spacing: 12) {
+                                ForEach(Array(resume.education.enumerated()), id: \.offset) { _, item in
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        HStack {
+                                            Text(item.university)
+                                                .font(.headline)
+                                            Spacer()
+                                            if !item.date.isEmpty {
+                                                Text(item.date)
+                                                    .font(.subheadline)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
+
+                                        Text(item.degree)
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+
+                                        if !item.location.isEmpty {
+                                            Text(item.location)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if !resume.skills.isEmpty {
+                        masterResumeSectionCard(title: "SKILLS") {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(resume.skills.keys.sorted(), id: \.self) { category in
+                                    let values = resume.skills[category] ?? []
+                                    if !values.isEmpty {
+                                        HStack(alignment: .top, spacing: 8) {
+                                            Text("\(category):")
+                                                .font(.subheadline.weight(.semibold))
+                                            Text(values.joined(separator: ", "))
+                                                .font(.subheadline)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(4)
+
+            case .invalid(let message):
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Preview unavailable", systemImage: "exclamationmark.triangle.fill")
+                        .font(.headline)
+                        .foregroundStyle(.orange)
+
+                    Text(message)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+                )
+            }
+        }
+    }
+
+    private func parseMasterResumePreview() -> MasterResumePreviewParseResult {
+        do {
+            let schema = try ResumeSchemaValidator.validate(jsonText: editorJSON).schema
+            return .valid(schema)
+        } catch let schemaError as ResumeSchemaValidationError {
+            return .invalid(schemaError.errorDescription ?? "Master resume JSON is invalid.")
+        } catch {
+            return .invalid(error.localizedDescription)
+        }
+    }
+
+    private func masterResumeHeaderCard(_ resume: ResumeSchema) -> some View {
+        let contacts = contactEntries(from: resume.contact)
+
+        return VStack(alignment: .leading, spacing: 10) {
+            Text(resume.name.isEmpty ? "Your Name" : resume.name)
+                .font(.system(size: 44, weight: .bold, design: .rounded))
+                .frame(maxWidth: .infinity, alignment: .center)
+
+            if !contacts.isEmpty {
+                HStack(spacing: 0) {
+                    ForEach(Array(contacts.enumerated()), id: \.offset) { index, contact in
+                        if let destination = contact.destination {
+                            Link(contact.text, destination: destination)
+                                .underline()
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        } else {
+                            Text(contact.text)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
+
+                        if index < contacts.count - 1 {
+                            Text(" | ")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .font(.title3)
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+                )
+        )
+    }
+
+    private func contactEntries(from contact: ResumeSchema.Contact) -> [ContactEntry] {
+        var entries: [ContactEntry] = []
+
+        let phone = contact.phone.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !phone.isEmpty {
+            entries.append(ContactEntry(text: phone, destination: nil))
+        }
+
+        let email = contact.email.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !email.isEmpty {
+            entries.append(ContactEntry(text: email, destination: URL(string: "mailto:\(email)")))
+        }
+
+        let linkedin = contact.linkedin.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !linkedin.isEmpty {
+            entries.append(
+                ContactEntry(
+                    text: displayURL(linkedin),
+                    destination: URL(string: normalizedExternalURL(linkedin))
+                )
+            )
+        }
+
+        let github = contact.github.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !github.isEmpty {
+            entries.append(
+                ContactEntry(
+                    text: displayURL(github),
+                    destination: URL(string: normalizedExternalURL(github))
+                )
+            )
+        }
+
+        return entries
+    }
+
+    private func normalizedExternalURL(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") {
+            return trimmed
+        }
+        return "https://\(trimmed)"
+    }
+
+    private func displayURL(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let withoutScheme: String
+        if trimmed.lowercased().hasPrefix("https://") {
+            withoutScheme = String(trimmed.dropFirst(8))
+        } else if trimmed.lowercased().hasPrefix("http://") {
+            withoutScheme = String(trimmed.dropFirst(7))
+        } else {
+            withoutScheme = trimmed
+        }
+
+        return withoutScheme.hasSuffix("/") ? String(withoutScheme.dropLast()) : withoutScheme
+    }
+
+    private func masterResumeSectionCard<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(title)
+                .font(.title3.weight(.bold))
+                .tracking(1.1)
+
+            content()
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+                )
+        )
     }
 
     private func saveCurrentEditorAsRevision() {
@@ -658,6 +1052,7 @@ struct ResumeTailoringView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     @Bindable var application: JobApplication
+    private let mode: ResumeTailoringMode
     private let onClose: (() -> Void)?
     private let onUnsavedChangesChanged: ((Bool) -> Void)?
 
@@ -679,6 +1074,10 @@ struct ResumeTailoringView: View {
     @State private var decisionToast: DecisionToast?
     @State private var lastDecisionSnapshot: DecisionSnapshot?
     @State private var toastDismissTask: Task<Void, Never>?
+    @State private var selectedPatchForRefinement: ResumePatch?
+    @State private var customInstructionText = ""
+    @State private var isSubmittingCustomInstruction = false
+    @State private var refiningPatchID: UUID?
 
     @State private var isExportingFile = false
     @State private var exportFormat: ResumeExportFormat = .json
@@ -689,13 +1088,19 @@ struct ResumeTailoringView: View {
     @State private var lastPersistedAcceptedPatchIDs: Set<UUID> = []
     @State private var lastPersistedRejectedPatchIDs: Set<UUID> = []
     @State private var showingDiscardChangesConfirmation = false
+    @State private var generationTimeline: [GenerationTimelineEntry] = []
+    @State private var generationStartedAt: Date?
+    @State private var latestGenerationUsage: AIUsageMetrics?
+    @State private var simulatedReasoningTask: Task<Void, Never>?
 
     init(
         application: JobApplication,
+        mode: ResumeTailoringMode = .standard,
         onClose: (() -> Void)? = nil,
         onUnsavedChangesChanged: ((Bool) -> Void)? = nil
     ) {
         self.application = application
+        self.mode = mode
         self.onClose = onClose
         self.onUnsavedChangesChanged = onUnsavedChangesChanged
     }
@@ -709,7 +1114,7 @@ struct ResumeTailoringView: View {
                     contentView
                 }
             }
-            .navigationTitle("Tailor Resume")
+            .navigationTitle(mode.navigationTitle)
             .toolbar {
 #if !os(macOS)
                 ToolbarItem(placement: .cancellationAction) {
@@ -759,6 +1164,10 @@ struct ResumeTailoringView: View {
         } message: {
             Text("You have unsaved changes. Close without saving?")
         }
+        .sheet(item: $selectedPatchForRefinement) { patch in
+            customInstructionSheet(for: patch)
+                .interactiveDismissDisabled(isSubmittingCustomInstruction)
+        }
         .safeAreaInset(edge: .bottom) {
             if preflightError == nil, !patches.isEmpty {
                 draftSummaryBar
@@ -777,6 +1186,7 @@ struct ResumeTailoringView: View {
         }
         .onDisappear {
             toastDismissTask?.cancel()
+            simulatedReasoningTask?.cancel()
         }
     }
 
@@ -784,11 +1194,15 @@ struct ResumeTailoringView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Text("Target: \(application.role) at \(application.companyName)")
+                    Text("\(mode.targetLabel): \(application.role) at \(application.companyName)")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
 
                     Spacer()
+                }
+
+                if case .atsFixes(let context) = mode {
+                    atsFocusCard(context)
                 }
 
                 if isGenerating {
@@ -865,6 +1279,33 @@ struct ResumeTailoringView: View {
         }
     }
 
+    private func atsFocusCard(_ context: ATSFixContext) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("ATS-focused tailoring run", systemImage: "text.badge.checkmark")
+                .font(.headline)
+
+            if !context.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(context.summary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !context.missingKeywords.isEmpty {
+                Text("Missing keywords: \(context.missingKeywords.joined(separator: ", "))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !context.criticalFindings.isEmpty {
+                Text("Critical findings: \(context.criticalFindings.joined(separator: " | "))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .appCard(cornerRadius: 10, elevated: true, shadow: false)
+    }
+
     private var generationInProgressCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
@@ -877,11 +1318,22 @@ struct ResumeTailoringView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Generating Tailored Suggestions")
+                    Text(mode.generationTitle)
                         .font(.headline)
-                    Text("Analyzing the job description, mapping your experience, and producing safe resume patches.")
+                    Text(mode.generationSubtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                if let startedAt = generationStartedAt {
+                    TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                        let elapsed = max(0, timeline.date.timeIntervalSince(startedAt))
+                        Text(elapsedLabel(elapsed))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
@@ -889,14 +1341,53 @@ struct ResumeTailoringView: View {
                 .progressViewStyle(.linear)
                 .tint(DesignSystem.Colors.accent)
 
-            HStack(spacing: 8) {
-                statusChip("Extracting role requirements")
-                statusChip("Matching resume evidence")
-                statusChip("Validating safe edits")
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(generationTimeline) { item in
+                    generationTimelineRow(item)
+                }
             }
         }
         .padding(14)
         .appCard(cornerRadius: 12, elevated: true, shadow: false)
+    }
+
+    private func generationTimelineRow(_ item: GenerationTimelineEntry) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            if item.state == .inProgress {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(item.state.tint)
+            } else {
+                Image(systemName: item.state.icon)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(item.state.tint)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                    .font(.caption.weight(.semibold))
+
+                if let detail = item.detail {
+                    Text(detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+
+            if let startedAt = generationStartedAt {
+                Text(elapsedLabel(item.timestamp.timeIntervalSince(startedAt)))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.secondary.opacity(colorScheme == .dark ? 0.18 : 0.1))
+        )
     }
 
     private func patchCard(_ patch: ResumePatch) -> some View {
@@ -1154,12 +1645,16 @@ struct ResumeTailoringView: View {
     }
 
     private func decisionRow(for patch: ResumePatch) -> some View {
-        HStack(spacing: 10) {
+        let isRefiningThisPatch = refiningPatchID == patch.id
+        let disableButtons = isSubmittingCustomInstruction || isGenerating
+
+        return HStack(spacing: 10) {
             tailoringDecisionButton(
                 title: "Accept",
                 icon: "checkmark",
                 isActive: acceptedPatchIDs.contains(patch.id),
                 tint: Color.green,
+                isDisabled: disableButtons,
                 action: {
                     applyPatchDecision(.accept, for: patch)
                 }
@@ -1170,10 +1665,27 @@ struct ResumeTailoringView: View {
                 icon: "xmark",
                 isActive: rejectedPatchIDs.contains(patch.id),
                 tint: Color.gray,
+                isDisabled: disableButtons,
                 action: {
                     applyPatchDecision(.reject, for: patch)
                 }
             )
+
+            tailoringDecisionButton(
+                title: "Refine",
+                icon: "slider.horizontal.3",
+                isActive: isRefiningThisPatch,
+                tint: Color.blue,
+                isDisabled: disableButtons,
+                action: {
+                    openCustomInstruction(for: patch)
+                }
+            )
+
+            if isRefiningThisPatch {
+                ProgressView()
+                    .controlSize(.small)
+            }
 
             Spacer()
         }
@@ -1197,6 +1709,7 @@ struct ResumeTailoringView: View {
         icon: String,
         isActive: Bool,
         tint: Color,
+        isDisabled: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -1215,6 +1728,71 @@ struct ResumeTailoringView: View {
                 .foregroundStyle(isActive ? tint : Color.secondary)
         }
         .buttonStyle(.plain)
+        .disabled(isDisabled)
+    }
+
+    private func customInstructionSheet(for patch: ResumePatch) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Refine suggestion")
+                .font(.title3.weight(.semibold))
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Section path")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(patch.path)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Your instruction")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                TextEditor(text: $customInstructionText)
+                    .frame(minHeight: 120)
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.secondary.opacity(colorScheme == .dark ? 0.2 : 0.1))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Color.secondary.opacity(0.24), lineWidth: 1)
+                    )
+            }
+
+            Text("Example: Keep this change but make the impact metric explicit and mention iOS ownership.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Spacer()
+
+                Button("Cancel", role: .cancel) {
+                    closeCustomInstructionSheet()
+                }
+                .buttonStyle(.bordered)
+                .disabled(isSubmittingCustomInstruction)
+
+                Button {
+                    submitCustomInstruction(for: patch)
+                } label: {
+                    if isSubmittingCustomInstruction {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text("Update Section")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(customInstructionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmittingCustomInstruction)
+            }
+        }
+        .padding(16)
+#if os(macOS)
+        .frame(minWidth: 520, minHeight: 320)
+#endif
     }
 
     private enum PatchDecisionAction {
@@ -1286,6 +1864,52 @@ struct ResumeTailoringView: View {
         let showsUndo: Bool
     }
 
+    private enum GenerationTimelineState {
+        case inProgress
+        case completed
+        case info
+        case failed
+
+        var icon: String {
+            switch self {
+            case .inProgress:
+                return "ellipsis.circle.fill"
+            case .completed:
+                return "checkmark.circle.fill"
+            case .info:
+                return "info.circle.fill"
+            case .failed:
+                return "xmark.octagon.fill"
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .inProgress:
+                return .orange
+            case .completed:
+                return .green
+            case .info:
+                return .secondary
+            case .failed:
+                return .red
+            }
+        }
+    }
+
+    private struct GenerationTimelineEntry: Identifiable {
+        let id = UUID()
+        let title: String
+        let detail: String?
+        let timestamp: Date
+        var state: GenerationTimelineState
+    }
+
+    private struct SimulatedReasoningMessage {
+        let title: String
+        let detail: String
+    }
+
     private var hasDraftChanges: Bool {
         editedJSON != lastPersistedJSON
             || acceptedPatchIDs != lastPersistedAcceptedPatchIDs
@@ -1333,7 +1957,7 @@ struct ResumeTailoringView: View {
             .buttonStyle(.bordered)
 
             Button("Save Tailored Resume") {
-                saveSnapshot()
+                Task { await saveSnapshot() }
             }
             .buttonStyle(.borderedProminent)
             .tint(DesignSystem.Colors.accent)
@@ -1367,20 +1991,8 @@ struct ResumeTailoringView: View {
             )
     }
 
-    private func statusChip(_ title: String) -> some View {
-        HStack(spacing: 5) {
-            ProgressView()
-                .controlSize(.small)
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
-        .background(
-            Capsule()
-                .fill(Color.secondary.opacity(colorScheme == .dark ? 0.18 : 0.12))
-        )
+    private func elapsedLabel(_ elapsed: TimeInterval) -> String {
+        String(format: "+%.1fs", elapsed)
     }
 
     private func decisionToastView(_ toast: DecisionToast) -> some View {
@@ -1456,6 +2068,144 @@ struct ResumeTailoringView: View {
                 snapshot: snapshot
             )
         }
+    }
+
+    private func openCustomInstruction(for patch: ResumePatch) {
+        customInstructionText = ""
+        selectedPatchForRefinement = patch
+    }
+
+    private func closeCustomInstructionSheet() {
+        selectedPatchForRefinement = nil
+        customInstructionText = ""
+    }
+
+    private func submitCustomInstruction(for patch: ResumePatch) {
+        let instruction = customInstructionText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !instruction.isEmpty else { return }
+        Task { await refinePatchSuggestion(patch, with: instruction) }
+    }
+
+    @MainActor
+    private func refinePatchSuggestion(_ patch: ResumePatch, with instruction: String) async {
+        guard let masterRevision,
+              let jobDescription = application.jobDescription?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !jobDescription.isEmpty
+        else {
+            actionError = "Could not refine suggestion because resume or job description is missing."
+            return
+        }
+
+        guard patches.contains(where: { $0.id == patch.id }) else {
+            actionError = "This suggestion is no longer available. Please generate suggestions again."
+            return
+        }
+
+        isSubmittingCustomInstruction = true
+        refiningPatchID = patch.id
+        let requestStartedAt = Date()
+        defer {
+            isSubmittingCustomInstruction = false
+            refiningPatchID = nil
+        }
+
+        do {
+            let provider = settingsViewModel.selectedAIProvider
+            let model = settingsViewModel.preferredModel(for: provider)
+            let result = try await settingsViewModel.withAPIKeyWaterfall(for: provider) { apiKey in
+                try await ResumeTailoringService.revisePatch(
+                    provider: provider,
+                    apiKey: apiKey,
+                    model: model,
+                    resumeJSON: masterRevision.rawJSON,
+                    company: application.companyName,
+                    role: application.role,
+                    jobDescription: jobDescription,
+                    selectedPatch: patch,
+                    userInstruction: instruction
+                )
+            }
+
+            try applyRefinedPatchResult(
+                result,
+                replacing: patch,
+                originalJSON: masterRevision.rawJSON
+            )
+            closeCustomInstructionSheet()
+
+            recordTailoringUsage(
+                provider: provider,
+                model: model,
+                usage: result.usage,
+                status: .succeeded,
+                startedAt: requestStartedAt,
+                errorMessage: nil
+            )
+        } catch let keyError as SettingsViewModel.APIKeyValidationError {
+            actionError = keyError.localizedDescription
+            let provider = settingsViewModel.selectedAIProvider
+            let model = settingsViewModel.preferredModel(for: provider)
+            recordTailoringUsage(
+                provider: provider,
+                model: model,
+                usage: nil,
+                status: .failed,
+                startedAt: requestStartedAt,
+                errorMessage: keyError.localizedDescription
+            )
+        } catch {
+            actionError = error.localizedDescription
+            let provider = settingsViewModel.selectedAIProvider
+            let model = settingsViewModel.preferredModel(for: provider)
+            recordTailoringUsage(
+                provider: provider,
+                model: model,
+                usage: nil,
+                status: .failed,
+                startedAt: requestStartedAt,
+                errorMessage: error.localizedDescription
+            )
+        }
+    }
+
+    private func applyRefinedPatchResult(
+        _ result: ResumeTailoringResult,
+        replacing originalPatch: ResumePatch,
+        originalJSON: String
+    ) throws {
+        let validation = try ResumePatchSafetyValidator.validate(
+            patches: result.patches,
+            originalJSON: originalJSON
+        )
+
+        if let rejection = validation.rejected.first {
+            safetyRejections.insert(rejection, at: 0)
+            throw AIServiceError.parsingError("Custom instruction was rejected by safety checks: \(rejection.reason)")
+        }
+
+        guard validation.accepted.count == 1,
+              let updatedPatch = validation.accepted.first else {
+            throw AIServiceError.parsingError("Custom instruction response did not produce exactly one valid patch.")
+        }
+
+        guard let patchIndex = patches.firstIndex(where: { $0.id == originalPatch.id }) else {
+            throw AIServiceError.parsingError("Suggestion changed while refining. Please retry.")
+        }
+
+        patches[patchIndex] = updatedPatch
+        acceptedPatchIDs.remove(originalPatch.id)
+        rejectedPatchIDs.remove(originalPatch.id)
+        collapsedPatchIDs.remove(originalPatch.id)
+        collapsedPatchIDs.remove(updatedPatch.id)
+
+        refreshEditedJSON()
+        publishUnsavedChangesState()
+        presentDecisionToast(
+            message: "Updated \(updatedPatch.path). Review and accept or reject.",
+            style: .neutral,
+            showsUndo: false,
+            snapshot: nil
+        )
     }
 
     private func undoLastDecision() {
@@ -1544,6 +2294,11 @@ struct ResumeTailoringView: View {
         lastPersistedAcceptedPatchIDs = []
         lastPersistedRejectedPatchIDs = []
         collapsedPatchIDs = []
+        generationTimeline = []
+        generationStartedAt = nil
+        latestGenerationUsage = nil
+        simulatedReasoningTask?.cancel()
+        simulatedReasoningTask = nil
         decisionToast = nil
         lastDecisionSnapshot = nil
         toastDismissTask?.cancel()
@@ -1577,6 +2332,303 @@ struct ResumeTailoringView: View {
     }
 
     @MainActor
+    private func beginGenerationTimeline() {
+        generationStartedAt = Date()
+        generationTimeline = [
+            GenerationTimelineEntry(
+                title: "Starting tailoring run",
+                detail: "Preparing prompts and validating inputs.",
+                timestamp: Date(),
+                state: .inProgress
+            )
+        ]
+    }
+
+    @MainActor
+    private func markInProgressTimelineEntriesCompleted() {
+        for index in generationTimeline.indices where generationTimeline[index].state == .inProgress {
+            generationTimeline[index].state = .completed
+        }
+    }
+
+    @MainActor
+    private func appendTimeline(
+        title: String,
+        detail: String? = nil,
+        state: GenerationTimelineState
+    ) {
+        generationTimeline.append(
+            GenerationTimelineEntry(
+                title: title,
+                detail: detail,
+                timestamp: Date(),
+                state: state
+            )
+        )
+
+        if generationTimeline.count > 14 {
+            generationTimeline.removeFirst(generationTimeline.count - 14)
+        }
+    }
+
+    @MainActor
+    private func handleTailoringProgress(_ event: ResumeTailoringProgressEvent) {
+        switch event {
+        case .started:
+            beginGenerationTimeline()
+        case .attemptStarted(let attempt, let isRetry):
+            markInProgressTimelineEntriesCompleted()
+            appendTimeline(
+                title: isRetry ? "Retry attempt \(attempt)" : "Attempt \(attempt)",
+                detail: isRetry ? "Running compact retry prompt." : "Sending tailoring request.",
+                state: .inProgress
+            )
+        case .requestStarted(let provider, let model):
+            appendTimeline(
+                title: "Calling \(provider.rawValue)",
+                detail: "Model \(model)",
+                state: .inProgress
+            )
+        case .responseReceived(let characters, let usage):
+            markInProgressTimelineEntriesCompleted()
+            latestGenerationUsage = usage
+            appendTimeline(
+                title: "Model response received",
+                detail: responseDetail(characters: characters, usage: usage),
+                state: .completed
+            )
+        case .parsingStarted:
+            appendTimeline(
+                title: "Parsing structured patches",
+                detail: "Validating model JSON payload.",
+                state: .inProgress
+            )
+        case .retryScheduled(let reason):
+            markInProgressTimelineEntriesCompleted()
+            appendTimeline(
+                title: "Retry scheduled",
+                detail: reason,
+                state: .info
+            )
+        case .completed(let patchCount, let sectionGapCount, let usage):
+            markInProgressTimelineEntriesCompleted()
+            latestGenerationUsage = usage
+            appendTimeline(
+                title: "Suggestions ready",
+                detail: "Patches: \(patchCount), gaps: \(sectionGapCount)\(usageSuffix(usage))",
+                state: .completed
+            )
+        case .failed(let message):
+            markInProgressTimelineEntriesCompleted()
+            appendTimeline(
+                title: "Tailoring failed",
+                detail: message,
+                state: .failed
+            )
+        }
+    }
+
+    private func responseDetail(characters: Int, usage: AIUsageMetrics?) -> String {
+        var detail = "\(characters) chars received."
+        if let usage {
+            let promptTokens = usage.promptTokens ?? 0
+            let completionTokens = usage.completionTokens ?? 0
+            let totalTokens = usage.totalTokens ?? (promptTokens + completionTokens)
+            detail += " Tokens \(totalTokens) (in \(promptTokens), out \(completionTokens))."
+        }
+        return detail
+    }
+
+    private func usageSuffix(_ usage: AIUsageMetrics?) -> String {
+        guard let usage else { return "" }
+        let promptTokens = usage.promptTokens ?? 0
+        let completionTokens = usage.completionTokens ?? 0
+        let totalTokens = usage.totalTokens ?? (promptTokens + completionTokens)
+        return ", tokens: \(totalTokens)"
+    }
+
+    @MainActor
+    private func startSimulatedReasoningFeed(
+        resumeJSON: String,
+        jobDescription: String
+    ) {
+        simulatedReasoningTask?.cancel()
+        let messages = buildSimulatedReasoningMessages(
+            resumeJSON: resumeJSON,
+            jobDescription: jobDescription
+        )
+        guard !messages.isEmpty else { return }
+
+        simulatedReasoningTask = Task {
+            for message in messages {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    appendTimeline(
+                        title: message.title,
+                        detail: message.detail,
+                        state: .info
+                    )
+                }
+                try? await Task.sleep(nanoseconds: 1_300_000_000)
+            }
+        }
+    }
+
+    private func buildSimulatedReasoningMessages(
+        resumeJSON: String,
+        jobDescription: String
+    ) -> [SimulatedReasoningMessage] {
+        var messages: [SimulatedReasoningMessage] = []
+        let resumeSchema = try? ResumeSchemaValidator.validate(jsonText: resumeJSON).schema
+
+        let jdKeywords = topKeywords(from: jobDescription, limit: 12)
+
+        if let summary = resumeSchema?.summary, !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let summaryKeywords = topKeywords(from: summary, limit: 4)
+            messages.append(
+                SimulatedReasoningMessage(
+                    title: "Now comparing Summary section",
+                    detail: summaryKeywords.isEmpty
+                        ? "Checking whether summary aligns with the role expectations."
+                        : "Summary currently emphasizes: \(summaryKeywords.joined(separator: ", "))."
+                )
+            )
+        } else {
+            messages.append(
+                SimulatedReasoningMessage(
+                    title: "Now comparing Summary section",
+                    detail: "No summary found in resume. Looking for strong evidence in experience/projects."
+                )
+            )
+        }
+
+        let experienceEntries = Array((resumeSchema?.experience ?? []).prefix(2))
+        if experienceEntries.isEmpty {
+            messages.append(
+                SimulatedReasoningMessage(
+                    title: "Now comparing Experience section",
+                    detail: "No experience entries found. Tailoring will rely on projects and skills."
+                )
+            )
+        } else {
+            for entry in experienceEntries {
+                let evidenceText = entry.responsibilities.joined(separator: " ")
+                let evidenceKeywords = topKeywords(from: evidenceText, limit: 4)
+                let label = entry.company.trimmingCharacters(in: .whitespacesAndNewlines)
+                let companyLabel = label.isEmpty ? entry.title : label
+                messages.append(
+                    SimulatedReasoningMessage(
+                        title: "Now comparing Experience - \(companyLabel)",
+                        detail: evidenceKeywords.isEmpty
+                            ? "Role: \(entry.title). Searching for matching evidence."
+                            : "Role: \(entry.title). Resume evidence: \(evidenceKeywords.joined(separator: ", "))."
+                    )
+                )
+            }
+        }
+
+        let skillValues = Array((resumeSchema?.skills ?? [:]).values).flatMap { $0 }
+        let skillJoined = skillValues.joined(separator: " ")
+        let skillKeywords = topKeywords(from: skillJoined, limit: 5)
+        messages.append(
+            SimulatedReasoningMessage(
+                title: "Now comparing Skills section",
+                detail: skillKeywords.isEmpty
+                    ? "No explicit skill list found. Using projects/experience terminology instead."
+                    : "Resume skills include: \(skillKeywords.joined(separator: ", "))."
+            )
+        )
+
+        var resumeCorpus = ""
+        if let summary = resumeSchema?.summary {
+            resumeCorpus.append(" \(summary)")
+        }
+        for entry in (resumeSchema?.experience ?? []) {
+            resumeCorpus.append(" \(entry.title) \(entry.company) \(entry.responsibilities.joined(separator: " "))")
+        }
+        for project in (resumeSchema?.projects ?? []) {
+            resumeCorpus.append(" \(project.name) \(project.technologies.joined(separator: " ")) \(project.description.joined(separator: " "))")
+        }
+        resumeCorpus.append(" \(skillJoined)")
+
+        let resumeKeywords = topKeywords(from: resumeCorpus, limit: 30)
+        let resumeSet = Set(resumeKeywords.map { $0.lowercased() })
+
+        let matching = jdKeywords.filter { resumeSet.contains($0.lowercased()) }
+        let missing = jdKeywords.filter { !resumeSet.contains($0.lowercased()) }
+
+        if !matching.isEmpty {
+            messages.append(
+                SimulatedReasoningMessage(
+                    title: "The user has \(matching.prefix(4).joined(separator: ", "))",
+                    detail: "Found overlap between resume and job description requirements."
+                )
+            )
+        } else {
+            messages.append(
+                SimulatedReasoningMessage(
+                    title: "Current resume evidence has limited keyword overlap",
+                    detail: "Will prioritize extracting stronger role-specific terms from the JD."
+                )
+            )
+        }
+
+        if !missing.isEmpty {
+            messages.append(
+                SimulatedReasoningMessage(
+                    title: "But job description requires \(missing.prefix(4).joined(separator: ", "))",
+                    detail: "Tailoring will focus on phrasing updates using existing resume evidence."
+                )
+            )
+        } else {
+            messages.append(
+                SimulatedReasoningMessage(
+                    title: "Most core JD terms already appear in the resume",
+                    detail: "Tailoring likely focuses on prioritization and section emphasis."
+                )
+            )
+        }
+
+        return messages
+    }
+
+    private func topKeywords(from text: String, limit: Int) -> [String] {
+        let tokens = text
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { token in
+                token.count >= 3 && !resumeStopWords.contains(token)
+            }
+
+        guard !tokens.isEmpty else { return [] }
+
+        var frequency: [String: Int] = [:]
+        for token in tokens {
+            frequency[token, default: 0] += 1
+        }
+
+        return frequency
+            .sorted { lhs, rhs in
+                if lhs.value == rhs.value {
+                    return lhs.key < rhs.key
+                }
+                return lhs.value > rhs.value
+            }
+            .prefix(limit)
+            .map { $0.key }
+    }
+
+    private var resumeStopWords: Set<String> {
+        [
+            "the", "and", "for", "with", "that", "from", "this", "are", "was", "were",
+            "have", "has", "had", "your", "our", "their", "you", "will", "can", "into",
+            "across", "through", "within", "about", "role", "team", "work", "using",
+            "build", "built", "developed", "experience", "summary", "skills", "section",
+            "job", "description", "company", "candidate", "required", "preferred"
+        ]
+    }
+
+    @MainActor
     private func generateSuggestions() async {
         guard preflightError == nil,
               let masterRevision,
@@ -1585,31 +2637,121 @@ struct ResumeTailoringView: View {
             return
         }
 
+        let requestStartedAt = Date()
         isGenerating = true
-        defer { isGenerating = false }
+        generationStartedAt = requestStartedAt
+        generationTimeline = []
+        latestGenerationUsage = nil
+        defer {
+            isGenerating = false
+            markInProgressTimelineEntriesCompleted()
+            simulatedReasoningTask?.cancel()
+            simulatedReasoningTask = nil
+        }
 
         do {
             let provider = settingsViewModel.selectedAIProvider
             let model = settingsViewModel.preferredModel(for: provider)
+            startSimulatedReasoningFeed(
+                resumeJSON: masterRevision.rawJSON,
+                jobDescription: jobDescription
+            )
 
             let result = try await settingsViewModel.withAPIKeyWaterfall(for: provider) { apiKey in
-                try await ResumeTailoringService.generateSuggestions(
-                    provider: provider,
-                    apiKey: apiKey,
-                    model: model,
-                    resumeJSON: masterRevision.rawJSON,
-                    company: application.companyName,
-                    role: application.role,
-                    jobDescription: jobDescription
-                )
+                switch mode {
+                case .standard:
+                    return try await ResumeTailoringService.generateSuggestions(
+                        provider: provider,
+                        apiKey: apiKey,
+                        model: model,
+                        resumeJSON: masterRevision.rawJSON,
+                        company: application.companyName,
+                        role: application.role,
+                        jobDescription: jobDescription,
+                        onProgress: { progress in
+                            Task { @MainActor in
+                                handleTailoringProgress(progress)
+                            }
+                        }
+                    )
+                case .atsFixes(let context):
+                    return try await ResumeTailoringService.generateATSFixSuggestions(
+                        provider: provider,
+                        apiKey: apiKey,
+                        model: model,
+                        resumeJSON: masterRevision.rawJSON,
+                        company: application.companyName,
+                        role: application.role,
+                        jobDescription: jobDescription,
+                        summary: context.summary,
+                        missingKeywords: context.missingKeywords,
+                        criticalFindings: context.criticalFindings,
+                        warningFindings: context.warningFindings,
+                        onProgress: { progress in
+                            Task { @MainActor in
+                                handleTailoringProgress(progress)
+                            }
+                        }
+                    )
+                }
             }
 
             try applyTailoringResult(result, originalJSON: masterRevision.rawJSON)
+            recordTailoringUsage(
+                provider: provider,
+                model: model,
+                usage: result.usage,
+                status: .succeeded,
+                startedAt: requestStartedAt,
+                errorMessage: nil
+            )
         } catch let keyError as SettingsViewModel.APIKeyValidationError {
             actionError = keyError.localizedDescription
+            let provider = settingsViewModel.selectedAIProvider
+            let model = settingsViewModel.preferredModel(for: provider)
+            recordTailoringUsage(
+                provider: provider,
+                model: model,
+                usage: latestGenerationUsage,
+                status: .failed,
+                startedAt: requestStartedAt,
+                errorMessage: keyError.localizedDescription
+            )
         } catch {
             actionError = error.localizedDescription
+            let provider = settingsViewModel.selectedAIProvider
+            let model = settingsViewModel.preferredModel(for: provider)
+            recordTailoringUsage(
+                provider: provider,
+                model: model,
+                usage: latestGenerationUsage,
+                status: .failed,
+                startedAt: requestStartedAt,
+                errorMessage: error.localizedDescription
+            )
         }
+    }
+
+    private func recordTailoringUsage(
+        provider: AIProvider,
+        model: String,
+        usage: AIUsageMetrics?,
+        status: AIUsageRequestStatus,
+        startedAt: Date,
+        errorMessage: String?
+    ) {
+        _ = try? AIUsageLedgerService.record(
+            feature: mode.usageFeature,
+            provider: provider,
+            model: model,
+            usage: usage,
+            status: status,
+            applicationID: application.id,
+            startedAt: startedAt,
+            finishedAt: Date(),
+            errorMessage: errorMessage,
+            in: modelContext
+        )
     }
 
     private func applyTailoringResult(_ result: ResumeTailoringResult, originalJSON: String) throws {
@@ -1650,7 +2792,8 @@ struct ResumeTailoringView: View {
         }
     }
 
-    private func saveSnapshot() {
+    @MainActor
+    private func saveSnapshot() async {
         do {
             let validated = try ResumeSchemaValidator.validate(jsonText: editedJSON)
             _ = try ResumeStoreService.createJobSnapshot(
@@ -1661,6 +2804,11 @@ struct ResumeTailoringView: View {
                 sectionGaps: sectionGaps,
                 sourceMasterRevisionID: masterRevision?.id,
                 in: modelContext
+            )
+            await ATSCompatibilityCoordinator.shared.refresh(
+                application: application,
+                modelContext: modelContext,
+                force: true
             )
             lastPersistedJSON = validated.normalizedJSON
             lastPersistedAcceptedPatchIDs = acceptedPatchIDs
@@ -1844,11 +2992,16 @@ private enum ResumePatchSplitDiff {
 
 struct JobResumePanel: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.openURL) private var openURL
 
     @Bindable var application: JobApplication
+    private let attachmentStorageService = ApplicationAttachmentStorageService()
 
     @State private var showingTailor = false
     @State private var showingHistory = false
+    @State private var showingAttachmentImporter = false
+    @State private var editorState: AttachmentEditorState?
+    @State private var previewItem: AttachmentPreviewItem?
     @State private var actionError: String?
     #if os(macOS)
     @State private var tailorWindowPresenter = TailorResumeWindowPresenter()
@@ -1860,78 +3013,150 @@ struct JobResumePanel: View {
     @State private var jsonDocument = ResumeJSONFileDocument(text: "{}")
     @State private var pdfDocument = ResumePDFFileDocument(data: Data())
 
+    private var groupedAttachments: [(ApplicationAttachmentCategory, [ApplicationAttachment])] {
+        let grouped = Dictionary(grouping: application.sortedAttachments, by: \.category)
+        return ApplicationAttachmentCategory.allCases.compactMap { category in
+            guard let attachments = grouped[category], !attachments.isEmpty else { return nil }
+            return (category, attachments)
+        }
+    }
+
+    private var recentSnapshots: [ResumeJobSnapshot] {
+        Array(application.sortedResumeSnapshots.prefix(3))
+    }
+
     var body: some View {
         let snapshots = application.sortedResumeSnapshots
 
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("Resume Versions", systemImage: "doc.text")
+                Label("Documents", systemImage: "folder")
                     .font(.headline)
 
                 Spacer()
 
-                Button("History") {
-#if os(macOS)
-                    historySheetWidth = preferredHistorySheetWidth()
-#endif
-                    showingHistory = true
+                if let submitted = application.submittedResumeAttachment {
+                    Text("Submitted: \(submitted.resolvedTitle)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
                 }
-                .buttonStyle(.bordered)
-
-                Button {
-                    #if os(macOS)
-                    presentTailorWindow()
-                    #else
-                    showingTailor = true
-                    #endif
-                } label: {
-                    Label("Tailor Resume", systemImage: "sparkles")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(DesignSystem.Colors.accent)
             }
 
-            if snapshots.isEmpty {
-                Text("No tailored resumes attached to this job yet.")
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Button {
+                        showingAttachmentImporter = true
+                    } label: {
+                        Label("Add File", systemImage: "paperclip")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(DesignSystem.Colors.accent)
+
+                    Button {
+                        editorState = .newLink()
+                    } label: {
+                        Label("Add Link", systemImage: "link.badge.plus")
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        editorState = .newNote()
+                    } label: {
+                        Label("Add Note", systemImage: "square.and.pencil")
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                HStack(spacing: 8) {
+                    Button("History") {
+#if os(macOS)
+                        historySheetWidth = preferredHistorySheetWidth()
+#endif
+                        showingHistory = true
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        #if os(macOS)
+                        presentTailorWindow()
+                        #else
+                        showingTailor = true
+                        #endif
+                    } label: {
+                        Label("Tailor Resume", systemImage: "sparkles")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+
+            if groupedAttachments.isEmpty, snapshots.isEmpty {
+                Text("No documents, links, notes, or tailored resumes attached to this job yet.")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(snapshots) { snapshot in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(snapshot.createdAt.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                Text("Accepted: \(snapshot.acceptedPatchIDs.count)  Rejected: \(snapshot.rejectedPatchIDs.count)")
+                    ForEach(groupedAttachments, id: \.0.id) { category, attachments in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label(category.displayName, systemImage: category.icon)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.secondary)
+
+                            ForEach(attachments) { attachment in
+                                attachmentRow(attachment)
+                            }
+                        }
+                    }
+
+                    if !recentSnapshots.isEmpty {
+                        Divider()
+                            .padding(.vertical, 4)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Label("Resume Versions", systemImage: "doc.text")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(.secondary)
+
+                                Spacer()
+
+                                Text("Open History to compare and export versions")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
+
+                                if snapshots.count > recentSnapshots.count {
+                                    Text("+\(snapshots.count - recentSnapshots.count) more in history")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
                             }
 
-                            Spacer()
-
-                            Button("JSON") {
-                                exportJSON(snapshot)
+                            ForEach(recentSnapshots) { snapshot in
+                                snapshotSummaryRow(snapshot)
                             }
-                            .buttonStyle(.bordered)
-
-                            Button("PDF") {
-                                Task { await exportPDF(snapshot) }
-                            }
-                            .buttonStyle(.bordered)
-
-                            Button("Delete", role: .destructive) {
-                                deleteSnapshot(snapshot)
-                            }
-                            .buttonStyle(.bordered)
                         }
-                        .padding(.vertical, 4)
                     }
                 }
             }
         }
         .padding(16)
         .appCard(cornerRadius: 14, elevated: true, shadow: false)
+        .fileImporter(
+            isPresented: $showingAttachmentImporter,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: false
+        ) { result in
+            importAttachmentFile(result)
+        }
+        .sheet(item: $editorState) { state in
+            AttachmentEditorView(state: state) { saveState in
+                saveAttachmentEditorState(saveState)
+            }
+        }
+        .sheet(item: $previewItem) { item in
+            AttachmentPreviewSheet(item: item)
+        }
         .sheet(isPresented: $showingTailor) {
             ResumeTailoringView(application: application)
         }
@@ -1979,6 +3204,117 @@ struct JobResumePanel: View {
     }
 #endif
 
+    private func attachmentRow(_ attachment: ApplicationAttachment) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: attachment.category.icon)
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(DesignSystem.Colors.accent.opacity(0.12)))
+                    .foregroundColor(DesignSystem.Colors.accent)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(attachment.resolvedTitle)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+
+                        if attachment.isSubmittedResume {
+                            Text("Submitted")
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(Color.green.opacity(0.18)))
+                        }
+                    }
+
+                    Text(attachmentSubtitle(attachment))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    if let previewText = attachmentPreviewText(attachment) {
+                        Text(previewText)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+
+                Spacer(minLength: 8)
+
+                Menu {
+                    if attachment.kind == .file {
+                        if isPreviewable(attachment) {
+                            Button("Preview") {
+                                previewAttachment(attachment)
+                            }
+                        }
+
+                        Button("Open") {
+                            openAttachment(attachment)
+                        }
+
+                        if attachment.category == .resume && !attachment.isSubmittedResume {
+                            Button("Mark as Submitted Resume") {
+                                markSubmittedResume(attachment)
+                            }
+                        }
+                    } else if attachment.kind == .link {
+                        Button("Open Link") {
+                            openAttachment(attachment)
+                        }
+                    }
+
+                    Button("Edit") {
+                        editorState = .edit(attachment)
+                    }
+
+                    Button("Delete", role: .destructive) {
+                        deleteAttachment(attachment)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.title3)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if !attachment.tags.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(attachment.tags, id: \.self) { tag in
+                            Text(tag)
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Capsule().fill(Color.secondary.opacity(0.12)))
+                        }
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.secondary.opacity(0.08))
+        )
+    }
+
+    private func snapshotSummaryRow(_ snapshot: ResumeJobSnapshot) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(snapshot.createdAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.subheadline.weight(.semibold))
+                Text("Accepted: \(snapshot.acceptedPatchIDs.count)  Rejected: \(snapshot.rejectedPatchIDs.count)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+
     private func deleteSnapshot(_ snapshot: ResumeJobSnapshot) {
         do {
             try ResumeStoreService.deleteJobSnapshot(snapshot, in: modelContext)
@@ -2007,6 +3343,181 @@ struct JobResumePanel: View {
             actionError = error.localizedDescription
         }
     }
+
+    private func deleteAttachment(_ attachment: ApplicationAttachment) {
+        do {
+            try attachmentStorageService.deleteAttachment(
+                attachment,
+                from: application,
+                in: modelContext
+            )
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func markSubmittedResume(_ attachment: ApplicationAttachment) {
+        do {
+            try attachmentStorageService.ensureSingleSubmittedResume(
+                current: attachment,
+                in: application,
+                context: modelContext
+            )
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func saveAttachmentEditorState(_ state: AttachmentEditorState) {
+        do {
+            let tags = attachmentTags(from: state.tagsText)
+            if let attachment = state.attachment {
+                try attachmentStorageService.updateMetadata(
+                    for: attachment,
+                    title: state.title,
+                    category: state.category,
+                    tags: tags,
+                    description: state.description.isEmpty ? nil : state.description,
+                    urlString: state.kind == .link ? state.urlString : nil,
+                    noteBody: state.kind == .note ? state.noteBody : nil,
+                    isSubmittedResume: state.kind == .file ? state.isSubmittedResume : false,
+                    in: application,
+                    context: modelContext
+                )
+            } else {
+                switch state.kind {
+                case .link:
+                    _ = try attachmentStorageService.createLinkAttachment(
+                        title: state.title,
+                        urlString: state.urlString,
+                        category: state.category,
+                        tags: tags,
+                        description: state.description.isEmpty ? nil : state.description,
+                        for: application,
+                        in: modelContext
+                    )
+                case .note:
+                    _ = try attachmentStorageService.createNoteAttachment(
+                        title: state.title,
+                        body: state.noteBody,
+                        category: state.category,
+                        tags: tags,
+                        description: state.description.isEmpty ? nil : state.description,
+                        for: application,
+                        in: modelContext
+                    )
+                case .file:
+                    break
+                }
+            }
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func importAttachmentFile(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            let access = url.startAccessingSecurityScopedResource()
+            defer {
+                if access {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+
+            _ = try attachmentStorageService.createFileAttachment(
+                from: url,
+                category: .other,
+                for: application,
+                in: modelContext
+            )
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func previewAttachment(_ attachment: ApplicationAttachment) {
+        do {
+            let url = try attachmentStorageService.managedFileURL(for: attachment)
+            previewItem = AttachmentPreviewItem(
+                id: attachment.id,
+                title: attachment.resolvedTitle,
+                url: url,
+                contentType: attachment.contentType
+            )
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func openAttachment(_ attachment: ApplicationAttachment) {
+        do {
+            switch attachment.kind {
+            case .file:
+                let url = try attachmentStorageService.managedFileURL(for: attachment)
+                openSystemURL(url)
+            case .link:
+                if let url = attachment.normalizedExternalURL {
+                    openURL(url)
+                }
+            case .note:
+                editorState = .edit(attachment)
+            }
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func attachmentSubtitle(_ attachment: ApplicationAttachment) -> String {
+        switch attachment.kind {
+        case .file:
+            let formatter = ByteCountFormatter()
+            formatter.countStyle = .file
+            let sizeText = attachment.fileSize.map { formatter.string(fromByteCount: $0) } ?? "Unknown size"
+            let typeText = attachment.contentType
+                ?? attachment.originalFilename.map { URL(fileURLWithPath: $0).pathExtension.uppercased() }
+                ?? "File"
+            return "\(typeText) • \(sizeText) • \(attachment.createdAt.formatted(date: .abbreviated, time: .omitted))"
+        case .link:
+            return attachment.normalizedExternalURL?.host() ?? "Web link"
+        case .note:
+            return "Plain text note • \(attachment.createdAt.formatted(date: .abbreviated, time: .omitted))"
+        }
+    }
+
+    private func attachmentPreviewText(_ attachment: ApplicationAttachment) -> String? {
+        switch attachment.kind {
+        case .file:
+            return attachment.originalFilename
+        case .link:
+            return attachment.normalizedExternalURL?.absoluteString
+        case .note:
+            return attachment.noteBody?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    private func isPreviewable(_ attachment: ApplicationAttachment) -> Bool {
+        guard attachment.kind == .file else { return false }
+        if let contentType = attachment.contentType,
+           let type = UTType(contentType) {
+            return type.conforms(to: .pdf) || type.conforms(to: .image)
+        }
+
+        if let filename = attachment.originalFilename,
+           let type = UTType(filenameExtension: URL(fileURLWithPath: filename).pathExtension) {
+            return type.conforms(to: .pdf) || type.conforms(to: .image)
+        }
+
+        return false
+    }
+
+    private func openSystemURL(_ url: URL) {
+        #if os(macOS)
+        NSWorkspace.shared.open(url)
+        #else
+        openURL(url)
+        #endif
+    }
 }
 
 struct ResumeJobSnapshotHistoryView: View {
@@ -2014,6 +3525,7 @@ struct ResumeJobSnapshotHistoryView: View {
     @Environment(\.modelContext) private var modelContext
 
     @Bindable var application: JobApplication
+    private let attachmentStorageService = ApplicationAttachmentStorageService()
 
     @State private var actionError: String?
     @State private var expandedSnapshotIDs: Set<UUID> = []
@@ -2128,6 +3640,12 @@ struct ResumeJobSnapshotHistoryView: View {
                 }
                 .buttonStyle(.bordered)
 
+                Button("Use as Submitted Resume") {
+                    Task { await useSnapshotAsSubmittedResume(snapshot) }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DesignSystem.Colors.accent)
+
                 Spacer()
 
                 Button("Delete", role: .destructive) {
@@ -2170,6 +3688,27 @@ struct ResumeJobSnapshotHistoryView: View {
             pdfDocument = try await ResumePDFExportService.makeDocument(json: snapshot.rawJSON)
             exportFormat = .pdf
             isExportingFile = true
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func useSnapshotAsSubmittedResume(_ snapshot: ResumeJobSnapshot) async {
+        do {
+            let document = try await ResumePDFExportService.makeDocument(json: snapshot.rawJSON)
+            let filename = "\(ResumeExportFilename.make(companyName: application.companyName)).pdf"
+            _ = try attachmentStorageService.createManagedFileAttachment(
+                data: document.data,
+                preferredFilename: filename,
+                title: "Submitted Resume",
+                contentType: UTType.pdf.identifier,
+                category: .resume,
+                tags: [],
+                isSubmittedResume: true,
+                for: application,
+                in: modelContext
+            )
         } catch {
             actionError = error.localizedDescription
         }
@@ -2302,6 +3841,317 @@ struct ResumeJobSnapshotHistoryView: View {
             return Color.clear
         }
     }
+}
+
+private struct AttachmentEditorState: Identifiable {
+    let id: UUID
+    let attachment: ApplicationAttachment?
+    let kind: ApplicationAttachmentKind
+    var title: String
+    var category: ApplicationAttachmentCategory
+    var tagsText: String
+    var description: String
+    var urlString: String
+    var noteBody: String
+    var isSubmittedResume: Bool
+
+    static func newLink() -> AttachmentEditorState {
+        AttachmentEditorState(
+            id: UUID(),
+            attachment: nil,
+            kind: .link,
+            title: "",
+            category: .link,
+            tagsText: "",
+            description: "",
+            urlString: "",
+            noteBody: "",
+            isSubmittedResume: false
+        )
+    }
+
+    static func newNote() -> AttachmentEditorState {
+        AttachmentEditorState(
+            id: UUID(),
+            attachment: nil,
+            kind: .note,
+            title: "",
+            category: .note,
+            tagsText: "",
+            description: "",
+            urlString: "",
+            noteBody: "",
+            isSubmittedResume: false
+        )
+    }
+
+    static func edit(_ attachment: ApplicationAttachment) -> AttachmentEditorState {
+        AttachmentEditorState(
+            id: attachment.id,
+            attachment: attachment,
+            kind: attachment.kind,
+            title: attachment.resolvedTitle,
+            category: attachment.category,
+            tagsText: attachment.tags.joined(separator: ", "),
+            description: attachment.attachmentDescription ?? "",
+            urlString: attachment.externalURL ?? "",
+            noteBody: attachment.noteBody ?? "",
+            isSubmittedResume: attachment.isSubmittedResume
+        )
+    }
+}
+
+private struct AttachmentPreviewItem: Identifiable {
+    let id: UUID
+    let title: String
+    let url: URL
+    let contentType: String?
+}
+
+private struct AttachmentEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let state: AttachmentEditorState
+    let onSave: (AttachmentEditorState) -> Void
+
+    @State private var draft: AttachmentEditorState
+
+    init(
+        state: AttachmentEditorState,
+        onSave: @escaping (AttachmentEditorState) -> Void
+    ) {
+        self.state = state
+        self.onSave = onSave
+        _draft = State(initialValue: state)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Details") {
+                    TextField("Title", text: $draft.title)
+
+                    Picker("Category", selection: $draft.category) {
+                        ForEach(ApplicationAttachmentCategory.allCases) { category in
+                            Text(category.displayName).tag(category)
+                        }
+                    }
+
+                    TextField("Tags", text: $draft.tagsText, prompt: Text("Comma separated"))
+                    TextField("Description", text: $draft.description, axis: .vertical)
+                }
+
+                switch draft.kind {
+                case .link:
+                    Section("Link") {
+                        TextField("https://example.com", text: $draft.urlString)
+                            #if os(iOS)
+                            .keyboardType(.URL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            #endif
+                    }
+                case .note:
+                    Section("Note") {
+                        TextField("Body", text: $draft.noteBody, axis: .vertical)
+                            .lineLimit(6...12)
+                    }
+                case .file:
+                    if draft.category == .resume {
+                        Section("Resume") {
+                            Toggle("Mark as submitted resume", isOn: $draft.isSubmittedResume)
+                        }
+                    }
+                }
+            }
+            .navigationTitle(editorTitle)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        onSave(draft)
+                        dismiss()
+                    }
+                    .disabled(!canSave)
+                }
+            }
+        }
+    }
+
+    private var editorTitle: String {
+        if state.attachment != nil {
+            return "Edit Attachment"
+        }
+
+        switch state.kind {
+        case .file:
+            return "Edit File"
+        case .link:
+            return "New Link"
+        case .note:
+            return "New Note"
+        }
+    }
+
+    private var canSave: Bool {
+        switch draft.kind {
+        case .link:
+            return !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                !draft.urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .note:
+            return !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                !draft.noteBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .file:
+            return !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+}
+
+private struct AttachmentPreviewSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let item: AttachmentPreviewItem
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if isPDF {
+                    AttachmentPDFPreview(url: item.url)
+                } else {
+                    AttachmentImagePreview(url: item.url)
+                }
+            }
+            .navigationTitle(item.title)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var isPDF: Bool {
+        if let contentType = item.contentType,
+           let type = UTType(contentType) {
+            return type.conforms(to: .pdf)
+        }
+        return item.url.pathExtension.lowercased() == "pdf"
+    }
+}
+
+#if canImport(PDFKit)
+private struct AttachmentPDFPreview: View {
+    let url: URL
+
+    var body: some View {
+        PDFKitContainer(url: url)
+            .background(Color.secondary.opacity(0.06))
+    }
+}
+
+#if os(macOS)
+private struct PDFKitContainer: NSViewRepresentable {
+    let url: URL
+
+    func makeNSView(context: Context) -> PDFView {
+        let view = PDFView()
+        view.autoScales = true
+        view.document = PDFDocument(url: url)
+        return view
+    }
+
+    func updateNSView(_ nsView: PDFView, context: Context) {
+        if nsView.document?.documentURL != url {
+            nsView.document = PDFDocument(url: url)
+        }
+    }
+}
+#elseif os(iOS)
+private struct PDFKitContainer: UIViewRepresentable {
+    let url: URL
+
+    func makeUIView(context: Context) -> PDFView {
+        let view = PDFView()
+        view.autoScales = true
+        view.document = PDFDocument(url: url)
+        return view
+    }
+
+    func updateUIView(_ uiView: PDFView, context: Context) {
+        if uiView.document?.documentURL != url {
+            uiView.document = PDFDocument(url: url)
+        }
+    }
+}
+#endif
+#endif
+
+private struct AttachmentImagePreview: View {
+    let url: URL
+
+    var body: some View {
+        Group {
+            if let platformImage = AttachmentPlatformImage.load(from: url) {
+                ScrollView([.horizontal, .vertical]) {
+                    AttachmentPlatformImageView(image: platformImage)
+                        .scaledToFit()
+                        .padding()
+                }
+            } else {
+                ContentUnavailableView(
+                    "Preview Unavailable",
+                    systemImage: "photo",
+                    description: Text("Pipeline could not load this image.")
+                )
+            }
+        }
+        .background(Color.secondary.opacity(0.06))
+    }
+}
+
+#if os(macOS)
+private typealias AttachmentPlatformImage = NSImage
+
+private struct AttachmentPlatformImageView: View {
+    let image: NSImage
+
+    var body: some View {
+        Image(nsImage: image)
+            .resizable()
+    }
+}
+
+private extension NSImage {
+    static func load(from url: URL) -> NSImage? {
+        NSImage(contentsOf: url)
+    }
+}
+#elseif os(iOS)
+private typealias AttachmentPlatformImage = UIImage
+
+private struct AttachmentPlatformImageView: View {
+    let image: UIImage
+
+    var body: some View {
+        Image(uiImage: image)
+            .resizable()
+    }
+}
+
+private extension UIImage {
+    static func load(from url: URL) -> UIImage? {
+        UIImage(contentsOfFile: url.path)
+    }
+}
+#endif
+
+private func attachmentTags(from text: String) -> [String] {
+    ApplicationAttachment.normalizedTags(
+        text.split(separator: ",").map { String($0) }
+    )
 }
 
 #if os(macOS)

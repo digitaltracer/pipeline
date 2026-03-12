@@ -9,6 +9,7 @@ public final class JobApplication {
     public var location: String = ""
     public var jobURL: String?
     public var jobDescription: String?
+    public var overviewMarkdown: String?
 
     public private(set) var statusRawValue: String = ApplicationStatus.saved.rawValue
     public private(set) var priorityRawValue: String = Priority.medium.rawValue
@@ -19,14 +20,51 @@ public final class JobApplication {
 
     public private(set) var salaryMin: Int?
     public private(set) var salaryMax: Int?
+    public private(set) var postedBonusCompensation: Int?
+    public private(set) var postedEquityCompensation: Int?
+    public private(set) var expectedSalaryMin: Int?
+    public private(set) var expectedSalaryMax: Int?
+    public private(set) var expectedBonusCompensation: Int?
+    public private(set) var expectedEquityCompensation: Int?
+    public private(set) var offerBaseCompensation: Int?
+    public private(set) var offerBonusCompensation: Int?
+    public private(set) var offerEquityCompensation: Int?
     public var appliedDate: Date?
     public var nextFollowUpDate: Date?
+    public var dismissedChecklistTemplateIDs: [String] = []
+
+    public var cycle: JobSearchCycle?
+    public var company: CompanyProfile?
 
     @Relationship(deleteRule: .cascade, inverse: \InterviewLog.application)
     public var interviewLogs: [InterviewLog]?
 
+    @Relationship(deleteRule: .cascade, inverse: \ApplicationContactLink.application)
+    public var contactLinks: [ApplicationContactLink]?
+
+    @Relationship(deleteRule: .cascade, inverse: \ApplicationActivity.application)
+    public var activities: [ApplicationActivity]?
+
+    @Relationship(deleteRule: .cascade, inverse: \ApplicationTask.application)
+    public var tasks: [ApplicationTask]?
+
+    @Relationship(deleteRule: .cascade, inverse: \ApplicationChecklistSuggestion.application)
+    public var checklistSuggestions: [ApplicationChecklistSuggestion]?
+
     @Relationship(deleteRule: .cascade, inverse: \ResumeJobSnapshot.application)
     public var resumeSnapshots: [ResumeJobSnapshot]?
+
+    @Relationship(deleteRule: .cascade, inverse: \CoverLetterDraft.application)
+    public var coverLetterDraft: CoverLetterDraft?
+
+    @Relationship(deleteRule: .cascade, inverse: \JobMatchAssessment.application)
+    public var matchAssessment: JobMatchAssessment?
+
+    @Relationship(deleteRule: .cascade, inverse: \ATSCompatibilityAssessment.application)
+    public var atsAssessment: ATSCompatibilityAssessment?
+
+    @Relationship(deleteRule: .cascade, inverse: \ApplicationAttachment.application)
+    public var attachments: [ApplicationAttachment]?
 
     public var createdAt: Date = Date()
     public var updatedAt: Date = Date()
@@ -35,22 +73,38 @@ public final class JobApplication {
 
     public var status: ApplicationStatus {
         get { ApplicationStatus(rawValue: statusRawValue) }
-        set { statusRawValue = newValue.rawValue }
+        set {
+            guard statusRawValue != newValue.rawValue else { return }
+            statusRawValue = newValue.rawValue
+            updateTimestamp()
+        }
     }
 
     public var priority: Priority {
         get { Priority(rawValue: priorityRawValue) ?? .medium }
-        set { priorityRawValue = newValue.rawValue }
+        set {
+            guard priorityRawValue != newValue.rawValue else { return }
+            priorityRawValue = newValue.rawValue
+            updateTimestamp()
+        }
     }
 
     public var source: Source {
         get { Source(rawValue: sourceRawValue) }
-        set { sourceRawValue = newValue.rawValue }
+        set {
+            guard sourceRawValue != newValue.rawValue else { return }
+            sourceRawValue = newValue.rawValue
+            updateTimestamp()
+        }
     }
 
     public var platform: Platform {
         get { Platform(rawValue: platformRawValue) ?? .other }
-        set { platformRawValue = newValue.rawValue }
+        set {
+            guard platformRawValue != newValue.rawValue else { return }
+            platformRawValue = newValue.rawValue
+            updateTimestamp()
+        }
     }
 
     public var interviewStage: InterviewStage? {
@@ -60,12 +114,21 @@ public final class JobApplication {
             else { return nil }
             return InterviewStage(rawValue: rawValue)
         }
-        set { interviewStageRawValue = newValue?.rawValue }
+        set {
+            let newRawValue = newValue?.rawValue
+            guard interviewStageRawValue != newRawValue else { return }
+            interviewStageRawValue = newRawValue
+            updateTimestamp()
+        }
     }
 
     public var currency: Currency {
         get { Currency(rawValue: currencyRawValue) ?? .usd }
-        set { currencyRawValue = newValue.rawValue }
+        set {
+            guard currencyRawValue != newValue.rawValue else { return }
+            currencyRawValue = newValue.rawValue
+            updateTimestamp()
+        }
     }
 
     // MARK: - Computed Properties
@@ -74,15 +137,203 @@ public final class JobApplication {
         currency.formatRange(min: salaryMin, max: salaryMax)
     }
 
+    public var expectedSalaryRange: String? {
+        currency.formatRange(min: expectedSalaryMin, max: expectedSalaryMax)
+    }
+
+    public var postedTotalCompRange: String? {
+        currency.formatRange(min: postedTotalCompMin, max: postedTotalCompMax)
+    }
+
+    public var expectedTotalCompRange: String? {
+        currency.formatRange(min: expectedTotalCompMin, max: expectedTotalCompMax)
+    }
+
+    public var offerTotalCompText: String? {
+        guard let total = offerTotalComp else { return nil }
+        return currency.format(total)
+    }
+
+    public var postedTotalCompMin: Int? {
+        totalCompensation(base: salaryMin, bonus: postedBonusCompensation, equity: postedEquityCompensation)
+    }
+
+    public var postedTotalCompMax: Int? {
+        totalCompensation(base: salaryMax, bonus: postedBonusCompensation, equity: postedEquityCompensation)
+    }
+
+    public var expectedTotalCompMin: Int? {
+        totalCompensation(base: expectedSalaryMin, bonus: expectedBonusCompensation, equity: expectedEquityCompensation)
+    }
+
+    public var expectedTotalCompMax: Int? {
+        totalCompensation(base: expectedSalaryMax, bonus: expectedBonusCompensation, equity: expectedEquityCompensation)
+    }
+
+    public var offerTotalComp: Int? {
+        totalCompensation(base: offerBaseCompensation, bonus: offerBonusCompensation, equity: offerEquityCompensation)
+    }
+
+    public var hasExpectedCompensation: Bool {
+        expectedSalaryMin != nil ||
+        expectedSalaryMax != nil ||
+        expectedBonusCompensation != nil ||
+        expectedEquityCompensation != nil
+    }
+
+    public var hasOfferCompensation: Bool {
+        offerBaseCompensation != nil ||
+        offerBonusCompensation != nil ||
+        offerEquityCompensation != nil
+    }
+
+    public var submittedAt: Date? {
+        if let appliedDate {
+            return appliedDate
+        }
+
+        if status.sortOrder >= ApplicationStatus.applied.sortOrder {
+            return updatedAt
+        }
+
+        return nil
+    }
+
     public var sortedInterviewLogs: [InterviewLog] {
         (interviewLogs ?? []).sorted { $0.date > $1.date }
+    }
+
+    public var sortedContactLinks: [ApplicationContactLink] {
+        (contactLinks ?? []).sorted { lhs, rhs in
+            if lhs.isPrimary != rhs.isPrimary {
+                return lhs.isPrimary && !rhs.isPrimary
+            }
+
+            if lhs.role != rhs.role {
+                return lhs.role.displayName.localizedCaseInsensitiveCompare(rhs.role.displayName) == .orderedAscending
+            }
+
+            let lhsName = lhs.contact?.fullName ?? ""
+            let rhsName = rhs.contact?.fullName ?? ""
+            return lhsName.localizedCaseInsensitiveCompare(rhsName) == .orderedAscending
+        }
+    }
+
+    public var sortedActivities: [ApplicationActivity] {
+        (activities ?? []).sorted { lhs, rhs in
+            if lhs.occurredAt != rhs.occurredAt {
+                return lhs.occurredAt > rhs.occurredAt
+            }
+
+            if lhs.createdAt != rhs.createdAt {
+                return lhs.createdAt > rhs.createdAt
+            }
+
+            return lhs.id.uuidString > rhs.id.uuidString
+        }
+    }
+
+    public var sortedInterviewActivities: [ApplicationActivity] {
+        sortedActivities.filter { $0.kind == .interview }
+    }
+
+    public var pendingInterviewDebriefs: [ApplicationActivity] {
+        sortedInterviewActivities.filter(\.needsDebrief)
+    }
+
+    public var sortedTasks: [ApplicationTask] {
+        (tasks ?? []).sorted { lhs, rhs in
+            if lhs.isCompleted != rhs.isCompleted {
+                return !lhs.isCompleted && rhs.isCompleted
+            }
+
+            switch (lhs.dueDate, rhs.dueDate) {
+            case let (lhsDate?, rhsDate?):
+                if lhsDate != rhsDate {
+                    return lhsDate < rhsDate
+                }
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            case (nil, nil):
+                break
+            }
+
+            if lhs.priority.sortOrder != rhs.priority.sortOrder {
+                return lhs.priority.sortOrder < rhs.priority.sortOrder
+            }
+
+            if lhs.createdAt != rhs.createdAt {
+                return lhs.createdAt > rhs.createdAt
+            }
+
+            return lhs.id.uuidString > rhs.id.uuidString
+        }
+    }
+
+    public var sortedChecklistTasks: [ApplicationTask] {
+        sortedTasks.filter(\.isSmartChecklistItem)
+    }
+
+    public var sortedManualTasks: [ApplicationTask] {
+        sortedTasks.filter { !$0.isSmartChecklistItem }
+    }
+
+    public var sortedChecklistSuggestions: [ApplicationChecklistSuggestion] {
+        (checklistSuggestions ?? []).sorted { lhs, rhs in
+            if lhs.status != rhs.status {
+                return lhs.status.sortOrder < rhs.status.sortOrder
+            }
+
+            if lhs.updatedAt != rhs.updatedAt {
+                return lhs.updatedAt > rhs.updatedAt
+            }
+
+            return lhs.createdAt > rhs.createdAt
+        }
+    }
+
+    public var pendingChecklistSuggestions: [ApplicationChecklistSuggestion] {
+        sortedChecklistSuggestions.filter { $0.status == .pending }
+    }
+
+    public var primaryContactLink: ApplicationContactLink? {
+        sortedContactLinks.first(where: \.isPrimary)
     }
 
     public var sortedResumeSnapshots: [ResumeJobSnapshot] {
         (resumeSnapshots ?? []).sorted { $0.createdAt > $1.createdAt }
     }
 
+    public var sortedAttachments: [ApplicationAttachment] {
+        (attachments ?? []).sorted { lhs, rhs in
+            if lhs.category != rhs.category {
+                return lhs.category.displayName.localizedCaseInsensitiveCompare(rhs.category.displayName) == .orderedAscending
+            }
+
+            if lhs.isSubmittedResume != rhs.isSubmittedResume {
+                return lhs.isSubmittedResume && !rhs.isSubmittedResume
+            }
+
+            if lhs.createdAt != rhs.createdAt {
+                return lhs.createdAt > rhs.createdAt
+            }
+
+            return lhs.resolvedTitle.localizedCaseInsensitiveCompare(rhs.resolvedTitle) == .orderedAscending
+        }
+    }
+
+    public var submittedResumeAttachment: ApplicationAttachment? {
+        sortedAttachments.first(where: \.isSubmittedResume)
+    }
+
     public var companyDomain: String? {
+        if let websiteURL = company?.websiteURL,
+           let domain = URLHelpers.extractDomain(from: websiteURL) {
+            return domain
+        }
+
         let cleaned = companyName.lowercased()
             .replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: ",", with: "")
@@ -114,6 +365,7 @@ public final class JobApplication {
         location: String,
         jobURL: String? = nil,
         jobDescription: String? = nil,
+        overviewMarkdown: String? = nil,
         status: ApplicationStatus = .saved,
         priority: Priority = .medium,
         source: Source = .jobPortal,
@@ -122,10 +374,30 @@ public final class JobApplication {
         currency: Currency = .usd,
         salaryMin: Int? = nil,
         salaryMax: Int? = nil,
+        postedBonusCompensation: Int? = nil,
+        postedEquityCompensation: Int? = nil,
+        expectedSalaryMin: Int? = nil,
+        expectedSalaryMax: Int? = nil,
+        expectedBonusCompensation: Int? = nil,
+        expectedEquityCompensation: Int? = nil,
+        offerBaseCompensation: Int? = nil,
+        offerBonusCompensation: Int? = nil,
+        offerEquityCompensation: Int? = nil,
         appliedDate: Date? = nil,
         nextFollowUpDate: Date? = nil,
+        dismissedChecklistTemplateIDs: [String] = [],
+        cycle: JobSearchCycle? = nil,
+        company: CompanyProfile? = nil,
         interviewLogs: [InterviewLog]? = nil,
+        contactLinks: [ApplicationContactLink]? = nil,
+        activities: [ApplicationActivity]? = nil,
+        tasks: [ApplicationTask]? = nil,
+        checklistSuggestions: [ApplicationChecklistSuggestion]? = nil,
         resumeSnapshots: [ResumeJobSnapshot]? = nil,
+        coverLetterDraft: CoverLetterDraft? = nil,
+        matchAssessment: JobMatchAssessment? = nil,
+        atsAssessment: ATSCompatibilityAssessment? = nil,
+        attachments: [ApplicationAttachment]? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -135,17 +407,41 @@ public final class JobApplication {
         self.location = location
         self.jobURL = jobURL
         self.jobDescription = jobDescription
+        self.overviewMarkdown = overviewMarkdown
         self.statusRawValue = status.rawValue
         self.priorityRawValue = priority.rawValue
         self.sourceRawValue = source.rawValue
         self.platformRawValue = platform.rawValue
         self.interviewStageRawValue = interviewStage?.rawValue
         self.currencyRawValue = currency.rawValue
-        setSalaryRange(min: salaryMin, max: salaryMax)
+        self.salaryMin = nil
+        self.salaryMax = nil
+        self.postedBonusCompensation = postedBonusCompensation
+        self.postedEquityCompensation = postedEquityCompensation
+        self.expectedSalaryMin = nil
+        self.expectedSalaryMax = nil
+        self.expectedBonusCompensation = expectedBonusCompensation
+        self.expectedEquityCompensation = expectedEquityCompensation
+        self.offerBaseCompensation = offerBaseCompensation
+        self.offerBonusCompensation = offerBonusCompensation
+        self.offerEquityCompensation = offerEquityCompensation
+        setSalaryRange(min: salaryMin, max: salaryMax, shouldTouch: false)
+        setExpectedSalaryRange(min: expectedSalaryMin, max: expectedSalaryMax, shouldTouch: false)
         self.appliedDate = appliedDate
         self.nextFollowUpDate = nextFollowUpDate
+        self.dismissedChecklistTemplateIDs = dismissedChecklistTemplateIDs
+        self.cycle = cycle
+        self.company = company
         self.interviewLogs = interviewLogs
+        self.contactLinks = contactLinks
+        self.activities = activities
+        self.tasks = tasks
+        self.checklistSuggestions = checklistSuggestions
         self.resumeSnapshots = resumeSnapshots
+        self.coverLetterDraft = coverLetterDraft
+        self.matchAssessment = matchAssessment
+        self.atsAssessment = atsAssessment
+        self.attachments = attachments
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -156,6 +452,20 @@ public final class JobApplication {
         updatedAt = Date()
     }
 
+    public func assignCycle(_ cycle: JobSearchCycle?) {
+        guard self.cycle?.id != cycle?.id else { return }
+        self.cycle = cycle
+        updateTimestamp()
+        cycle?.updateTimestamp()
+    }
+
+    public func assignCompany(_ company: CompanyProfile?) {
+        guard self.company?.id != company?.id else { return }
+        self.company = company
+        updateTimestamp()
+        company?.updateTimestamp()
+    }
+
     public func addInterviewLog(_ log: InterviewLog) {
         if interviewLogs == nil {
             interviewLogs = []
@@ -164,10 +474,63 @@ public final class JobApplication {
         updateTimestamp()
     }
 
-    public func setSalaryRange(min: Int?, max: Int?) {
+    public func addContactLink(_ link: ApplicationContactLink) {
+        if contactLinks == nil {
+            contactLinks = []
+        }
+        contactLinks?.append(link)
+        updateTimestamp()
+    }
+
+    public func addActivity(_ activity: ApplicationActivity) {
+        if activities == nil {
+            activities = []
+        }
+        activities?.append(activity)
+        updateTimestamp()
+    }
+
+    public func addTask(_ task: ApplicationTask) {
+        if tasks == nil {
+            tasks = []
+        }
+        tasks?.append(task)
+        updateTimestamp()
+    }
+
+    public func addChecklistSuggestion(_ suggestion: ApplicationChecklistSuggestion) {
+        if checklistSuggestions == nil {
+            checklistSuggestions = []
+        }
+        checklistSuggestions?.append(suggestion)
+        updateTimestamp()
+    }
+
+    public func dismissChecklistTemplate(id: String) {
+        let normalized = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return }
+        guard !dismissedChecklistTemplateIDs.contains(normalized) else { return }
+        dismissedChecklistTemplateIDs.append(normalized)
+        updateTimestamp()
+    }
+
+    public func restoreDismissedChecklistTemplate(id: String) {
+        let normalized = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return }
+        let previousCount = dismissedChecklistTemplateIDs.count
+        dismissedChecklistTemplateIDs.removeAll(where: { $0 == normalized })
+        if dismissedChecklistTemplateIDs.count != previousCount {
+            updateTimestamp()
+        }
+    }
+
+    public func setSalaryRange(min: Int?, max: Int?, shouldTouch: Bool = true) {
         guard let min, let max else {
             salaryMin = min
             salaryMax = max
+            if shouldTouch {
+                updateTimestamp()
+            }
             return
         }
 
@@ -178,5 +541,101 @@ public final class JobApplication {
             salaryMin = max
             salaryMax = min
         }
+
+        if shouldTouch {
+            updateTimestamp()
+        }
+    }
+
+    public func setPostedAdditionalCompensation(
+        bonus: Int?,
+        equity: Int?,
+        shouldTouch: Bool = true
+    ) {
+        postedBonusCompensation = bonus
+        postedEquityCompensation = equity
+        if shouldTouch {
+            updateTimestamp()
+        }
+    }
+
+    public func setExpectedSalaryRange(min: Int?, max: Int?, shouldTouch: Bool = true) {
+        guard let min, let max else {
+            expectedSalaryMin = min
+            expectedSalaryMax = max
+            if shouldTouch {
+                updateTimestamp()
+            }
+            return
+        }
+
+        if min <= max {
+            expectedSalaryMin = min
+            expectedSalaryMax = max
+        } else {
+            expectedSalaryMin = max
+            expectedSalaryMax = min
+        }
+
+        if shouldTouch {
+            updateTimestamp()
+        }
+    }
+
+    public func setExpectedAdditionalCompensation(
+        bonus: Int?,
+        equity: Int?,
+        shouldTouch: Bool = true
+    ) {
+        expectedBonusCompensation = bonus
+        expectedEquityCompensation = equity
+        if shouldTouch {
+            updateTimestamp()
+        }
+    }
+
+    public func setOfferCompensation(
+        base: Int?,
+        bonus: Int?,
+        equity: Int?,
+        shouldTouch: Bool = true
+    ) {
+        offerBaseCompensation = base
+        offerBonusCompensation = bonus
+        offerEquityCompensation = equity
+        if shouldTouch {
+            updateTimestamp()
+        }
+    }
+
+    public func addAttachment(_ attachment: ApplicationAttachment) {
+        if attachments == nil {
+            attachments = []
+        }
+        attachments?.append(attachment)
+        updateTimestamp()
+    }
+
+    public func assignCoverLetterDraft(_ draft: CoverLetterDraft?) {
+        guard coverLetterDraft?.id != draft?.id else { return }
+        coverLetterDraft = draft
+        updateTimestamp()
+    }
+
+    public func assignMatchAssessment(_ assessment: JobMatchAssessment?) {
+        guard matchAssessment?.id != assessment?.id else { return }
+        matchAssessment = assessment
+        updateTimestamp()
+    }
+
+    public func assignATSAssessment(_ assessment: ATSCompatibilityAssessment?) {
+        guard atsAssessment?.id != assessment?.id else { return }
+        atsAssessment = assessment
+        updateTimestamp()
+    }
+
+    private func totalCompensation(base: Int?, bonus: Int?, equity: Int?) -> Int? {
+        guard base != nil || bonus != nil || equity != nil else { return nil }
+        return (base ?? 0) + (bonus ?? 0) + (equity ?? 0)
     }
 }

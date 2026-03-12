@@ -112,6 +112,50 @@ struct InterviewPrepView: View {
     private func resultView(_ result: InterviewPrepResult) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                if !viewModel.personalQuestionHighlights.isEmpty || !viewModel.personalHistorySignals.isEmpty {
+                    sectionView(
+                        title: "From Your History",
+                        icon: "clock.arrow.trianglehead.counterclockwise.rotate.90",
+                        color: .orange
+                    ) {
+                        VStack(alignment: .leading, spacing: 14) {
+                            if !viewModel.personalHistorySignals.isEmpty {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Strengths & Gaps")
+                                        .font(.subheadline.weight(.semibold))
+
+                                    ForEach(viewModel.personalHistorySignals, id: \.self) { signal in
+                                        HStack(alignment: .top, spacing: 8) {
+                                            Image(systemName: "sparkles")
+                                                .foregroundColor(.orange)
+                                                .padding(.top, 2)
+                                            Text(signal)
+                                                .font(.subheadline)
+                                        }
+                                    }
+                                }
+                            }
+
+                            if !viewModel.personalQuestionHighlights.isEmpty {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Boosted Personal Questions")
+                                        .font(.subheadline.weight(.semibold))
+
+                                    ForEach(Array(viewModel.personalQuestionHighlights.enumerated()), id: \.offset) { _, question in
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(question.question)
+                                                .font(.subheadline)
+                                            Text("\(question.companyName) • \(question.role)")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Likely Questions
                 if !result.likelyQuestions.isEmpty {
                     sectionView(

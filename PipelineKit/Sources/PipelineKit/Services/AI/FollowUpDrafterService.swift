@@ -5,10 +5,12 @@ import Foundation
 public struct FollowUpEmailResult: Sendable {
     public let subject: String
     public let body: String
+    public let usage: AIUsageMetrics?
 
-    public init(subject: String, body: String) {
+    public init(subject: String, body: String, usage: AIUsageMetrics? = nil) {
         self.subject = subject
         self.body = body
+        self.usage = usage
     }
 }
 
@@ -58,7 +60,7 @@ public enum FollowUpDrafterService {
 
         let userPrompt = "Draft a follow-up email for this job application:\n\n\(userContext)"
 
-        let rawResponse = try await AICompletionClient.complete(
+        let response = try await AICompletionClient.completeWithUsage(
             provider: provider,
             apiKey: apiKey,
             model: model,
@@ -66,12 +68,12 @@ public enum FollowUpDrafterService {
             userPrompt: userPrompt
         )
 
-        return try parseResponse(rawResponse)
+        return try parseResponse(response.text, usage: response.usage)
     }
 
     // MARK: - Parsing
 
-    private static func parseResponse(_ rawJSON: String) throws -> FollowUpEmailResult {
+    private static func parseResponse(_ rawJSON: String, usage: AIUsageMetrics?) throws -> FollowUpEmailResult {
         let cleaned = stripMarkdownFences(from: rawJSON)
 
         guard let data = cleaned.data(using: .utf8),
@@ -79,15 +81,15 @@ public enum FollowUpDrafterService {
             if let extracted = extractJSONObject(from: cleaned),
                let data = extracted.data(using: .utf8),
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                return buildResult(from: json)
+                return buildResult(from: json, usage: usage)
             }
             throw AIServiceError.parsingError("Follow-up email response was not valid JSON.")
         }
 
-        return buildResult(from: json)
+        return buildResult(from: json, usage: usage)
     }
 
-    private static func buildResult(from json: [String: Any]) -> FollowUpEmailResult {
+    private static func buildResult(from json: [String: Any], usage: AIUsageMetrics?) -> FollowUpEmailResult {
         let subject = (json["subject"] as? String)
             ?? (json["email_subject"] as? String)
             ?? "Following Up on \(json["role"] as? String ?? "Application")"
@@ -97,7 +99,7 @@ public enum FollowUpDrafterService {
             ?? (json["content"] as? String)
             ?? ""
 
-        return FollowUpEmailResult(subject: subject, body: body)
+        return FollowUpEmailResult(subject: subject, body: body, usage: usage)
     }
 
     private static func stripMarkdownFences(from text: String) -> String {

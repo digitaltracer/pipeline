@@ -4,6 +4,8 @@ import PipelineKit
 struct JobCardView: View {
     let application: JobApplication
     var isSelected: Bool = false
+    let currentResumeRevisionID: UUID?
+    let matchPreferences: JobMatchPreferences
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -36,9 +38,15 @@ struct JobCardView: View {
                         .lineLimit(1)
                 }
 
-                Spacer()
+                VStack(alignment: .trailing, spacing: 8) {
+                    PriorityFlag(priority: application.priority, showLabel: false, size: 14)
 
-                PriorityFlag(priority: application.priority, showLabel: false, size: 14)
+                    JobMatchBadge(
+                        application: application,
+                        currentResumeRevisionID: currentResumeRevisionID,
+                        matchPreferences: matchPreferences
+                    )
+                }
             }
 
             // Location & Platform
@@ -124,7 +132,9 @@ struct JobCardView: View {
                 salaryMax: 250000,
                 nextFollowUpDate: Date().addingTimeInterval(86400 * 2)
             ),
-            isSelected: true
+            isSelected: true,
+            currentResumeRevisionID: nil,
+            matchPreferences: JobMatchPreferences()
         )
 
         JobCardView(
@@ -138,7 +148,9 @@ struct JobCardView: View {
                 currency: .usd,
                 salaryMin: 200000,
                 salaryMax: 300000
-            )
+            ),
+            currentResumeRevisionID: nil,
+            matchPreferences: JobMatchPreferences()
         )
     }
     .padding()

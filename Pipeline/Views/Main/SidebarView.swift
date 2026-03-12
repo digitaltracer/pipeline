@@ -5,26 +5,24 @@ import PipelineKit
 import AppKit
 
 struct SidebarView: View {
-    @Binding var selectedFilter: SidebarFilter
+    @Binding var selectedDestination: MainDestination
     @Binding var showingAddApplication: Bool
+    @Binding var showingAddContact: Bool
     @Binding var showingSettings: Bool
-    @Binding var showingDashboard: Bool
-    @Binding var showingResume: Bool
     let statusCounts: [SidebarFilter: Int]
+    let upcomingCount: Int
     @Bindable var settingsViewModel: SettingsViewModel
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 0) {
-            // App Header
             HStack(spacing: 12) {
-                // Blue briefcase icon in rounded square
                 ZStack {
                     RoundedRectangle(cornerRadius: 10)
                         .fill(DesignSystem.Colors.accent)
                         .frame(width: 44, height: 44)
 
-                    Image(systemName: "building.2.fill")
+                    Image(systemName: selectedDestination == .contacts ? "person.2.fill" : "building.2.fill")
                         .font(.system(size: 22))
                         .foregroundColor(.white)
                 }
@@ -34,7 +32,7 @@ struct SidebarView: View {
                         .font(.title2)
                         .fontWeight(.bold)
 
-                    Text("Track your applications")
+                    Text(selectedDestination == .contacts ? "Manage your people" : "Track your applications")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -43,14 +41,18 @@ struct SidebarView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 20)
 
-            // New Application Button
             Button {
-                showingAddApplication = true
+                switch selectedDestination {
+                case .contacts:
+                    showingAddContact = true
+                default:
+                    showingAddApplication = true
+                }
             } label: {
                 HStack {
-                    Image(systemName: "plus")
+                    Image(systemName: selectedDestination == .contacts ? "person.badge.plus" : "plus")
                         .font(.system(size: 14, weight: .semibold))
-                    Text("New Application")
+                    Text(selectedDestination == .contacts ? "New Contact" : "New Application")
                         .font(.system(size: 14, weight: .semibold))
                 }
                 .frame(maxWidth: .infinity)
@@ -63,47 +65,46 @@ struct SidebarView: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 16)
 
-            // Filter List
             List {
                 Section {
-                    // Dashboard item
-                    Button {
-                        showingDashboard = true
-                        showingResume = false
-                    } label: {
-                        HStack {
-                            Image(systemName: "chart.bar.xaxis")
-                                .foregroundColor(showingDashboard ? .white : .indigo)
-                                .frame(width: 20)
-
-                            Text("Dashboard")
-                                .foregroundColor(showingDashboard ? .white : .primary)
-
-                            Spacer()
-                        }
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(showingDashboard ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.85 : 1.0) : Color.clear)
-                        )
-                        .contentShape(Rectangle())
+                    destinationButton(
+                        title: "Dashboard",
+                        icon: "chart.bar.xaxis",
+                        isSelected: selectedDestination == .dashboard,
+                        accentColor: .indigo
+                    ) {
+                        selectedDestination = .dashboard
                     }
-                    .buttonStyle(.plain)
-                    .sidebarHandCursor()
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
 
+                    destinationButton(
+                        title: "Weekly Digest",
+                        icon: "chart.line.text.clipboard",
+                        isSelected: selectedDestination == .weeklyDigest,
+                        accentColor: .blue
+                    ) {
+                        selectedDestination = .weeklyDigest
+                    }
+
+                    destinationButton(
+                        title: "Upcoming",
+                        icon: "calendar.badge.clock",
+                        isSelected: selectedDestination == .upcoming,
+                        accentColor: .orange,
+                        count: upcomingCount
+                    ) {
+                        selectedDestination = .upcoming
+                    }
+                }
+
+                Section {
                     ForEach(SidebarFilter.allCases) { filter in
                         Button {
-                            showingDashboard = false
-                            showingResume = false
-                            selectedFilter = filter
+                            selectedDestination = .applications(filter)
                         } label: {
                             SidebarFilterRow(
                                 filter: filter,
                                 count: statusCounts[filter] ?? 0,
-                                isSelected: !showingDashboard && !showingResume && selectedFilter == filter
+                                isSelected: selectedDestination == .applications(filter)
                             )
                         }
                         .buttonStyle(.plain)
@@ -111,33 +112,6 @@ struct SidebarView: View {
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                     }
-
-                    Button {
-                        showingDashboard = false
-                        showingResume = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "doc.text.fill")
-                                .foregroundColor(showingResume ? .white : .teal)
-                                .frame(width: 20)
-
-                            Text("Resume")
-                                .foregroundColor(showingResume ? .white : .primary)
-
-                            Spacer()
-                        }
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(showingResume ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.85 : 1.0) : Color.clear)
-                        )
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .sidebarHandCursor()
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
                 }
             }
             .listStyle(.sidebar)
@@ -146,30 +120,135 @@ struct SidebarView: View {
             Divider()
                 .padding(.horizontal)
 
-            Button {
-                showingSettings = true
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "gearshape.fill")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(DesignSystem.Colors.accent)
-                        .frame(width: 22, height: 22)
-
-                    Text("Settings")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.primary)
-
-                    Spacer(minLength: 0)
+            VStack(spacing: 4) {
+                destinationUtilityRow(
+                    title: "Contacts",
+                    icon: "person.2",
+                    isSelected: selectedDestination == .contacts,
+                    accentColor: .cyan
+                ) {
+                    selectedDestination = .contacts
                 }
-                .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-                .padding(.horizontal, 16)
+
+                destinationUtilityRow(
+                    title: "Resume",
+                    icon: "doc.text",
+                    isSelected: selectedDestination == .resume,
+                    accentColor: .teal
+                ) {
+                    selectedDestination = .resume
+                }
+
+                destinationUtilityRow(
+                    title: "Cost Center",
+                    icon: "dollarsign.arrow.circlepath",
+                    isSelected: selectedDestination == .costCenter,
+                    accentColor: .mint
+                ) {
+                    selectedDestination = .costCenter
+                }
+
+                Button {
+                    showingSettings = true
+                } label: {
+                    utilityRow(
+                        title: "Settings",
+                        icon: "gearshape",
+                        isSelected: false,
+                        accentColor: .secondary
+                    )
+                }
+                .buttonStyle(.plain)
+                .sidebarHandCursor()
             }
-            .buttonStyle(.plain)
-            .sidebarHandCursor()
             .padding(.horizontal, 16)
-            .padding(.bottom, 16)
+            .padding(.vertical, 12)
         }
         .background(DesignSystem.Colors.sidebarBackground(colorScheme))
+    }
+
+    private func destinationButton(
+        title: String,
+        icon: String,
+        isSelected: Bool,
+        accentColor: Color,
+        count: Int? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            utilityRow(
+                title: title,
+                icon: icon,
+                isSelected: isSelected,
+                accentColor: accentColor,
+                count: count
+            )
+        }
+        .buttonStyle(.plain)
+        .sidebarHandCursor()
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+    }
+
+    private func destinationUtilityRow(
+        title: String,
+        icon: String,
+        isSelected: Bool,
+        accentColor: Color,
+        count: Int? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            utilityRow(
+                title: title,
+                icon: icon,
+                isSelected: isSelected,
+                accentColor: accentColor,
+                count: count
+            )
+        }
+        .buttonStyle(.plain)
+        .sidebarHandCursor()
+    }
+
+    private func utilityRow(
+        title: String,
+        icon: String,
+        isSelected: Bool,
+        accentColor: Color,
+        count: Int? = nil
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(isSelected ? .white : accentColor)
+                .frame(width: 20, height: 20)
+
+            Text(title)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(isSelected ? .white : .primary)
+
+            Spacer(minLength: 0)
+
+            if let count, count > 0 {
+                Text("\(count)")
+                    .font(.system(size: 12, weight: .medium))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule()
+                            .fill(isSelected ? Color.white.opacity(0.18) : DesignSystem.Colors.surfaceElevated(colorScheme))
+                    )
+                    .foregroundColor(isSelected ? .white : .secondary)
+            }
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isSelected ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.85 : 1.0) : Color.clear)
+        )
+        .contentShape(Rectangle())
     }
 }
 
@@ -224,11 +303,10 @@ struct SidebarFilterRow: View {
 
 #Preview {
     SidebarView(
-        selectedFilter: .constant(.all),
+        selectedDestination: .constant(.applications(.all)),
         showingAddApplication: .constant(false),
+        showingAddContact: .constant(false),
         showingSettings: .constant(false),
-        showingDashboard: .constant(false),
-        showingResume: .constant(false),
         statusCounts: [
             .all: 25,
             .saved: 5,
@@ -238,20 +316,19 @@ struct SidebarFilterRow: View {
             .rejected: 3,
             .archived: 1
         ],
+        upcomingCount: 6,
         settingsViewModel: SettingsViewModel()
     )
     .frame(width: 250)
 }
 #else
-// iOS does not use the macOS sidebar layout (it uses a NavigationStack entry point),
-// but the type must exist for the shared target to compile.
 struct SidebarView: View {
-    @Binding var selectedFilter: SidebarFilter
+    @Binding var selectedDestination: MainDestination
     @Binding var showingAddApplication: Bool
+    @Binding var showingAddContact: Bool
     @Binding var showingSettings: Bool
-    @Binding var showingDashboard: Bool
-    @Binding var showingResume: Bool
     let statusCounts: [SidebarFilter: Int]
+    let upcomingCount: Int
     @Bindable var settingsViewModel: SettingsViewModel
 
     var body: some View {

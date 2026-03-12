@@ -11,6 +11,7 @@ private let cloudSyncSupportedInThisBuild = true
 struct PipelineApp: App {
     let modelContainer: ModelContainer
     @State private var settingsViewModel: SettingsViewModel
+    @State private var appLockCoordinator: AppLockCoordinator
 
     init() {
         // Migrate legacy store to App Group container before opening
@@ -49,12 +50,18 @@ struct PipelineApp: App {
             }
 
             self.modelContainer = container
-            _settingsViewModel = State(
-                initialValue: SettingsViewModel(
-                    cloudSyncSupported: cloudSyncSupportedInThisBuild,
-                    cloudSyncEnabledAtLaunch: syncEnabledAtLaunch
-                )
+
+            let migrationContext = ModelContext(container)
+            _ = try? ApplicationTimelineMigrationService.migrateLegacyInterviewLogs(in: migrationContext)
+            _ = try? JobSearchCycleMigrationService.backfillImportedCycleIfNeeded(in: migrationContext)
+            _ = try? CompanyLinkingService.backfillApplicationsIfNeeded(in: migrationContext)
+
+            let settingsViewModel = SettingsViewModel(
+                cloudSyncSupported: cloudSyncSupportedInThisBuild,
+                cloudSyncEnabledAtLaunch: syncEnabledAtLaunch
             )
+            _settingsViewModel = State(initialValue: settingsViewModel)
+            _appLockCoordinator = State(initialValue: AppLockCoordinator(settingsViewModel: settingsViewModel))
 
             NotificationService.shared.registerCategories()
             #if os(macOS)
@@ -67,7 +74,10 @@ struct PipelineApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(settingsViewModel: settingsViewModel)
+            AppLockRootView {
+                ContentView(settingsViewModel: settingsViewModel)
+            }
+            .environment(appLockCoordinator)
         }
         .modelContainer(modelContainer)
         #if os(macOS)
@@ -77,8 +87,11 @@ struct PipelineApp: App {
 
         #if os(macOS)
         Settings {
-            SettingsView(viewModel: settingsViewModel)
-                .modelContainer(modelContainer)
+            AppLockRootView {
+                SettingsView(viewModel: settingsViewModel)
+                    .modelContainer(modelContainer)
+            }
+            .environment(appLockCoordinator)
         }
         #endif
     }

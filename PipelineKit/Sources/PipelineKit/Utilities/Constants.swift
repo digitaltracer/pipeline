@@ -14,6 +14,9 @@ public enum Constants {
 
     public enum iCloud {
         public static let containerID = "iCloud.com.pipeline.app"
+        public static let attachmentsDirectoryName = "Applications"
+        public static let attachmentsSubdirectoryName = "Attachments"
+        public static let localFallbackDocumentsDirectoryName = "Documents"
     }
 
     // MARK: - External URLs
@@ -41,8 +44,14 @@ public enum Constants {
         public static let selectedAIProvider = "selectedAIProvider"
         public static let selectedAIModel = "selectedAIModel"
         public static let cloudSyncEnabled = "cloudSyncEnabled"
+        public static let appLockEnabled = "appLockEnabled"
         public static let notificationsEnabled = "notificationsEnabled"
         public static let reminderTiming = "reminderTiming"
+        public static let weeklyDigestNotificationsEnabled = "weeklyDigestNotificationsEnabled"
+        public static let weeklyDigestWeekday = "weeklyDigestWeekday"
+        public static let weeklyDigestHour = "weeklyDigestHour"
+        public static let weeklyDigestMinute = "weeklyDigestMinute"
+        public static let analyticsBaseCurrency = "analyticsBaseCurrency"
         public static let lastSyncDate = "lastSyncDate"
         public static let hasCompletedOnboarding = "hasCompletedOnboarding"
     }

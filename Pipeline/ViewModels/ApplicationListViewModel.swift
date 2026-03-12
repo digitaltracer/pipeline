@@ -8,6 +8,7 @@ final class ApplicationListViewModel {
     var searchText: String = ""
     var selectedFilter: SidebarFilter = .all
     var sortOrder: SortOrder = .updatedAt
+    var matchScoreFilter: MatchScoreFilter = .all
 
     enum SortOrder: String, CaseIterable {
         case updatedAt = "Recently Updated"
@@ -15,6 +16,16 @@ final class ApplicationListViewModel {
         case companyName = "Company Name"
         case appliedDate = "Applied Date"
         case priority = "Priority"
+        case matchScore = "Match Score"
+    }
+
+    enum MatchScoreFilter: String, CaseIterable {
+        case all = "All Scores"
+        case high = "80+"
+        case medium = "60-79"
+        case low = "<60"
+        case unscored = "Unscored"
+        case stale = "Stale"
     }
 
     // MARK: - Statistics
@@ -47,6 +58,8 @@ final class ApplicationListViewModel {
 
     func filterApplications(
         _ applications: [JobApplication],
+        currentResumeRevisionID: UUID? = nil,
+        matchPreferences: JobMatchPreferences = JobMatchPreferences(),
         includeInAllApplications: (JobApplication) -> Bool = { _ in true }
     ) -> [JobApplication] {
         var filtered = applications
@@ -68,13 +81,37 @@ final class ApplicationListViewModel {
             }
         }
 
+        filtered = filtered.filter { application in
+            matchesScoreFilter(
+                application,
+                currentResumeRevisionID: currentResumeRevisionID,
+                preferences: matchPreferences
+            )
+        }
+
         // Apply sorting
-        filtered = sortApplications(filtered)
+        filtered = sortApplications(
+            filtered,
+            currentResumeRevisionID: currentResumeRevisionID,
+            preferences: matchPreferences
+        )
 
         return filtered
     }
 
     private func sortApplications(_ applications: [JobApplication]) -> [JobApplication] {
+        sortApplications(
+            applications,
+            currentResumeRevisionID: nil,
+            preferences: JobMatchPreferences()
+        )
+    }
+
+    private func sortApplications(
+        _ applications: [JobApplication],
+        currentResumeRevisionID: UUID?,
+        preferences: JobMatchPreferences
+    ) -> [JobApplication] {
         switch sortOrder {
         case .updatedAt:
             return applications.sorted { $0.updatedAt > $1.updatedAt }
@@ -86,6 +123,15 @@ final class ApplicationListViewModel {
             return applications.sorted { ($0.appliedDate ?? .distantPast) > ($1.appliedDate ?? .distantPast) }
         case .priority:
             return applications.sorted { $0.priority.sortOrder < $1.priority.sortOrder }
+        case .matchScore:
+            return applications.sorted {
+                compareMatchOrdering(
+                    lhs: $0,
+                    rhs: $1,
+                    currentResumeRevisionID: currentResumeRevisionID,
+                    preferences: preferences
+                )
+            }
         }
     }
 
@@ -106,6 +152,67 @@ final class ApplicationListViewModel {
         }
 
         return counts
+    }
+
+    private func matchesScoreFilter(
+        _ application: JobApplication,
+        currentResumeRevisionID: UUID?,
+        preferences: JobMatchPreferences
+    ) -> Bool {
+        switch matchScoreFilter {
+        case .all:
+            return true
+        case .high:
+            return freshScore(for: application, currentResumeRevisionID: currentResumeRevisionID, preferences: preferences).map { $0 >= 80 } ?? false
+        case .medium:
+            return freshScore(for: application, currentResumeRevisionID: currentResumeRevisionID, preferences: preferences).map { (60...79).contains($0) } ?? false
+        case .low:
+            return freshScore(for: application, currentResumeRevisionID: currentResumeRevisionID, preferences: preferences).map { $0 < 60 } ?? false
+        case .unscored:
+            return application.matchAssessment == nil
+        case .stale:
+            guard let assessment = application.matchAssessment else { return false }
+            return JobMatchScoringService.isStale(
+                assessment,
+                application: application,
+                currentResumeRevisionID: currentResumeRevisionID,
+                preferences: preferences
+            )
+        }
+    }
+
+    private func freshScore(
+        for application: JobApplication,
+        currentResumeRevisionID: UUID?,
+        preferences: JobMatchPreferences
+    ) -> Int? {
+        guard let assessment = application.matchAssessment,
+              assessment.status == .ready,
+              !JobMatchScoringService.isStale(
+                assessment,
+                application: application,
+                currentResumeRevisionID: currentResumeRevisionID,
+                preferences: preferences
+              ) else {
+            return nil
+        }
+        return assessment.overallScore
+    }
+
+    private func compareMatchOrdering(
+        lhs: JobApplication,
+        rhs: JobApplication,
+        currentResumeRevisionID: UUID?,
+        preferences: JobMatchPreferences
+    ) -> Bool {
+        let lhsScore = freshScore(for: lhs, currentResumeRevisionID: currentResumeRevisionID, preferences: preferences) ?? -1
+        let rhsScore = freshScore(for: rhs, currentResumeRevisionID: currentResumeRevisionID, preferences: preferences) ?? -1
+
+        if lhsScore != rhsScore {
+            return lhsScore > rhsScore
+        }
+
+        return lhs.updatedAt > rhs.updatedAt
     }
 }
 

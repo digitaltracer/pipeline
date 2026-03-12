@@ -26,6 +26,7 @@ final class SettingsViewModel {
         static let selectedAIProvider = "selectedAIProvider"
         static let selectedAIModel = "selectedAIModel"
         static let cloudSyncEnabled = Constants.UserDefaultsKeys.cloudSyncEnabled
+        static let appLockEnabled = Constants.UserDefaultsKeys.appLockEnabled
         static let hiddenStatusesInAllApplications = "hiddenStatusesInAllApplications"
 
         static let customModelsByProviderID = "customModelsByProviderID"
@@ -38,6 +39,16 @@ final class SettingsViewModel {
 
         static let notificationsEnabled = "notificationsEnabled"
         static let reminderTiming = "reminderTiming"
+        static let weeklyDigestNotificationsEnabled = Constants.UserDefaultsKeys.weeklyDigestNotificationsEnabled
+        static let weeklyDigestWeekday = Constants.UserDefaultsKeys.weeklyDigestWeekday
+        static let weeklyDigestHour = Constants.UserDefaultsKeys.weeklyDigestHour
+        static let weeklyDigestMinute = Constants.UserDefaultsKeys.weeklyDigestMinute
+        static let analyticsBaseCurrency = Constants.UserDefaultsKeys.analyticsBaseCurrency
+        static let jobMatchPreferredCurrency = "jobMatchPreferredCurrency"
+        static let jobMatchPreferredSalaryMinText = "jobMatchPreferredSalaryMinText"
+        static let jobMatchPreferredSalaryMaxText = "jobMatchPreferredSalaryMaxText"
+        static let jobMatchAllowedWorkModes = "jobMatchAllowedWorkModes"
+        static let jobMatchPreferredLocations = "jobMatchPreferredLocations"
     }
 
     private static let modelCatalogRefreshInterval: TimeInterval = 60 * 60 * 24
@@ -106,6 +117,77 @@ final class SettingsViewModel {
         }
     }
 
+    var weeklyDigestNotificationsEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(
+                weeklyDigestNotificationsEnabled,
+                forKey: StorageKeys.weeklyDigestNotificationsEnabled
+            )
+        }
+    }
+
+    var weeklyDigestWeekday: Int {
+        didSet {
+            UserDefaults.standard.set(weeklyDigestWeekday, forKey: StorageKeys.weeklyDigestWeekday)
+        }
+    }
+
+    var weeklyDigestHour: Int {
+        didSet {
+            UserDefaults.standard.set(weeklyDigestHour, forKey: StorageKeys.weeklyDigestHour)
+        }
+    }
+
+    var weeklyDigestMinute: Int {
+        didSet {
+            UserDefaults.standard.set(weeklyDigestMinute, forKey: StorageKeys.weeklyDigestMinute)
+        }
+    }
+
+    var analyticsBaseCurrency: Currency {
+        didSet {
+            UserDefaults.standard.set(analyticsBaseCurrency.rawValue, forKey: StorageKeys.analyticsBaseCurrency)
+        }
+    }
+
+    var jobMatchPreferredCurrency: Currency {
+        didSet {
+            UserDefaults.standard.set(jobMatchPreferredCurrency.rawValue, forKey: StorageKeys.jobMatchPreferredCurrency)
+        }
+    }
+
+    var jobMatchPreferredSalaryMinText: String {
+        didSet {
+            UserDefaults.standard.set(jobMatchPreferredSalaryMinText, forKey: StorageKeys.jobMatchPreferredSalaryMinText)
+        }
+    }
+
+    var jobMatchPreferredSalaryMaxText: String {
+        didSet {
+            UserDefaults.standard.set(jobMatchPreferredSalaryMaxText, forKey: StorageKeys.jobMatchPreferredSalaryMaxText)
+        }
+    }
+
+    private var jobMatchAllowedWorkModesRawValues: [String] {
+        didSet {
+            UserDefaults.standard.set(jobMatchAllowedWorkModesRawValues, forKey: StorageKeys.jobMatchAllowedWorkModes)
+        }
+    }
+
+    private var jobMatchPreferredLocations: [String] {
+        didSet {
+            UserDefaults.standard.set(jobMatchPreferredLocations, forKey: StorageKeys.jobMatchPreferredLocations)
+        }
+    }
+
+    // MARK: - Security
+
+    var appLockEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(appLockEnabled, forKey: StorageKeys.appLockEnabled)
+        }
+    }
+
     // MARK: - Sync
 
     let cloudSyncSupported: Bool
@@ -166,6 +248,48 @@ final class SettingsViewModel {
             self.reminderTiming = .dayBefore
         }
 
+        self.weeklyDigestNotificationsEnabled = UserDefaults.standard.bool(
+            forKey: StorageKeys.weeklyDigestNotificationsEnabled
+        )
+
+        let storedWeekday = UserDefaults.standard.integer(forKey: StorageKeys.weeklyDigestWeekday)
+        self.weeklyDigestWeekday = (1...7).contains(storedWeekday) ? storedWeekday : WeeklyDigestSchedule.sundayEvening.weekday
+
+        let storedHour = UserDefaults.standard.integer(forKey: StorageKeys.weeklyDigestHour)
+        self.weeklyDigestHour = (0...23).contains(storedHour) ? storedHour : WeeklyDigestSchedule.sundayEvening.hour
+
+        let storedMinute = UserDefaults.standard.integer(forKey: StorageKeys.weeklyDigestMinute)
+        self.weeklyDigestMinute = (0...59).contains(storedMinute) ? storedMinute : WeeklyDigestSchedule.sundayEvening.minute
+
+        if let rawValue = UserDefaults.standard.string(forKey: StorageKeys.analyticsBaseCurrency),
+           let currency = Currency(rawValue: rawValue) {
+            self.analyticsBaseCurrency = currency
+        } else {
+            self.analyticsBaseCurrency = .usd
+        }
+
+        if let rawValue = UserDefaults.standard.string(forKey: StorageKeys.jobMatchPreferredCurrency),
+           let currency = Currency(rawValue: rawValue) {
+            self.jobMatchPreferredCurrency = currency
+        } else {
+            self.jobMatchPreferredCurrency = .usd
+        }
+
+        self.jobMatchPreferredSalaryMinText = UserDefaults.standard.string(
+            forKey: StorageKeys.jobMatchPreferredSalaryMinText
+        ) ?? ""
+        self.jobMatchPreferredSalaryMaxText = UserDefaults.standard.string(
+            forKey: StorageKeys.jobMatchPreferredSalaryMaxText
+        ) ?? ""
+        self.jobMatchAllowedWorkModesRawValues = UserDefaults.standard.stringArray(
+            forKey: StorageKeys.jobMatchAllowedWorkModes
+        ) ?? JobMatchWorkMode.allCases.map(\.rawValue)
+        self.jobMatchPreferredLocations = UserDefaults.standard.stringArray(
+            forKey: StorageKeys.jobMatchPreferredLocations
+        ) ?? []
+
+        self.appLockEnabled = UserDefaults.standard.bool(forKey: StorageKeys.appLockEnabled)
+
         migrateLegacyCustomModelStorageIfNeeded()
         migrateSelectedAIModelIfNeeded()
         ensureSelectedAIModelIsValid()
@@ -179,6 +303,14 @@ final class SettingsViewModel {
         case .dark: return .dark
         case .system: return nil
         }
+    }
+
+    var weeklyDigestSchedule: WeeklyDigestSchedule {
+        WeeklyDigestSchedule(
+            weekday: weeklyDigestWeekday,
+            hour: weeklyDigestHour,
+            minute: weeklyDigestMinute
+        )
     }
 
     func availableModels(for provider: AIProvider) -> [String] {
@@ -199,6 +331,53 @@ final class SettingsViewModel {
         }
 
         return models.first ?? ""
+    }
+
+    var jobMatchPreferredSalaryMin: Int? {
+        parseInteger(from: jobMatchPreferredSalaryMinText)
+    }
+
+    var jobMatchPreferredSalaryMax: Int? {
+        parseInteger(from: jobMatchPreferredSalaryMaxText)
+    }
+
+    var jobMatchPreferredLocationsText: String {
+        get {
+            jobMatchPreferredLocations.joined(separator: ", ")
+        }
+        set {
+            jobMatchPreferredLocations = Self.parseLocationTokens(newValue)
+        }
+    }
+
+    var jobMatchPreferences: JobMatchPreferences {
+        JobMatchPreferences(
+            preferredCurrency: jobMatchPreferredCurrency,
+            preferredSalaryMin: jobMatchPreferredSalaryMin,
+            preferredSalaryMax: jobMatchPreferredSalaryMax,
+            allowedWorkModes: jobMatchAllowedWorkModes,
+            preferredLocations: jobMatchPreferredLocations
+        )
+    }
+
+    var jobMatchAllowedWorkModes: [JobMatchWorkMode] {
+        jobMatchAllowedWorkModesRawValues.compactMap(JobMatchWorkMode.init(rawValue:))
+    }
+
+    func isJobMatchWorkModeAllowed(_ mode: JobMatchWorkMode) -> Bool {
+        jobMatchAllowedWorkModes.contains(mode)
+    }
+
+    func setJobMatchWorkMode(_ mode: JobMatchWorkMode, allowed: Bool) {
+        var values = jobMatchAllowedWorkModes
+        if allowed {
+            if !values.contains(mode) {
+                values.append(mode)
+            }
+        } else {
+            values.removeAll(where: { $0 == mode })
+        }
+        jobMatchAllowedWorkModesRawValues = values.map(\.rawValue)
     }
 
     func addCustomModel(_ model: String, for provider: AIProvider) {
@@ -566,5 +745,19 @@ final class SettingsViewModel {
             }
         }
         return result
+    }
+
+    private func parseInteger(from string: String) -> Int? {
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return Int(trimmed.filter(\.isNumber))
+    }
+
+    private static func parseLocationTokens(_ raw: String) -> [String] {
+        raw
+            .split(whereSeparator: { $0 == "," || $0 == "\n" || $0 == ";" })
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .uniquedPreservingOrder()
     }
 }

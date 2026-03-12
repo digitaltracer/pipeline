@@ -3,8 +3,30 @@ import Foundation
 /// Protocol for fetching text content from URLs.
 /// The app target provides a WKWebView-backed implementation;
 /// CLI targets can provide a URLSession-only implementation.
+public struct WebContentFetchResult: Sendable, Equatable {
+    public let text: String
+    public let acquisitionMethod: ResearchAcquisitionMethod
+    public let resolvedURLString: String?
+
+    public init(
+        text: String,
+        acquisitionMethod: ResearchAcquisitionMethod,
+        resolvedURLString: String? = nil
+    ) {
+        self.text = text
+        self.acquisitionMethod = acquisitionMethod
+        self.resolvedURLString = resolvedURLString
+    }
+}
+
 public protocol WebContentProvider: Sendable {
-    func fetchText(from url: String) async throws -> String
+    func fetchContent(from url: String) async throws -> WebContentFetchResult
+}
+
+public extension WebContentProvider {
+    func fetchText(from url: String) async throws -> String {
+        try await fetchContent(from: url).text
+    }
 }
 
 /// Basic URLSession-only web content provider.
@@ -15,7 +37,7 @@ public final class BasicWebContentProvider: WebContentProvider {
         self.serviceName = serviceName
     }
 
-    public func fetchText(from urlString: String) async throws -> String {
+    public func fetchContent(from urlString: String) async throws -> WebContentFetchResult {
         guard let url = URL(string: urlString) else {
             throw AIServiceError.invalidURL
         }
@@ -59,14 +81,18 @@ public final class BasicWebContentProvider: WebContentProvider {
 
         let text = Self.stripHTML(html)
         AIParseDebugLogger.info(
-            "\(serviceName): stripped webpage text length=\(text.count) preview=\(AIParseDebugLogger.preview(text, maxLength: 220))."
+            "\(serviceName): stripped webpage text length=\(text.count)."
         )
 
         guard !text.isEmpty else {
             throw AIServiceError.parsingError("Webpage content was empty after HTML stripping.")
         }
 
-        return text
+        return WebContentFetchResult(
+            text: text,
+            acquisitionMethod: .urlSession,
+            resolvedURLString: response.url?.absoluteString ?? url.absoluteString
+        )
     }
 
     public static func stripHTML(_ html: String) -> String {

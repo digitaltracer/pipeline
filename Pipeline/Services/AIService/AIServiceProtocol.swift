@@ -15,7 +15,7 @@ final class WKWebViewContentProvider: WebContentProvider {
         self.serviceName = serviceName
     }
 
-    func fetchText(from urlString: String) async throws -> String {
+    func fetchContent(from urlString: String) async throws -> WebContentFetchResult {
         guard let url = URL(string: urlString) else {
             throw AIServiceError.invalidURL
         }
@@ -48,7 +48,7 @@ final class WKWebViewContentProvider: WebContentProvider {
 
             let blockedStatusCodes: Set<Int> = [403, 429, 999]
             if blockedStatusCodes.contains(httpResponse.statusCode) {
-                return try await fetchTextWithWebView(
+                return try await fetchContentWithWebView(
                     from: url,
                     reason: "HTTP \(httpResponse.statusCode)"
                 )
@@ -67,17 +67,21 @@ final class WKWebViewContentProvider: WebContentProvider {
 
         let text = BasicWebContentProvider.stripHTML(html)
         AIParseDebugLogger.info(
-            "\(serviceName): stripped webpage text length=\(text.count) preview=\(AIParseDebugLogger.preview(text, maxLength: 220))."
+            "\(serviceName): stripped webpage text length=\(text.count)."
         )
 
         if text.isEmpty {
-            return try await fetchTextWithWebView(
+            return try await fetchContentWithWebView(
                 from: url,
                 reason: "empty URLSession extraction"
             )
         }
 
-        return text
+        return WebContentFetchResult(
+            text: text,
+            acquisitionMethod: .urlSession,
+            resolvedURLString: response.url?.absoluteString ?? url.absoluteString
+        )
     }
 
     private func normalizeExtractedText(_ rawText: String) -> String {
@@ -89,10 +93,10 @@ final class WKWebViewContentProvider: WebContentProvider {
         return text
     }
 
-    private func fetchTextWithWebView(
+    private func fetchContentWithWebView(
         from url: URL,
         reason: String
-    ) async throws -> String {
+    ) async throws -> WebContentFetchResult {
         #if canImport(WebKit)
         AIParseDebugLogger.warning(
             "\(serviceName): falling back to WKWebView extraction due to \(reason)."
@@ -102,18 +106,18 @@ final class WKWebViewContentProvider: WebContentProvider {
         let normalizedText = normalizeExtractedText(rawText)
 
         AIParseDebugLogger.info(
-            "\(serviceName): WKWebView extracted text length=\(normalizedText.count) preview=\(AIParseDebugLogger.preview(normalizedText, maxLength: 220))."
-        )
-        AIParseDebugLogger.infoFullText(
-            "\(serviceName): WKWebView extracted text",
-            text: normalizedText
+            "\(serviceName): WKWebView extracted text length=\(normalizedText.count)."
         )
 
         guard !normalizedText.isEmpty else {
             throw AIServiceError.parsingError("WebView extraction returned empty page content.")
         }
 
-        return normalizedText
+        return WebContentFetchResult(
+            text: normalizedText,
+            acquisitionMethod: .wkWebView,
+            resolvedURLString: url.absoluteString
+        )
         #else
         throw AIServiceError.apiError("Job URL seems blocked and WKWebView fallback is unavailable.")
         #endif

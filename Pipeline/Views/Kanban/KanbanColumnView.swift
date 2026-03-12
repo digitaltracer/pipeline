@@ -6,6 +6,8 @@ struct KanbanColumnView: View {
     let status: ApplicationStatus
     let applications: [JobApplication]
     @Binding var selectedApplication: JobApplication?
+    let currentResumeRevisionID: UUID?
+    let matchPreferences: JobMatchPreferences
     let onDrop: (UUID, ApplicationStatus) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
@@ -48,7 +50,9 @@ struct KanbanColumnView: View {
                     ForEach(applications) { application in
                         KanbanCardView(
                             application: application,
-                            isSelected: selectedApplication?.id == application.id
+                            isSelected: selectedApplication?.id == application.id,
+                            currentResumeRevisionID: currentResumeRevisionID,
+                            matchPreferences: matchPreferences
                         )
                         .onTapGesture {
                             openDetails(for: application)

@@ -1,7 +1,9 @@
 import SwiftUI
+import SwiftData
 import PipelineKit
 
 struct ManualEntryFormView: View {
+    @Query(sort: \JobSearchCycle.startDate, order: .reverse) private var cycles: [JobSearchCycle]
     @Bindable var viewModel: AddEditApplicationViewModel
     @Environment(\.colorScheme) private var colorScheme
 
@@ -37,6 +39,18 @@ struct ManualEntryFormView: View {
         return (defaults + customs).uniquedPreservingOrder(by: { $0.rawValue.lowercased() })
     }
 
+    private var cycleOptions: [JobSearchCycle] {
+        cycles.sorted { lhs, rhs in
+            if lhs.isActive != rhs.isActive {
+                return lhs.isActive && !rhs.isActive
+            }
+            if lhs.startDate != rhs.startDate {
+                return lhs.startDate > rhs.startDate
+            }
+            return lhs.updatedAt > rhs.updatedAt
+        }
+    }
+
     var body: some View {
         #if os(macOS)
         VStack(alignment: .leading, spacing: 18) {
@@ -55,6 +69,15 @@ struct ManualEntryFormView: View {
             }
 
             LabeledTextField(label: "Location *", placeholder: "San Francisco, CA (Remote)", text: $viewModel.location)
+
+            if !cycleOptions.isEmpty {
+                LabeledOptionalPicker(label: "Search Cycle", selection: $viewModel.selectedCycleID) {
+                    Text("No Cycle").tag(nil as UUID?)
+                    ForEach(cycleOptions) { cycle in
+                        Text(cyclePickerTitle(for: cycle)).tag(cycle.id as UUID?)
+                    }
+                }
+            }
 
             LazyVGrid(columns: [
                 GridItem(.flexible()),
@@ -177,7 +200,7 @@ struct ManualEntryFormView: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("Salary Range")
+                Text("Posted Compensation")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
 
@@ -192,7 +215,7 @@ struct ManualEntryFormView: View {
                     .frame(width: 80)
                     .appInput()
 
-                    TextField("Min", text: $viewModel.salaryMinString)
+                    TextField("Base min", text: $viewModel.salaryMinString)
                         .textFieldStyle(.plain)
                         .appInput()
 
@@ -200,9 +223,71 @@ struct ManualEntryFormView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
 
-                    TextField("Max", text: $viewModel.salaryMaxString)
+                    TextField("Base max", text: $viewModel.salaryMaxString)
                         .textFieldStyle(.plain)
                         .appInput()
+                }
+
+                HStack(spacing: 10) {
+                    TextField("Annual bonus", text: $viewModel.postedBonusString)
+                        .textFieldStyle(.plain)
+                        .appInput()
+
+                    TextField("Annual equity", text: $viewModel.postedEquityString)
+                        .textFieldStyle(.plain)
+                        .appInput()
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle("Track expected compensation", isOn: $viewModel.showExpectedCompensation)
+                    .toggleStyle(.switch)
+
+                if viewModel.showExpectedCompensation {
+                    HStack(spacing: 10) {
+                        TextField("Expected base min", text: $viewModel.expectedSalaryMinString)
+                            .textFieldStyle(.plain)
+                            .appInput()
+
+                        Text("to")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+
+                        TextField("Expected base max", text: $viewModel.expectedSalaryMaxString)
+                            .textFieldStyle(.plain)
+                            .appInput()
+                    }
+
+                    HStack(spacing: 10) {
+                        TextField("Expected bonus", text: $viewModel.expectedBonusString)
+                            .textFieldStyle(.plain)
+                            .appInput()
+
+                        TextField("Expected equity", text: $viewModel.expectedEquityString)
+                            .textFieldStyle(.plain)
+                            .appInput()
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle("Track final offer compensation", isOn: $viewModel.showOfferCompensation)
+                    .toggleStyle(.switch)
+
+                if viewModel.showOfferCompensation {
+                    HStack(spacing: 10) {
+                        TextField("Offer base", text: $viewModel.offerBaseString)
+                            .textFieldStyle(.plain)
+                            .appInput()
+
+                        TextField("Offer bonus", text: $viewModel.offerBonusString)
+                            .textFieldStyle(.plain)
+                            .appInput()
+
+                        TextField("Offer equity", text: $viewModel.offerEquityString)
+                            .textFieldStyle(.plain)
+                            .appInput()
+                    }
                 }
             }
 
@@ -304,6 +389,9 @@ struct ManualEntryFormView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         }
+        .onAppear {
+            viewModel.ensureDefaultCycleSelection(from: cycleOptions)
+        }
         #else
         Form {
             // Basic Info Section
@@ -318,6 +406,15 @@ struct ManualEntryFormView: View {
                     .onChange(of: viewModel.jobURL) { _, _ in
                         viewModel.onJobURLChanged()
                     }
+
+                if !cycleOptions.isEmpty {
+                    Picker("Search Cycle", selection: $viewModel.selectedCycleID) {
+                        Text("No Cycle").tag(nil as UUID?)
+                        ForEach(cycleOptions) { cycle in
+                            Text(cyclePickerTitle(for: cycle)).tag(cycle.id as UUID?)
+                        }
+                    }
+                }
             }
 
             // Status Section
@@ -378,7 +475,7 @@ struct ManualEntryFormView: View {
                 }
 
                 HStack {
-                    TextField("Min Salary", text: $viewModel.salaryMinString)
+                    TextField("Posted Base Min", text: $viewModel.salaryMinString)
                         #if os(iOS)
                         .keyboardType(.numberPad)
                         #endif
@@ -386,10 +483,74 @@ struct ManualEntryFormView: View {
                     Text("to")
                         .foregroundColor(.secondary)
 
-                    TextField("Max Salary", text: $viewModel.salaryMaxString)
+                    TextField("Posted Base Max", text: $viewModel.salaryMaxString)
                         #if os(iOS)
                         .keyboardType(.numberPad)
                         #endif
+                }
+
+                HStack {
+                    TextField("Posted Bonus", text: $viewModel.postedBonusString)
+                        #if os(iOS)
+                        .keyboardType(.numberPad)
+                        #endif
+
+                    TextField("Posted Equity", text: $viewModel.postedEquityString)
+                        #if os(iOS)
+                        .keyboardType(.numberPad)
+                        #endif
+                }
+
+                Toggle("Track Expected Compensation", isOn: $viewModel.showExpectedCompensation)
+
+                if viewModel.showExpectedCompensation {
+                    HStack {
+                        TextField("Expected Base Min", text: $viewModel.expectedSalaryMinString)
+                            #if os(iOS)
+                            .keyboardType(.numberPad)
+                            #endif
+
+                        Text("to")
+                            .foregroundColor(.secondary)
+
+                        TextField("Expected Base Max", text: $viewModel.expectedSalaryMaxString)
+                            #if os(iOS)
+                            .keyboardType(.numberPad)
+                            #endif
+                    }
+
+                    HStack {
+                        TextField("Expected Bonus", text: $viewModel.expectedBonusString)
+                            #if os(iOS)
+                            .keyboardType(.numberPad)
+                            #endif
+
+                        TextField("Expected Equity", text: $viewModel.expectedEquityString)
+                            #if os(iOS)
+                            .keyboardType(.numberPad)
+                            #endif
+                    }
+                }
+
+                Toggle("Track Final Offer Compensation", isOn: $viewModel.showOfferCompensation)
+
+                if viewModel.showOfferCompensation {
+                    HStack {
+                        TextField("Offer Base", text: $viewModel.offerBaseString)
+                            #if os(iOS)
+                            .keyboardType(.numberPad)
+                            #endif
+
+                        TextField("Offer Bonus", text: $viewModel.offerBonusString)
+                            #if os(iOS)
+                            .keyboardType(.numberPad)
+                            #endif
+
+                        TextField("Offer Equity", text: $viewModel.offerEquityString)
+                            #if os(iOS)
+                            .keyboardType(.numberPad)
+                            #endif
+                    }
                 }
             }
 
@@ -499,7 +660,17 @@ struct ManualEntryFormView: View {
                 .navigationBarTitleDisplayMode(.inline)
             }
         }
+        .onAppear {
+            viewModel.ensureDefaultCycleSelection(from: cycleOptions)
+        }
         #endif
+    }
+
+    private func cyclePickerTitle(for cycle: JobSearchCycle) -> String {
+        if cycle.isActive {
+            return "\(cycle.name) (Active)"
+        }
+        return cycle.name
     }
 }
 
@@ -590,6 +761,31 @@ private struct LabeledPicker<SelectionValue: Hashable, Content: View>: View {
     let content: () -> Content
 
     init(label: String, selection: Binding<SelectionValue>, @ViewBuilder content: @escaping () -> Content) {
+        self.label = label
+        self._selection = selection
+        self.content = content
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(label)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            Picker("", selection: $selection) { content() }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .appInput()
+        }
+    }
+}
+
+private struct LabeledOptionalPicker<SelectionValue: Hashable, Content: View>: View {
+    let label: String
+    @Binding var selection: SelectionValue?
+    let content: () -> Content
+
+    init(label: String, selection: Binding<SelectionValue?>, @ViewBuilder content: @escaping () -> Content) {
         self.label = label
         self._selection = selection
         self.content = content

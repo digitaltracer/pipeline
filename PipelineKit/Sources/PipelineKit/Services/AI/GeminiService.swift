@@ -100,6 +100,12 @@ public final class GeminiService: AIServiceProtocol {
             AIParseDebugLogger.error("GeminiService: response JSON missing expected fields.")
             throw AIServiceError.invalidResponse
         }
+        let usage = json["usageMetadata"] as? [String: Any]
+        let usageMetrics = AIUsageMetrics(
+            promptTokens: intValue(usage?["promptTokenCount"]),
+            completionTokens: intValue(usage?["candidatesTokenCount"]),
+            totalTokens: intValue(usage?["totalTokenCount"])
+        )
 
         var parseError: Error?
 
@@ -117,15 +123,13 @@ public final class GeminiService: AIServiceProtocol {
             guard !text.isEmpty else { continue }
 
             AIParseDebugLogger.info(
-                "GeminiService: candidate \(index + 1) output captured."
-            )
-            AIParseDebugLogger.infoFullText(
-                "GeminiService: candidate \(index + 1) output",
-                text: text
+                "GeminiService: candidate \(index + 1) output chars=\(text.count)."
             )
 
             do {
-                return try AIResponseParser.parseJobData(from: text)
+                var parsed = try AIResponseParser.parseJobData(from: text)
+                parsed.usage = usageMetrics
+                return parsed
             } catch {
                 parseError = error
                 AIParseDebugLogger.warning(
@@ -140,5 +144,18 @@ public final class GeminiService: AIServiceProtocol {
 
         AIParseDebugLogger.error("GeminiService: no candidate contained parseable text output.")
         throw AIServiceError.invalidResponse
+    }
+
+    private func intValue(_ value: Any?) -> Int? {
+        if let intValue = value as? Int {
+            return intValue
+        }
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+        if let text = value as? String, let intValue = Int(text) {
+            return intValue
+        }
+        return nil
     }
 }

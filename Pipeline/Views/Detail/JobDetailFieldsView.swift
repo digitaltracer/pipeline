@@ -32,21 +32,49 @@ struct JobDetailFieldsView: View {
                 iconColor: application.platform.color
             )
 
+            DetailInfoCard(
+                label: "Search Cycle",
+                value: application.cycle?.name ?? "—",
+                icon: "scope",
+                iconColor: .blue
+            )
+
             if let salaryRange = application.salaryRange {
                 DetailInfoCard(
-                    label: "Salary Package",
+                    label: "Posted Base",
                     value: salaryRange,
                     icon: "dollarsign.circle",
                     iconColor: .green
                 )
             } else {
                 DetailInfoCard(
-                    label: "Salary Package",
+                    label: "Posted Base",
                     value: "—",
                     icon: "dollarsign.circle",
                     iconColor: .green
                 )
             }
+
+            DetailInfoCard(
+                label: "Posted Total Comp",
+                value: application.postedTotalCompRange ?? "—",
+                icon: "chart.bar.fill",
+                iconColor: .green
+            )
+
+            DetailInfoCard(
+                label: "Expected Total Comp",
+                value: application.expectedTotalCompRange ?? "—",
+                icon: "flag.fill",
+                iconColor: .orange
+            )
+
+            DetailInfoCard(
+                label: "Offer Total Comp",
+                value: application.offerTotalCompText ?? "—",
+                icon: "gift.fill",
+                iconColor: .purple
+            )
 
             if let appliedDate = application.appliedDate {
                 DetailInfoCard(

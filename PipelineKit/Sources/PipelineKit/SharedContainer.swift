@@ -12,9 +12,32 @@ public enum SharedContainer {
     ) throws -> ModelContainer {
         let schema = Schema([
             JobApplication.self,
+            JobSearchCycle.self,
+            SearchGoal.self,
             InterviewLog.self,
+            CompanyProfile.self,
+            CompanyResearchSnapshot.self,
+            CompanyResearchSource.self,
+            CompanySalarySnapshot.self,
+            Contact.self,
+            ApplicationContactLink.self,
+            ApplicationActivity.self,
+            InterviewDebrief.self,
+            InterviewQuestionEntry.self,
+            InterviewLearningSnapshot.self,
+            ApplicationTask.self,
+            ApplicationChecklistSuggestion.self,
+            ApplicationAttachment.self,
+            CoverLetterDraft.self,
             ResumeMasterRevision.self,
-            ResumeJobSnapshot.self
+            ResumeJobSnapshot.self,
+            JobMatchAssessment.self,
+            ATSCompatibilityAssessment.self,
+            AIUsageRecord.self,
+            AIModelRate.self,
+            WeeklyDigestSnapshot.self,
+            WeeklyDigestInsight.self,
+            WeeklyDigestActionItem.self
         ])
 
         let storeURL = resolvedStoreURL()

@@ -12,7 +12,10 @@ struct ApplicationListView: View {
     let applications: [JobApplication]
     @Binding var selectedApplication: JobApplication?
     @Binding var searchText: String
+    let currentResumeRevisionID: UUID?
+    let matchPreferences: JobMatchPreferences
     @State private var actionErrorMessage: String?
+    private let detailViewModel = ApplicationDetailViewModel()
 
     private let columns = [
         GridItem(.adaptive(minimum: 260, maximum: 340), spacing: 16)
@@ -43,7 +46,9 @@ struct ApplicationListView: View {
                         ForEach(applications) { application in
                             JobCardView(
                                 application: application,
-                                isSelected: selectedApplication?.id == application.id
+                                isSelected: selectedApplication?.id == application.id,
+                                currentResumeRevisionID: currentResumeRevisionID,
+                                matchPreferences: matchPreferences
                             )
                             .applicationCardHandCursor()
                             .onTapGesture {
@@ -131,22 +136,9 @@ struct ApplicationListView: View {
     }
 
     private func applyStatus(_ status: ApplicationStatus, to application: JobApplication) {
-        let previousStatus = application.status
-        let previousAppliedDate = application.appliedDate
-        application.status = status
-        if (status == .applied || status == .interviewing), application.appliedDate == nil {
-            application.appliedDate = Date()
-        }
-        application.updateTimestamp()
-
         do {
-            try modelContext.save()
-            Task { @MainActor in
-                await NotificationService.shared.syncFollowUpReminder(for: application)
-            }
+            try detailViewModel.updateStatus(status, for: application, context: modelContext)
         } catch {
-            application.status = previousStatus
-            application.appliedDate = previousAppliedDate
             actionErrorMessage = error.localizedDescription
         }
     }
@@ -205,7 +197,33 @@ private extension View {
     ApplicationListView(
         applications: [],
         selectedApplication: .constant(nil),
-        searchText: .constant("")
+        searchText: .constant(""),
+        currentResumeRevisionID: nil,
+        matchPreferences: JobMatchPreferences()
     )
-    .modelContainer(for: [JobApplication.self, InterviewLog.self], inMemory: true)
+    .modelContainer(
+        for: [
+            JobApplication.self,
+            JobSearchCycle.self,
+            SearchGoal.self,
+            InterviewLog.self,
+            CompanyProfile.self,
+            CompanyResearchSnapshot.self,
+            CompanyResearchSource.self,
+            CompanySalarySnapshot.self,
+            Contact.self,
+            ApplicationContactLink.self,
+            ApplicationActivity.self,
+            InterviewDebrief.self,
+            InterviewQuestionEntry.self,
+            InterviewLearningSnapshot.self,
+            ApplicationTask.self,
+            ApplicationChecklistSuggestion.self,
+            ApplicationAttachment.self,
+            CoverLetterDraft.self,
+            JobMatchAssessment.self,
+            ATSCompatibilityAssessment.self
+        ],
+        inMemory: true
+    )
 }

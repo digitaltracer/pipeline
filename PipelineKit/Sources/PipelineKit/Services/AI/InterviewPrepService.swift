@@ -6,11 +6,18 @@ public struct InterviewPrepResult: Sendable {
     public let likelyQuestions: [String]
     public let talkingPoints: [String]
     public let companyResearchSummary: String
+    public let usage: AIUsageMetrics?
 
-    public init(likelyQuestions: [String], talkingPoints: [String], companyResearchSummary: String) {
+    public init(
+        likelyQuestions: [String],
+        talkingPoints: [String],
+        companyResearchSummary: String,
+        usage: AIUsageMetrics? = nil
+    ) {
         self.likelyQuestions = likelyQuestions
         self.talkingPoints = talkingPoints
         self.companyResearchSummary = companyResearchSummary
+        self.usage = usage
     }
 }
 
@@ -26,7 +33,9 @@ public enum InterviewPrepService {
         company: String,
         jobDescription: String,
         interviewStage: String,
-        notes: String
+        notes: String,
+        personalQuestionBankContext: String = "",
+        learningSummary: String = ""
     ) async throws -> InterviewPrepResult {
         let systemPrompt = """
         You are an expert career coach and interview preparation specialist.
@@ -46,6 +55,40 @@ public enum InterviewPrepService {
         - Output raw JSON only. No markdown fences. No prose outside the JSON.
         """
 
+        let userContext = buildUserContext(
+            role: role,
+            company: company,
+            jobDescription: jobDescription,
+            interviewStage: interviewStage,
+            notes: notes,
+            personalQuestionBankContext: personalQuestionBankContext,
+            learningSummary: learningSummary
+        )
+
+        let userPrompt = "Prepare interview prep materials for this opportunity:\n\n\(userContext)"
+
+        let response = try await AICompletionClient.completeWithUsage(
+            provider: provider,
+            apiKey: apiKey,
+            model: model,
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt
+        )
+
+        return try parseResponse(response.text, usage: response.usage)
+    }
+
+    // MARK: - Parsing
+
+    static func buildUserContext(
+        role: String,
+        company: String,
+        jobDescription: String,
+        interviewStage: String,
+        notes: String,
+        personalQuestionBankContext: String,
+        learningSummary: String
+    ) -> String {
         var userContext = "Role: \(role)\nCompany: \(company)"
         if !jobDescription.isEmpty {
             userContext += "\n\nJob Description:\n\(String(jobDescription.prefix(3000)))"
@@ -56,23 +99,16 @@ public enum InterviewPrepService {
         if !notes.isEmpty {
             userContext += "\n\nCandidate Notes:\n\(String(notes.prefix(1000)))"
         }
-
-        let userPrompt = "Prepare interview prep materials for this opportunity:\n\n\(userContext)"
-
-        let rawResponse = try await AICompletionClient.complete(
-            provider: provider,
-            apiKey: apiKey,
-            model: model,
-            systemPrompt: systemPrompt,
-            userPrompt: userPrompt
-        )
-
-        return try parseResponse(rawResponse)
+        if !personalQuestionBankContext.isEmpty {
+            userContext += "\n\nPersonal Question Bank:\n\(String(personalQuestionBankContext.prefix(1600)))"
+        }
+        if !learningSummary.isEmpty {
+            userContext += "\n\nInterview Learning Summary:\n\(String(learningSummary.prefix(1200)))"
+        }
+        return userContext
     }
 
-    // MARK: - Parsing
-
-    private static func parseResponse(_ rawJSON: String) throws -> InterviewPrepResult {
+    private static func parseResponse(_ rawJSON: String, usage: AIUsageMetrics?) throws -> InterviewPrepResult {
         let cleaned = stripMarkdownFences(from: rawJSON)
 
         guard let data = cleaned.data(using: .utf8),
@@ -81,15 +117,15 @@ public enum InterviewPrepService {
             if let extracted = extractJSONObject(from: cleaned),
                let data = extracted.data(using: .utf8),
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                return buildResult(from: json)
+                return buildResult(from: json, usage: usage)
             }
             throw AIServiceError.parsingError("Interview prep response was not valid JSON.")
         }
 
-        return buildResult(from: json)
+        return buildResult(from: json, usage: usage)
     }
 
-    private static func buildResult(from json: [String: Any]) -> InterviewPrepResult {
+    private static func buildResult(from json: [String: Any], usage: AIUsageMetrics?) -> InterviewPrepResult {
         let questions = (json["likelyQuestions"] as? [String])
             ?? (json["likely_questions"] as? [String])
             ?? (json["questions"] as? [String])
@@ -109,7 +145,8 @@ public enum InterviewPrepService {
         return InterviewPrepResult(
             likelyQuestions: questions,
             talkingPoints: talkingPoints,
-            companyResearchSummary: summary
+            companyResearchSummary: summary,
+            usage: usage
         )
     }
 

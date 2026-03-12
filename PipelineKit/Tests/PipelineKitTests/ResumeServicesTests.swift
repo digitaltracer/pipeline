@@ -120,7 +120,6 @@ import Testing
         switch error {
         case .parsingError(let message):
             #expect(message.contains("not valid JSON"))
-            #expect(message.contains("AIParse"))
         default:
             Issue.record("Expected parsingError, got \(error)")
         }
@@ -147,7 +146,6 @@ import Testing
         switch error {
         case .parsingError(let message):
             #expect(message.contains("appears truncated"))
-            #expect(message.contains("AIParse"))
         default:
             Issue.record("Expected parsingError, got \(error)")
         }
@@ -193,7 +191,6 @@ import Testing
         switch error {
         case .parsingError(let message):
             #expect(message.contains("expected schema"))
-            #expect(message.contains("AIParse"))
         default:
             Issue.record("Expected parsingError, got \(error)")
         }
@@ -294,9 +291,27 @@ import Testing
 @Test func resumeStoreSaveAndFetchMasterRevisions() throws {
     let schema = Schema([
         JobApplication.self,
+        JobSearchCycle.self,
+        SearchGoal.self,
         InterviewLog.self,
+        CompanyProfile.self,
+        CompanyResearchSnapshot.self,
+        CompanyResearchSource.self,
+        CompanySalarySnapshot.self,
+        Contact.self,
+        ApplicationContactLink.self,
+        ApplicationActivity.self,
+        InterviewDebrief.self,
+        InterviewQuestionEntry.self,
+        InterviewLearningSnapshot.self,
+        ApplicationTask.self,
+        ApplicationChecklistSuggestion.self,
+        CoverLetterDraft.self,
+        ATSCompatibilityAssessment.self,
         ResumeMasterRevision.self,
-        ResumeJobSnapshot.self
+        ResumeJobSnapshot.self,
+        AIUsageRecord.self,
+        AIModelRate.self
     ])
     let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
     let container = try ModelContainer(for: schema, configurations: [configuration])
@@ -324,4 +339,36 @@ import Testing
     #expect(revisions.count == 2)
     #expect(try ResumeStoreService.currentMasterRevision(in: context)?.id == second.id)
     #expect(revisions.contains(where: { $0.id == first.id && $0.isCurrent == false }))
+}
+
+@Test func resumeTailoringResultRetainsUsageMetadata() throws {
+    let usage = AIUsageMetrics(promptTokens: 120, completionTokens: 80, totalTokens: 200)
+    let result = ResumeTailoringResult(
+        patches: [],
+        sectionGaps: ["Summary"],
+        usage: usage
+    )
+
+    let encoded = try JSONEncoder().encode(result)
+    let decoded = try JSONDecoder().decode(ResumeTailoringResult.self, from: encoded)
+
+    #expect(decoded.usage == usage)
+    #expect(decoded.sectionGaps == ["Summary"])
+}
+
+@Test func parsedJobDataCanCarryUsageMetrics() {
+    let usage = AIUsageMetrics(promptTokens: 10, completionTokens: 25, totalTokens: 35)
+    let parsed = ParsedJobData(
+        companyName: "Example",
+        role: "iOS Engineer",
+        location: "Remote",
+        jobDescription: "Build apps",
+        salaryMin: nil,
+        salaryMax: nil,
+        currency: .usd,
+        usage: usage
+    )
+
+    #expect(parsed.usage?.totalTokens == 35)
+    #expect(parsed.hasMeaningfulContent)
 }

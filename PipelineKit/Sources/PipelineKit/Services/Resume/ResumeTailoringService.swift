@@ -1,13 +1,27 @@
 import Foundation
 
+public enum ResumeTailoringProgressEvent: Sendable, Equatable {
+    case started
+    case attemptStarted(attempt: Int, isRetry: Bool)
+    case requestStarted(provider: AIProvider, model: String)
+    case responseReceived(characters: Int, usage: AIUsageMetrics?)
+    case parsingStarted
+    case retryScheduled(reason: String)
+    case completed(patchCount: Int, sectionGapCount: Int, usage: AIUsageMetrics?)
+    case failed(message: String)
+}
+
 public enum ResumeTailoringService {
     private static let invalidJSONErrorMessage =
-        "Resume tailoring response was not valid JSON. Check Xcode console logs for \"AIParse\" entries."
+        "Resume tailoring response was not valid JSON. Retry Generate Suggestions."
     private static let schemaMismatchErrorMessage =
-        "Resume tailoring response JSON did not match expected schema. Check Xcode console logs for \"AIParse\" entries."
+        "Resume tailoring response JSON did not match the expected schema. Retry Generate Suggestions."
     private static let truncatedResponseErrorMessage =
-        "Resume tailoring response appears truncated before JSON completed. Please retry Generate Suggestions and check AIParse logs."
+        "Resume tailoring response appears truncated before the JSON completed. Retry Generate Suggestions."
+    private static let patchRevisionSchemaErrorMessage =
+        "Patch revision response must return exactly one patch for the selected section."
     private static let tailoringMaxTokens = 25_000
+    private static let patchRevisionMaxTokens = 8_000
 
     public static func generateSuggestions(
         provider: AIProvider,
@@ -16,17 +30,76 @@ public enum ResumeTailoringService {
         resumeJSON: String,
         company: String,
         role: String,
-        jobDescription: String
+        jobDescription: String,
+        onProgress: (@Sendable (ResumeTailoringProgressEvent) -> Void)? = nil
+    ) async throws -> ResumeTailoringResult {
+        try await generateSuggestions(
+            provider: provider,
+            apiKey: apiKey,
+            model: model,
+            resumeJSON: resumeJSON,
+            company: company,
+            role: role,
+            jobDescription: jobDescription,
+            additionalInstructions: nil,
+            onProgress: onProgress
+        )
+    }
+
+    public static func generateATSFixSuggestions(
+        provider: AIProvider,
+        apiKey: String,
+        model: String,
+        resumeJSON: String,
+        company: String,
+        role: String,
+        jobDescription: String,
+        summary: String,
+        missingKeywords: [String],
+        criticalFindings: [String],
+        warningFindings: [String],
+        onProgress: (@Sendable (ResumeTailoringProgressEvent) -> Void)? = nil
+    ) async throws -> ResumeTailoringResult {
+        try await generateSuggestions(
+            provider: provider,
+            apiKey: apiKey,
+            model: model,
+            resumeJSON: resumeJSON,
+            company: company,
+            role: role,
+            jobDescription: jobDescription,
+            additionalInstructions: ResumeTailoringPrompts.atsFixInstructions(
+                summary: summary,
+                missingKeywords: missingKeywords,
+                criticalFindings: criticalFindings,
+                warningFindings: warningFindings
+            ),
+            onProgress: onProgress
+        )
+    }
+
+    private static func generateSuggestions(
+        provider: AIProvider,
+        apiKey: String,
+        model: String,
+        resumeJSON: String,
+        company: String,
+        role: String,
+        jobDescription: String,
+        additionalInstructions: String?,
+        onProgress: (@Sendable (ResumeTailoringProgressEvent) -> Void)? = nil
     ) async throws -> ResumeTailoringResult {
         AIParseDebugLogger.info(
             "ResumeTailoringService: generating suggestions provider=\(provider.rawValue) model=\(model) resumeChars=\(resumeJSON.count) jobDescriptionChars=\(jobDescription.count)."
         )
+        onProgress?(.started)
 
         let userPrompt = ResumeTailoringPrompts.userPrompt(
             resumeJSON: resumeJSON,
             company: company,
             role: role,
-            jobDescription: jobDescription
+            jobDescription: jobDescription,
+            additionalInstructions: additionalInstructions
         )
 
         let attemptPrompts = [
@@ -37,32 +110,59 @@ public enum ResumeTailoringService {
         for attemptIndex in attemptPrompts.indices {
             let systemPrompt = attemptPrompts[attemptIndex]
             let isRetryAttempt = attemptIndex > 0
+            onProgress?(.attemptStarted(attempt: attemptIndex + 1, isRetry: isRetryAttempt))
 
             if isRetryAttempt {
                 AIParseDebugLogger.warning(
                     "ResumeTailoringService: retrying with compact prompt after truncated response."
                 )
+                onProgress?(.retryScheduled(reason: "Previous response appeared truncated. Retrying with compact prompt."))
             }
 
-            let raw = try await AICompletionClient.complete(
-                provider: provider,
-                apiKey: apiKey,
-                model: model,
-                systemPrompt: systemPrompt,
-                userPrompt: userPrompt,
-                maxTokens: tailoringMaxTokens,
-                temperature: isRetryAttempt ? 0.2 : 0.3
-            )
+            onProgress?(.requestStarted(provider: provider, model: model))
+            let response: AICompletionResponse
+            do {
+                response = try await AICompletionClient.completeWithUsage(
+                    provider: provider,
+                    apiKey: apiKey,
+                    model: model,
+                    systemPrompt: systemPrompt,
+                    userPrompt: userPrompt,
+                    maxTokens: tailoringMaxTokens,
+                    temperature: isRetryAttempt ? 0.2 : 0.3
+                )
+            } catch {
+                onProgress?(.failed(message: error.localizedDescription))
+                throw error
+            }
+            onProgress?(.responseReceived(characters: response.text.count, usage: response.usage))
+            onProgress?(.parsingStarted)
 
             do {
-                return try parseResult(from: raw)
+                let parsed = try parseResult(from: response.text)
+                let result = ResumeTailoringResult(
+                    patches: parsed.patches,
+                    sectionGaps: parsed.sectionGaps,
+                    usage: response.usage
+                )
+                onProgress?(
+                    .completed(
+                        patchCount: result.patches.count,
+                        sectionGapCount: result.sectionGaps.count,
+                        usage: result.usage
+                    )
+                )
+                return result
             } catch {
                 guard isRetryableTruncationError(error), !isRetryAttempt else {
+                    onProgress?(.failed(message: error.localizedDescription))
                     throw error
                 }
+                onProgress?(.retryScheduled(reason: "Parser detected truncated JSON response."))
             }
         }
 
+        onProgress?(.failed(message: truncatedResponseErrorMessage))
         throw AIServiceError.parsingError(truncatedResponseErrorMessage)
     }
 
@@ -98,7 +198,7 @@ public enum ResumeTailoringService {
                 }
                 lastDecodeError = error
                 AIParseDebugLogger.warning(
-                    "ResumeTailoringService: candidate \(index + 1) failed to decode. Preview=\(AIParseDebugLogger.preview(candidate, maxLength: 300)). Error=\(decodeErrorDetails(error))"
+                    "ResumeTailoringService: candidate \(index + 1) failed to decode. candidateChars=\(candidate.count) error=\(decodeErrorDetails(error))."
                 )
             }
         }
@@ -107,10 +207,6 @@ public enum ResumeTailoringService {
             AIParseDebugLogger.error(
                 "ResumeTailoringService: model output appears truncated (unterminated string/object/array)."
             )
-            AIParseDebugLogger.infoFullText(
-                "ResumeTailoringService: raw model output",
-                text: rawResponse
-            )
             throw AIServiceError.parsingError(truncatedResponseErrorMessage)
         }
 
@@ -118,22 +214,88 @@ public enum ResumeTailoringService {
             AIParseDebugLogger.error(
                 "ResumeTailoringService: model output looked like JSON but did not match expected schema. Last decode error=\(String(describing: lastDecodeError.map(decodeErrorDetails)))."
             )
-            AIParseDebugLogger.infoFullText(
-                "ResumeTailoringService: raw model output",
-                text: rawResponse
-            )
             throw AIServiceError.parsingError(schemaMismatchErrorMessage)
         }
 
         AIParseDebugLogger.error(
             "ResumeTailoringService: failed to find a parseable JSON payload in model output."
         )
-        AIParseDebugLogger.infoFullText(
-            "ResumeTailoringService: raw model output",
-            text: rawResponse
-        )
 
         throw AIServiceError.parsingError(invalidJSONErrorMessage)
+    }
+
+    public static func revisePatch(
+        provider: AIProvider,
+        apiKey: String,
+        model: String,
+        resumeJSON: String,
+        company: String,
+        role: String,
+        jobDescription: String,
+        selectedPatch: ResumePatch,
+        userInstruction: String
+    ) async throws -> ResumeTailoringResult {
+        let trimmedInstruction = userInstruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedInstruction.isEmpty else {
+            throw AIServiceError.parsingError("Custom instruction cannot be empty.")
+        }
+
+        AIParseDebugLogger.info(
+            "ResumeTailoringService: revising patch provider=\(provider.rawValue) model=\(model) path=\(selectedPatch.path) instructionChars=\(trimmedInstruction.count)."
+        )
+
+        let userPrompt = ResumeTailoringPrompts.patchRevisionUserPrompt(
+            resumeJSON: resumeJSON,
+            company: company,
+            role: role,
+            jobDescription: jobDescription,
+            selectedPatch: selectedPatch,
+            userInstruction: trimmedInstruction
+        )
+
+        let attemptPrompts = [
+            ResumeTailoringPrompts.patchRevisionSystemPrompt,
+            ResumeTailoringPrompts.patchRevisionCompactRetrySystemPrompt
+        ]
+
+        for attemptIndex in attemptPrompts.indices {
+            let isRetryAttempt = attemptIndex > 0
+
+            if isRetryAttempt {
+                AIParseDebugLogger.warning(
+                    "ResumeTailoringService: retrying patch revision with compact prompt after truncated response."
+                )
+            }
+
+            let response = try await AICompletionClient.completeWithUsage(
+                provider: provider,
+                apiKey: apiKey,
+                model: model,
+                systemPrompt: attemptPrompts[attemptIndex],
+                userPrompt: userPrompt,
+                maxTokens: patchRevisionMaxTokens,
+                temperature: isRetryAttempt ? 0.15 : 0.2
+            )
+
+            do {
+                let parsed = try parseResult(from: response.text)
+                let revisedPatch = try validateRevisedPatch(
+                    parsed,
+                    expectedPath: selectedPatch.path
+                )
+                return ResumeTailoringResult(
+                    patches: [revisedPatch],
+                    sectionGaps: [],
+                    usage: response.usage
+                )
+            } catch {
+                guard isRetryableTruncationError(error), !isRetryAttempt else {
+                    throw error
+                }
+            }
+        }
+
+        throw AIServiceError.parsingError(truncatedResponseErrorMessage)
     }
 
     private struct RawResult: Decodable {
@@ -399,6 +561,24 @@ public enum ResumeTailoringService {
         }
 
         return inString || objectDepth > 0 || arrayDepth > 0
+    }
+
+    private static func validateRevisedPatch(
+        _ result: ResumeTailoringResult,
+        expectedPath: String
+    ) throws -> ResumePatch {
+        guard result.patches.count == 1 else {
+            throw AIServiceError.parsingError(patchRevisionSchemaErrorMessage)
+        }
+
+        let patch = result.patches[0]
+        guard patch.path == expectedPath else {
+            throw AIServiceError.parsingError(
+                "\(patchRevisionSchemaErrorMessage) Expected path \(expectedPath), got \(patch.path)."
+            )
+        }
+
+        return patch
     }
 
     private static func decodeErrorDetails(_ error: Error) -> String {

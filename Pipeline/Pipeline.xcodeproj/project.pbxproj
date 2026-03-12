@@ -69,6 +69,36 @@
 		000000000000000000000068 /* ResumeTemplate.json in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000068 /* ResumeTemplate.json */; };
 		000000000000000000000069 /* ResumeFonts in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000069 /* ResumeFonts */; };
 		000000000000000000000070 /* ChainedVerticalScrollContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000070 /* ChainedVerticalScrollContainer.swift */; };
+		000000000000000000000071 /* AIUsageLedgerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000071 /* AIUsageLedgerService.swift */; };
+		000000000000000000000072 /* AIPricingDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000072 /* AIPricingDefaults.swift */; };
+		000000000000000000000073 /* CostCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000073 /* CostCenterView.swift */; };
+		000000000000000000000076 /* MainDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000076 /* MainDestination.swift */; };
+		000000000000000000000077 /* ContactsListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000077 /* ContactsListViewModel.swift */; };
+		000000000000000000000078 /* ContactsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000078 /* ContactsListView.swift */; };
+		000000000000000000000079 /* ContactDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000079 /* ContactDetailView.swift */; };
+		000000000000000000000080 /* ContactEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000080 /* ContactEditorView.swift */; };
+		000000000000000000000081 /* ManageApplicationContactsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000081 /* ManageApplicationContactsView.swift */; };
+		000000000000000000000082 /* ActivityEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000082 /* ActivityEditorView.swift */; };
+		000000000000000000000083 /* LogSentEmailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000083 /* LogSentEmailView.swift */; };
+		000000000000000000000084 /* ApplicationTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000084 /* ApplicationTimelineView.swift */; };
+		000000000000000000000085 /* ApplicationContactsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000085 /* ApplicationContactsSection.swift */; };
+		000000000000000000000086 /* AppLockService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000086 /* AppLockService.swift */; };
+		000000000000000000000087 /* AppLockCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000087 /* AppLockCoordinator.swift */; };
+		000000000000000000000088 /* AppLockRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000088 /* AppLockRootView.swift */; };
+		000000000000000000000089 /* SecuritySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000089 /* SecuritySettingsView.swift */; };
+		000000000000000000000090 /* PrivacyPolicy.md in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000090 /* PrivacyPolicy.md */; };
+		000000000000000000000092 /* CoverLetterTemplate.tex in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000092 /* CoverLetterTemplate.tex */; };
+		000000000000000000000091 /* JobDescriptionDenoiseViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000091 /* JobDescriptionDenoiseViewModel.swift */; };
+		000000000000000000000093 /* ChecklistSuggestionsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000093 /* ChecklistSuggestionsViewModel.swift */; };
+		000000000000000000000094 /* JobMatchScoringCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000094 /* JobMatchScoringCoordinator.swift */; };
+		000000000000000000000095 /* JobMatchBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000095 /* JobMatchBadge.swift */; };
+		000000000000000000000096 /* JobMatchSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000096 /* JobMatchSection.swift */; };
+		000000000000000000000097 /* ATSCompatibilitySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000097 /* ATSCompatibilitySection.swift */; };
+		000000000000000000000098 /* ATSCompatibilityCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000098 /* ATSCompatibilityCoordinator.swift */; };
+		000000000000000000000099 /* ResumeTailoringMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000099 /* ResumeTailoringMode.swift */; };
+		000000000000000000000100 /* WeeklyDigestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000100 /* WeeklyDigestView.swift */; };
+		000000000000000000000074 /* tectonic in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000074 /* tectonic */; };
+		000000000000000000000075 /* ResumeTemplate.tex in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000075 /* ResumeTemplate.tex */; };
 		800000000000000000000001 /* PipelineKit in Frameworks */ = {isa = PBXBuildFile; productRef = 900000000000000000000001 /* PipelineKit */; };
 		A00000000000000000000010 /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01000000000000000000010 /* SafariWebExtensionHandler.swift */; };
 		A00000000000000000000020 /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = A01000000000000000000020 /* manifest.json */; };
@@ -77,6 +107,9 @@
 		A00000000000000000000050 /* popup.html in Resources */ = {isa = PBXBuildFile; fileRef = A01000000000000000000050 /* popup.html */; };
 		A00000000000000000000060 /* popup.js in Resources */ = {isa = PBXBuildFile; fileRef = A01000000000000000000060 /* popup.js */; };
 		A00000000000000000000070 /* popup.css in Resources */ = {isa = PBXBuildFile; fileRef = A01000000000000000000070 /* popup.css */; };
+		A000000000000000000000B0 /* icon-16.png in Resources */ = {isa = PBXBuildFile; fileRef = A010000000000000000000D0 /* icon-16.png */; };
+		A000000000000000000000C0 /* icon-48.png in Resources */ = {isa = PBXBuildFile; fileRef = A010000000000000000000E0 /* icon-48.png */; };
+		A000000000000000000000D0 /* icon-128.png in Resources */ = {isa = PBXBuildFile; fileRef = A010000000000000000000F0 /* icon-128.png */; };
 		A00000000000000000000080 /* SafariServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A01000000000000000000100 /* SafariServices.framework */; };
 		A00000000000000000000090 /* PipelineKit in Frameworks */ = {isa = PBXBuildFile; productRef = A09000000000000000000010 /* PipelineKit */; };
 		A00000000000000000000100 /* PipelineSafariExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A01000000000000000000200 /* PipelineSafariExtension.appex */; platformFilters = (macos, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -193,6 +226,36 @@
 		100000000000000000000068 /* ResumeTemplate.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = ResumeTemplate.json; sourceTree = "<group>"; };
 		100000000000000000000069 /* ResumeFonts */ = {isa = PBXFileReference; lastKnownFileType = folder; path = ResumeFonts; sourceTree = "<group>"; };
 		100000000000000000000070 /* ChainedVerticalScrollContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChainedVerticalScrollContainer.swift; sourceTree = "<group>"; };
+		100000000000000000000071 /* AIUsageLedgerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsageLedgerService.swift; sourceTree = "<group>"; };
+		100000000000000000000072 /* AIPricingDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPricingDefaults.swift; sourceTree = "<group>"; };
+		100000000000000000000073 /* CostCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CostCenterView.swift; sourceTree = "<group>"; };
+		100000000000000000000074 /* tectonic */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = tectonic; sourceTree = "<group>"; };
+		100000000000000000000075 /* ResumeTemplate.tex */ = {isa = PBXFileReference; lastKnownFileType = text; path = ResumeTemplate.tex; sourceTree = "<group>"; };
+		100000000000000000000076 /* MainDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainDestination.swift; sourceTree = "<group>"; };
+		100000000000000000000077 /* ContactsListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsListViewModel.swift; sourceTree = "<group>"; };
+		100000000000000000000078 /* ContactsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsListView.swift; sourceTree = "<group>"; };
+		100000000000000000000079 /* ContactDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactDetailView.swift; sourceTree = "<group>"; };
+		100000000000000000000080 /* ContactEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactEditorView.swift; sourceTree = "<group>"; };
+		100000000000000000000081 /* ManageApplicationContactsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManageApplicationContactsView.swift; sourceTree = "<group>"; };
+		100000000000000000000082 /* ActivityEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityEditorView.swift; sourceTree = "<group>"; };
+		100000000000000000000083 /* LogSentEmailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogSentEmailView.swift; sourceTree = "<group>"; };
+		100000000000000000000084 /* ApplicationTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationTimelineView.swift; sourceTree = "<group>"; };
+		100000000000000000000085 /* ApplicationContactsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationContactsSection.swift; sourceTree = "<group>"; };
+		100000000000000000000086 /* AppLockService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockService.swift; sourceTree = "<group>"; };
+		100000000000000000000087 /* AppLockCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockCoordinator.swift; sourceTree = "<group>"; };
+		100000000000000000000088 /* AppLockRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockRootView.swift; sourceTree = "<group>"; };
+		100000000000000000000089 /* SecuritySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecuritySettingsView.swift; sourceTree = "<group>"; };
+		100000000000000000000090 /* PrivacyPolicy.md */ = {isa = PBXFileReference; lastKnownFileType = text; path = PrivacyPolicy.md; sourceTree = "<group>"; };
+		100000000000000000000092 /* CoverLetterTemplate.tex */ = {isa = PBXFileReference; lastKnownFileType = text; path = CoverLetterTemplate.tex; sourceTree = "<group>"; };
+		100000000000000000000091 /* JobDescriptionDenoiseViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobDescriptionDenoiseViewModel.swift; sourceTree = "<group>"; };
+		100000000000000000000093 /* ChecklistSuggestionsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChecklistSuggestionsViewModel.swift; sourceTree = "<group>"; };
+		100000000000000000000094 /* JobMatchScoringCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobMatchScoringCoordinator.swift; sourceTree = "<group>"; };
+		100000000000000000000095 /* JobMatchBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobMatchBadge.swift; sourceTree = "<group>"; };
+		100000000000000000000096 /* JobMatchSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobMatchSection.swift; sourceTree = "<group>"; };
+		100000000000000000000097 /* ATSCompatibilitySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ATSCompatibilitySection.swift; sourceTree = "<group>"; };
+		100000000000000000000098 /* ATSCompatibilityCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ATSCompatibilityCoordinator.swift; sourceTree = "<group>"; };
+		100000000000000000000099 /* ResumeTailoringMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResumeTailoringMode.swift; sourceTree = "<group>"; };
+		100000000000000000000100 /* WeeklyDigestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyDigestView.swift; sourceTree = "<group>"; };
 		A01000000000000000000010 /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
 		A01000000000000000000020 /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = manifest.json; sourceTree = "<group>"; };
 		A01000000000000000000030 /* content.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = content.js; sourceTree = "<group>"; };
@@ -200,6 +263,9 @@
 		A01000000000000000000050 /* popup.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = popup.html; sourceTree = "<group>"; };
 		A01000000000000000000060 /* popup.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = popup.js; sourceTree = "<group>"; };
 		A01000000000000000000070 /* popup.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = popup.css; sourceTree = "<group>"; };
+		A010000000000000000000D0 /* icon-16.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "icon-16.png"; sourceTree = "<group>"; };
+		A010000000000000000000E0 /* icon-48.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "icon-48.png"; sourceTree = "<group>"; };
+		A010000000000000000000F0 /* icon-128.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "icon-128.png"; sourceTree = "<group>"; };
 		A01000000000000000000080 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A01000000000000000000090 /* PipelineSafariExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PipelineSafariExtension.entitlements; sourceTree = "<group>"; };
 		A01000000000000000000100 /* SafariServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SafariServices.framework; path = System/Library/Frameworks/SafariServices.framework; sourceTree = SDKROOT; };
@@ -281,6 +347,8 @@
 				100000000000000000000004 /* JobApplication.swift */,
 				100000000000000000000005 /* InterviewLog.swift */,
 				100000000000000000000006 /* SidebarFilter.swift */,
+				100000000000000000000076 /* MainDestination.swift */,
+				100000000000000000000099 /* ResumeTailoringMode.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -297,6 +365,10 @@
 				100000000000000000000060 /* InterviewPrepViewModel.swift */,
 				100000000000000000000062 /* FollowUpDrafterViewModel.swift */,
 				100000000000000000000064 /* DashboardViewModel.swift */,
+				100000000000000000000077 /* ContactsListViewModel.swift */,
+				100000000000000000000087 /* AppLockCoordinator.swift */,
+				100000000000000000000091 /* JobDescriptionDenoiseViewModel.swift */,
+				100000000000000000000093 /* ChecklistSuggestionsViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -311,6 +383,7 @@
 				300000000000000000000015 /* Settings */,
 				300000000000000000000016 /* Components */,
 				300000000000000000000018 /* Kanban */,
+				300000000000000000000019 /* Contacts */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -323,6 +396,10 @@
 				100000000000000000000050 /* PlatformDetectionService.swift */,
 				100000000000000000000051 /* NotificationService.swift */,
 				100000000000000000000067 /* ResumeServices.swift */,
+				100000000000000000000071 /* AIUsageLedgerService.swift */,
+				100000000000000000000086 /* AppLockService.swift */,
+				100000000000000000000094 /* JobMatchScoringCoordinator.swift */,
+				100000000000000000000098 /* ATSCompatibilityCoordinator.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -333,6 +410,7 @@
 				100000000000000000000052 /* DateFormatters.swift */,
 				100000000000000000000053 /* URLHelpers.swift */,
 				100000000000000000000054 /* Constants.swift */,
+				100000000000000000000072 /* AIPricingDefaults.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -343,6 +421,10 @@
 				100000000000000000000003 /* Assets.xcassets */,
 				100000000000000000000068 /* ResumeTemplate.json */,
 				100000000000000000000069 /* ResumeFonts */,
+				100000000000000000000074 /* tectonic */,
+				100000000000000000000075 /* ResumeTemplate.tex */,
+				100000000000000000000092 /* CoverLetterTemplate.tex */,
+				100000000000000000000090 /* PrivacyPolicy.md */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -355,6 +437,8 @@
 				100000000000000000000020 /* ApplicationListView.swift */,
 				100000000000000000000021 /* StatsBarView.swift */,
 				100000000000000000000065 /* DashboardView.swift */,
+				100000000000000000000100 /* WeeklyDigestView.swift */,
+				100000000000000000000073 /* CostCenterView.swift */,
 				100000000000000000000066 /* ResumeWorkspaceView.swift */,
 			);
 			path = Main;
@@ -379,6 +463,10 @@
 				100000000000000000000028 /* InterviewHistoryView.swift */,
 				100000000000000000000061 /* InterviewPrepView.swift */,
 				100000000000000000000063 /* FollowUpDrafterView.swift */,
+				100000000000000000000084 /* ApplicationTimelineView.swift */,
+				100000000000000000000085 /* ApplicationContactsSection.swift */,
+				100000000000000000000096 /* JobMatchSection.swift */,
+				100000000000000000000097 /* ATSCompatibilitySection.swift */,
 			);
 			path = Detail;
 			sourceTree = "<group>";
@@ -391,6 +479,10 @@
 				100000000000000000000031 /* AIParseFormView.swift */,
 				100000000000000000000032 /* EditApplicationView.swift */,
 				100000000000000000000033 /* AddInterviewLogView.swift */,
+				100000000000000000000080 /* ContactEditorView.swift */,
+				100000000000000000000081 /* ManageApplicationContactsView.swift */,
+				100000000000000000000082 /* ActivityEditorView.swift */,
+				100000000000000000000083 /* LogSentEmailView.swift */,
 			);
 			path = Forms;
 			sourceTree = "<group>";
@@ -401,6 +493,7 @@
 				100000000000000000000034 /* SettingsView.swift */,
 				100000000000000000000035 /* AppearanceSettingsView.swift */,
 				100000000000000000000036 /* AIProviderSettingsView.swift */,
+				100000000000000000000089 /* SecuritySettingsView.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -416,6 +509,8 @@
 				100000000000000000000042 /* StarRating.swift */,
 				100000000000000000000043 /* SalaryRangeDisplay.swift */,
 				100000000000000000000070 /* ChainedVerticalScrollContainer.swift */,
+				100000000000000000000088 /* AppLockRootView.swift */,
+				100000000000000000000095 /* JobMatchBadge.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -441,6 +536,15 @@
 			path = Kanban;
 			sourceTree = "<group>";
 		};
+		300000000000000000000019 /* Contacts */ = {
+			isa = PBXGroup;
+			children = (
+				100000000000000000000078 /* ContactsListView.swift */,
+				100000000000000000000079 /* ContactDetailView.swift */,
+			);
+			path = Contacts;
+			sourceTree = "<group>";
+		};
 		A03000000000000000000010 /* PipelineSafariExtension */ = {
 			isa = PBXGroup;
 			children = (
@@ -461,6 +565,9 @@
 				A01000000000000000000050 /* popup.html */,
 				A01000000000000000000060 /* popup.js */,
 				A01000000000000000000070 /* popup.css */,
+				A010000000000000000000D0 /* icon-16.png */,
+				A010000000000000000000E0 /* icon-48.png */,
+				A010000000000000000000F0 /* icon-128.png */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -492,6 +599,7 @@
 				400000000000000000000002 /* Sources */,
 				200000000000000000000001 /* Frameworks */,
 				400000000000000000000003 /* Resources */,
+				C00000000000000000000001 /* Codesign Tectonic */,
 				A04000000000000000000100 /* Embed App Extensions */,
 				B04000000000000000000100 /* Embed Executables */,
 			);
@@ -600,6 +708,10 @@
 				000000000000000000000003 /* Assets.xcassets in Resources */,
 				000000000000000000000068 /* ResumeTemplate.json in Resources */,
 				000000000000000000000069 /* ResumeFonts in Resources */,
+				000000000000000000000074 /* tectonic in Resources */,
+				000000000000000000000075 /* ResumeTemplate.tex in Resources */,
+				000000000000000000000092 /* CoverLetterTemplate.tex in Resources */,
+				000000000000000000000090 /* PrivacyPolicy.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -613,10 +725,35 @@
 				A00000000000000000000050 /* popup.html in Resources */,
 				A00000000000000000000060 /* popup.js in Resources */,
 				A00000000000000000000070 /* popup.css in Resources */,
+				A000000000000000000000B0 /* icon-16.png in Resources */,
+				A000000000000000000000C0 /* icon-48.png in Resources */,
+				A000000000000000000000D0 /* icon-128.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		C00000000000000000000001 /* Codesign Tectonic */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Codesign Tectonic";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "TECTONIC_PATH=\"$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH/Resources/tectonic\"\nif [ -f \"$TECTONIC_PATH\" ]; then\n  codesign --force --sign - \"$TECTONIC_PATH\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		400000000000000000000002 /* Sources */ = {
@@ -628,6 +765,7 @@
 				000000000000000000000004 /* JobApplication.swift in Sources */,
 				000000000000000000000005 /* InterviewLog.swift in Sources */,
 				000000000000000000000006 /* SidebarFilter.swift in Sources */,
+				000000000000000000000076 /* MainDestination.swift in Sources */,
 				000000000000000000000013 /* ApplicationListViewModel.swift in Sources */,
 				000000000000000000000014 /* ApplicationDetailViewModel.swift in Sources */,
 				000000000000000000000015 /* AddEditApplicationViewModel.swift in Sources */,
@@ -637,12 +775,18 @@
 				000000000000000000000060 /* InterviewPrepViewModel.swift in Sources */,
 				000000000000000000000062 /* FollowUpDrafterViewModel.swift in Sources */,
 				000000000000000000000064 /* DashboardViewModel.swift in Sources */,
+				000000000000000000000077 /* ContactsListViewModel.swift in Sources */,
+				000000000000000000000091 /* JobDescriptionDenoiseViewModel.swift in Sources */,
 				000000000000000000000018 /* MainView.swift in Sources */,
 				000000000000000000000019 /* SidebarView.swift in Sources */,
 				000000000000000000000020 /* ApplicationListView.swift in Sources */,
 				000000000000000000000021 /* StatsBarView.swift in Sources */,
 				000000000000000000000065 /* DashboardView.swift in Sources */,
+				000000000000000000000100 /* WeeklyDigestView.swift in Sources */,
+				000000000000000000000073 /* CostCenterView.swift in Sources */,
 				000000000000000000000066 /* ResumeWorkspaceView.swift in Sources */,
+				000000000000000000000078 /* ContactsListView.swift in Sources */,
+				000000000000000000000079 /* ContactDetailView.swift in Sources */,
 				000000000000000000000022 /* JobCardView.swift in Sources */,
 				000000000000000000000057 /* KanbanCardView.swift in Sources */,
 				000000000000000000000058 /* KanbanColumnView.swift in Sources */,
@@ -655,14 +799,23 @@
 				000000000000000000000028 /* InterviewHistoryView.swift in Sources */,
 				000000000000000000000061 /* InterviewPrepView.swift in Sources */,
 				000000000000000000000063 /* FollowUpDrafterView.swift in Sources */,
+				000000000000000000000084 /* ApplicationTimelineView.swift in Sources */,
+				000000000000000000000085 /* ApplicationContactsSection.swift in Sources */,
+				000000000000000000000096 /* JobMatchSection.swift in Sources */,
+				000000000000000000000097 /* ATSCompatibilitySection.swift in Sources */,
 				000000000000000000000029 /* AddApplicationView.swift in Sources */,
 				000000000000000000000030 /* ManualEntryFormView.swift in Sources */,
 				000000000000000000000031 /* AIParseFormView.swift in Sources */,
 				000000000000000000000032 /* EditApplicationView.swift in Sources */,
 				000000000000000000000033 /* AddInterviewLogView.swift in Sources */,
+				000000000000000000000080 /* ContactEditorView.swift in Sources */,
+				000000000000000000000081 /* ManageApplicationContactsView.swift in Sources */,
+				000000000000000000000082 /* ActivityEditorView.swift in Sources */,
+				000000000000000000000083 /* LogSentEmailView.swift in Sources */,
 				000000000000000000000034 /* SettingsView.swift in Sources */,
 				000000000000000000000035 /* AppearanceSettingsView.swift in Sources */,
 				000000000000000000000036 /* AIProviderSettingsView.swift in Sources */,
+				000000000000000000000089 /* SecuritySettingsView.swift in Sources */,
 				000000000000000000000037 /* StatusBadge.swift in Sources */,
 				000000000000000000000038 /* PriorityFlag.swift in Sources */,
 				000000000000000000000039 /* PlatformIcon.swift in Sources */,
@@ -671,6 +824,8 @@
 				000000000000000000000042 /* StarRating.swift in Sources */,
 				000000000000000000000043 /* SalaryRangeDisplay.swift in Sources */,
 				000000000000000000000070 /* ChainedVerticalScrollContainer.swift in Sources */,
+				000000000000000000000088 /* AppLockRootView.swift in Sources */,
+				000000000000000000000095 /* JobMatchBadge.swift in Sources */,
 				000000000000000000000044 /* AIServiceProtocol.swift in Sources */,
 				000000000000000000000045 /* OpenAIService.swift in Sources */,
 				000000000000000000000046 /* AnthropicService.swift in Sources */,
@@ -679,9 +834,17 @@
 				000000000000000000000050 /* PlatformDetectionService.swift in Sources */,
 				000000000000000000000051 /* NotificationService.swift in Sources */,
 				000000000000000000000067 /* ResumeServices.swift in Sources */,
+				000000000000000000000071 /* AIUsageLedgerService.swift in Sources */,
+				000000000000000000000086 /* AppLockService.swift in Sources */,
+				000000000000000000000094 /* JobMatchScoringCoordinator.swift in Sources */,
+				000000000000000000000098 /* ATSCompatibilityCoordinator.swift in Sources */,
 				000000000000000000000052 /* DateFormatters.swift in Sources */,
 				000000000000000000000053 /* URLHelpers.swift in Sources */,
 				000000000000000000000054 /* Constants.swift in Sources */,
+				000000000000000000000072 /* AIPricingDefaults.swift in Sources */,
+				000000000000000000000087 /* AppLockCoordinator.swift in Sources */,
+				000000000000000000000093 /* ChecklistSuggestionsViewModel.swift in Sources */,
+				000000000000000000000099 /* ResumeTailoringMode.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -758,7 +921,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -823,7 +986,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -851,7 +1014,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Pipeline.CloudKit.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 0703;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = N3B962X7RX;
@@ -876,7 +1039,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = io.github.digitaltracer.pipeline;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -899,7 +1062,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Pipeline.CloudKit.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 0703;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = N3B962X7RX;
@@ -924,7 +1087,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = io.github.digitaltracer.pipeline;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -941,7 +1104,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = PipelineSafariExtension/PipelineSafariExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 0703;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = N3B962X7RX;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -954,7 +1117,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = "io.github.digitaltracer.pipeline.safari-extension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -969,7 +1132,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = PipelineSafariExtension/PipelineSafariExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 0703;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = N3B962X7RX;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -982,7 +1145,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = "io.github.digitaltracer.pipeline.safari-extension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -999,12 +1162,12 @@
 				CODE_SIGN_ENTITLEMENTS = PipelineNativeHost/PipelineNativeHost.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 0703;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = N3B962X7RX;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = "io.github.digitaltracer.pipeline.native-host";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -1021,12 +1184,12 @@
 				CODE_SIGN_ENTITLEMENTS = PipelineNativeHost/PipelineNativeHost.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 0703;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = N3B962X7RX;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = "io.github.digitaltracer.pipeline.native-host";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
