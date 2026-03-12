@@ -1,6 +1,7 @@
 import Foundation
 import PipelineKit
 
+@MainActor
 @Observable
 final class DashboardViewModel {
     struct SummaryCard: Identifiable {
@@ -18,12 +19,14 @@ final class DashboardViewModel {
     var lastRefreshToken = ""
 
     private let analyticsService: DashboardAnalyticsService
+    private var activeRefreshToken: String?
 
     init(analyticsService: DashboardAnalyticsService = DashboardAnalyticsService()) {
         self.analyticsService = analyticsService
     }
 
     func refresh(
+        token: String,
         applications: [JobApplication],
         cycles: [JobSearchCycle],
         goals: [SearchGoal],
@@ -31,10 +34,11 @@ final class DashboardViewModel {
         currentResumeRevisionID: UUID?,
         matchPreferences: JobMatchPreferences
     ) async {
+        lastRefreshToken = token
+        activeRefreshToken = token
         isRefreshing = true
-        defer { isRefreshing = false }
 
-        analytics = await analyticsService.analyze(
+        let result = await analyticsService.analyze(
             applications: applications,
             cycles: cycles,
             goals: goals,
@@ -43,6 +47,17 @@ final class DashboardViewModel {
             currentResumeRevisionID: currentResumeRevisionID,
             matchPreferences: matchPreferences
         )
+
+        guard activeRefreshToken == token, !Task.isCancelled else { return }
+
+        analytics = result
+        activeRefreshToken = nil
+        isRefreshing = false
+    }
+
+    func cancelRefresh() {
+        activeRefreshToken = nil
+        isRefreshing = false
     }
 
     var summaryCards: [SummaryCard] {

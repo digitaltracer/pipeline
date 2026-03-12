@@ -55,7 +55,9 @@ struct DashboardView: View {
         }
         .background(DesignSystem.Colors.contentBackground(colorScheme))
         .task(id: refreshToken) {
+            let token = refreshToken
             await viewModel.refresh(
+                token: token,
                 applications: applications,
                 cycles: cycles,
                 goals: goals,
@@ -63,6 +65,9 @@ struct DashboardView: View {
                 currentResumeRevisionID: currentResumeRevision?.id,
                 matchPreferences: settingsViewModel.jobMatchPreferences
             )
+        }
+        .onDisappear {
+            viewModel.cancelRefresh()
         }
         .sheet(isPresented: $showingCycleManager) {
             CycleManagementSheet()
