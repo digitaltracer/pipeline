@@ -15,6 +15,7 @@ struct ApplicationListView: View {
     let currentResumeRevisionID: UUID?
     let matchPreferences: JobMatchPreferences
     @State private var actionErrorMessage: String?
+    @State private var rejectionPromptActivity: ApplicationActivity?
     private let detailViewModel = ApplicationDetailViewModel()
 
     private let columns = [
@@ -72,6 +73,21 @@ struct ApplicationListView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(actionErrorMessage ?? "An unknown error occurred.")
+        }
+        .sheet(item: $rejectionPromptActivity) { activity in
+            RejectionLogSheet(
+                viewModel: RejectionLogEditorViewModel(
+                    activity: activity,
+                    application: activity.application ?? JobApplication(
+                        companyName: "",
+                        role: "",
+                        location: ""
+                    ),
+                    modelContext: modelContext,
+                    settingsViewModel: SettingsViewModel()
+                ),
+                onSaved: nil
+            )
         }
     }
 
@@ -137,7 +153,10 @@ struct ApplicationListView: View {
 
     private func applyStatus(_ status: ApplicationStatus, to application: JobApplication) {
         do {
-            try detailViewModel.updateStatus(status, for: application, context: modelContext)
+            let result = try detailViewModel.updateStatus(status, for: application, context: modelContext)
+            if result.needsRejectionLogPrompt, let activityID = result.statusActivityID {
+                rejectionPromptActivity = application.sortedActivities.first(where: { $0.id == activityID })
+            }
         } catch {
             actionErrorMessage = error.localizedDescription
         }
@@ -215,14 +234,17 @@ private extension View {
             ApplicationContactLink.self,
             ApplicationActivity.self,
             InterviewDebrief.self,
+            RejectionLog.self,
             InterviewQuestionEntry.self,
             InterviewLearningSnapshot.self,
+            RejectionLearningSnapshot.self,
             ApplicationTask.self,
             ApplicationChecklistSuggestion.self,
             ApplicationAttachment.self,
             CoverLetterDraft.self,
             JobMatchAssessment.self,
-            ATSCompatibilityAssessment.self
+            ATSCompatibilityAssessment.self,
+            ATSCompatibilityScanRun.self
         ],
         inMemory: true
     )

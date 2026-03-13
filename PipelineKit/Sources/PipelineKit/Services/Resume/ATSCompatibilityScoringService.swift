@@ -10,8 +10,18 @@ public struct ATSCompatibilityAssessmentDraft: Sendable, Equatable {
     public let summary: String?
     public let matchedKeywords: [String]
     public let missingKeywords: [String]
+    public let skillsPromotionKeywords: [String]
+    public let keywordEvidenceSummary: [String]
     public let criticalFindings: [String]
     public let warningFindings: [String]
+    public let sectionFindings: [String]
+    public let contactWarningFindings: [String]
+    public let contactCriticalFindings: [String]
+    public let formatWarningFindings: [String]
+    public let formatCriticalFindings: [String]
+    public let hasExperienceSection: Bool
+    public let hasEducationSection: Bool
+    public let hasSkillsSection: Bool
     public let status: ATSAssessmentStatus
     public let blockedReason: ATSBlockedReason?
     public let resumeSourceKind: ATSResumeSourceKind?
@@ -32,8 +42,18 @@ public struct ATSCompatibilityAssessmentDraft: Sendable, Equatable {
         summary: String?,
         matchedKeywords: [String],
         missingKeywords: [String],
+        skillsPromotionKeywords: [String],
+        keywordEvidenceSummary: [String],
         criticalFindings: [String],
         warningFindings: [String],
+        sectionFindings: [String],
+        contactWarningFindings: [String],
+        contactCriticalFindings: [String],
+        formatWarningFindings: [String],
+        formatCriticalFindings: [String],
+        hasExperienceSection: Bool,
+        hasEducationSection: Bool,
+        hasSkillsSection: Bool,
         status: ATSAssessmentStatus,
         blockedReason: ATSBlockedReason?,
         resumeSourceKind: ATSResumeSourceKind?,
@@ -53,8 +73,18 @@ public struct ATSCompatibilityAssessmentDraft: Sendable, Equatable {
         self.summary = summary
         self.matchedKeywords = matchedKeywords
         self.missingKeywords = missingKeywords
+        self.skillsPromotionKeywords = skillsPromotionKeywords
+        self.keywordEvidenceSummary = keywordEvidenceSummary
         self.criticalFindings = criticalFindings
         self.warningFindings = warningFindings
+        self.sectionFindings = sectionFindings
+        self.contactWarningFindings = contactWarningFindings
+        self.contactCriticalFindings = contactCriticalFindings
+        self.formatWarningFindings = formatWarningFindings
+        self.formatCriticalFindings = formatCriticalFindings
+        self.hasExperienceSection = hasExperienceSection
+        self.hasEducationSection = hasEducationSection
+        self.hasSkillsSection = hasSkillsSection
         self.status = status
         self.blockedReason = blockedReason
         self.resumeSourceKind = resumeSourceKind
@@ -69,7 +99,7 @@ public struct ATSCompatibilityAssessmentDraft: Sendable, Equatable {
 }
 
 public enum ATSCompatibilityScoringService {
-    public static let scoringVersion = "ats-compat-v1"
+    public static let scoringVersion = "ats-compat-v2"
 
     private static let keywordWeight = 0.55
     private static let sectionWeight = 0.20
@@ -91,10 +121,19 @@ public enum ATSCompatibilityScoringService {
         let usesWordBoundaries: Bool
     }
 
+    private struct SearchKeyword {
+        let display: String
+        let normalized: String
+        let aliases: [String]
+        let usesWordBoundaries: Bool
+    }
+
     private struct KeywordAnalysis {
         let score: Int
         let matched: [String]
         let missing: [String]
+        let skillsPromotionKeywords: [String]
+        let keywordEvidenceSummary: [String]
         let criticalFindings: [String]
         let warningFindings: [String]
         let totalWeightedTerms: Int
@@ -102,7 +141,10 @@ public enum ATSCompatibilityScoringService {
 
     private struct SectionAnalysis {
         let score: Int
-        let warningFindings: [String]
+        let hasExperienceSection: Bool
+        let hasEducationSection: Bool
+        let hasSkillsSection: Bool
+        let findings: [String]
     }
 
     private struct ContactAnalysis {
@@ -170,7 +212,8 @@ public enum ATSCompatibilityScoringService {
             )
         }
 
-        let resume = try ResumeSchemaValidator.validate(jsonText: resumeSource.rawJSON).schema
+        let validation = try ResumeSchemaValidator.validate(jsonText: resumeSource.rawJSON)
+        let resume = validation.schema
 
         let keywordAnalysis = analyzeKeywords(
             role: application.role,
@@ -179,7 +222,10 @@ public enum ATSCompatibilityScoringService {
         )
         let sectionAnalysis = analyzeSections(resume: resume)
         let contactAnalysis = analyzeContact(resume: resume)
-        let formatAnalysis = analyzeFormat(resume: resume)
+        let formatAnalysis = analyzeFormat(
+            resume: resume,
+            unknownFieldPaths: validation.unknownFieldPaths
+        )
 
         let overallScore = Int(
             (
@@ -207,8 +253,27 @@ public enum ATSCompatibilityScoringService {
             summary: summary,
             matchedKeywords: keywordAnalysis.matched,
             missingKeywords: keywordAnalysis.missing,
-            criticalFindings: deduplicated(keywordAnalysis.criticalFindings + contactAnalysis.criticalFindings + formatAnalysis.criticalFindings),
-            warningFindings: deduplicated(keywordAnalysis.warningFindings + sectionAnalysis.warningFindings + contactAnalysis.warningFindings + formatAnalysis.warningFindings),
+            skillsPromotionKeywords: keywordAnalysis.skillsPromotionKeywords,
+            keywordEvidenceSummary: keywordAnalysis.keywordEvidenceSummary,
+            criticalFindings: deduplicated(
+                keywordAnalysis.criticalFindings
+                + contactAnalysis.criticalFindings
+                + formatAnalysis.criticalFindings
+            ),
+            warningFindings: deduplicated(
+                keywordAnalysis.warningFindings
+                + sectionAnalysis.findings
+                + contactAnalysis.warningFindings
+                + formatAnalysis.warningFindings
+            ),
+            sectionFindings: sectionAnalysis.findings,
+            contactWarningFindings: contactAnalysis.warningFindings,
+            contactCriticalFindings: contactAnalysis.criticalFindings,
+            formatWarningFindings: formatAnalysis.warningFindings,
+            formatCriticalFindings: formatAnalysis.criticalFindings,
+            hasExperienceSection: sectionAnalysis.hasExperienceSection,
+            hasEducationSection: sectionAnalysis.hasEducationSection,
+            hasSkillsSection: sectionAnalysis.hasSkillsSection,
             status: .ready,
             blockedReason: nil,
             resumeSourceKind: atsResumeSourceKind(for: resumeSource.kind),
@@ -237,8 +302,18 @@ public enum ATSCompatibilityScoringService {
             summary: nil,
             matchedKeywords: [],
             missingKeywords: [],
+            skillsPromotionKeywords: [],
+            keywordEvidenceSummary: [],
             criticalFindings: [],
             warningFindings: [],
+            sectionFindings: [],
+            contactWarningFindings: [],
+            contactCriticalFindings: [],
+            formatWarningFindings: [],
+            formatCriticalFindings: [],
+            hasExperienceSection: false,
+            hasEducationSection: false,
+            hasSkillsSection: false,
             status: .blocked,
             blockedReason: reason,
             resumeSourceKind: resumeSource.map { atsResumeSourceKind(for: $0.kind) },
@@ -317,6 +392,48 @@ public enum ATSCompatibilityScoringService {
         return isStale(assessment, application: application, resumeSource: resumeSource)
     }
 
+    public static func evidencePaths(for keyword: String, in resume: ResumeSchema) -> [String] {
+        let searchTerm = searchKeyword(for: keyword)
+        var paths: [String] = []
+
+        if let summary = resume.summary,
+           Self.keyword(searchTerm, appearsIn: summary, normalizedText: normalizedSearchText(from: summary)) {
+            paths.append("/summary")
+        }
+
+        for (index, entry) in resume.experience.enumerated() {
+            if Self.keyword(searchTerm, appearsIn: entry.title, normalizedText: normalizedSearchText(from: entry.title)) {
+                paths.append("/experience/\(index)/title")
+            }
+            if Self.keyword(searchTerm, appearsIn: entry.company, normalizedText: normalizedSearchText(from: entry.company)) {
+                paths.append("/experience/\(index)/company")
+            }
+            for (bulletIndex, bullet) in entry.responsibilities.enumerated() {
+                if Self.keyword(searchTerm, appearsIn: bullet, normalizedText: normalizedSearchText(from: bullet)) {
+                    paths.append("/experience/\(index)/responsibilities/\(bulletIndex)")
+                }
+            }
+        }
+
+        for (index, project) in resume.projects.enumerated() {
+            if Self.keyword(searchTerm, appearsIn: project.name, normalizedText: normalizedSearchText(from: project.name)) {
+                paths.append("/projects/\(index)/name")
+            }
+            for (technologyIndex, technology) in project.technologies.enumerated() {
+                if Self.keyword(searchTerm, appearsIn: technology, normalizedText: normalizedSearchText(from: technology)) {
+                    paths.append("/projects/\(index)/technologies/\(technologyIndex)")
+                }
+            }
+            for (descriptionIndex, bullet) in project.description.enumerated() {
+                if Self.keyword(searchTerm, appearsIn: bullet, normalizedText: normalizedSearchText(from: bullet)) {
+                    paths.append("/projects/\(index)/description/\(descriptionIndex)")
+                }
+            }
+        }
+
+        return deduplicated(paths)
+    }
+
     private static func analyzeKeywords(
         role: String,
         jobDescription: String,
@@ -336,6 +453,9 @@ public enum ATSCompatibilityScoringService {
             .sorted { lhs, rhs in
                 if lhs.weight == rhs.weight {
                     if lhs.occurrences == rhs.occurrences {
+                        if lhs.display.count == rhs.display.count {
+                            return lhs.normalized < rhs.normalized
+                        }
                         return lhs.display.count > rhs.display.count
                     }
                     return lhs.occurrences > rhs.occurrences
@@ -355,6 +475,8 @@ public enum ATSCompatibilityScoringService {
                 score: 0,
                 matched: [],
                 missing: [],
+                skillsPromotionKeywords: [],
+                keywordEvidenceSummary: [],
                 criticalFindings: [],
                 warningFindings: ["No ATS keywords could be extracted from the job description."],
                 totalWeightedTerms: 0
@@ -363,8 +485,13 @@ public enum ATSCompatibilityScoringService {
 
         let resumeRawText = resumeSearchText(from: resume)
         let resumeNormalizedText = normalizedSearchText(from: resumeRawText)
+        let skillsRawText = resumeSkillsSearchText(from: resume)
+        let skillsNormalizedText = normalizedSearchText(from: skillsRawText)
+
         var matched: [String] = []
         var missing: [String] = []
+        var skillsPromotionKeywords: [String] = []
+        var keywordEvidenceSummary: [String] = []
         var matchedWeight = 0.0
         var totalWeight = 0.0
         var criticalFindings: [String] = []
@@ -372,13 +499,34 @@ public enum ATSCompatibilityScoringService {
 
         for candidate in selected {
             totalWeight += candidate.weight
-            if keyword(candidate, appearsIn: resumeRawText, normalizedText: resumeNormalizedText) {
+
+            let matchedAnywhere = keyword(candidate, appearsIn: resumeRawText, normalizedText: resumeNormalizedText)
+            let matchedInSkills = keyword(candidate, appearsIn: skillsRawText, normalizedText: skillsNormalizedText)
+            let evidencePaths = evidencePaths(for: candidate.display, in: resume)
+
+            if matchedAnywhere {
                 matched.append(candidate.display)
                 matchedWeight += candidate.weight
+
+                if !matchedInSkills && !evidencePaths.isEmpty {
+                    skillsPromotionKeywords.append(candidate.display)
+                    warningFindings.append("\(candidate.display) appears in resume evidence but is not listed in Skills.")
+                    if candidate.isTitleTerm || candidate.occurrences >= 2 {
+                        keywordEvidenceSummary.append(
+                            "\(candidate.display) \(occurrencePhrase(for: candidate.occurrences)) in the JD and only appears outside the Skills section."
+                        )
+                    }
+                } else if candidate.isTitleTerm || candidate.occurrences >= 2 {
+                    keywordEvidenceSummary.append(
+                        "\(candidate.display) \(occurrencePhrase(for: candidate.occurrences)) in the JD and already appears in the resume."
+                    )
+                }
             } else {
                 missing.append(candidate.display)
                 if candidate.isTitleTerm || candidate.occurrences >= 2 {
-                    criticalFindings.append("\(candidate.display) is emphasized in the JD but absent from the resume.")
+                    let message = "\(candidate.display) \(occurrencePhrase(for: candidate.occurrences)) in the JD and is absent from the resume."
+                    criticalFindings.append(message)
+                    keywordEvidenceSummary.append(message)
                 }
             }
         }
@@ -391,10 +539,18 @@ public enum ATSCompatibilityScoringService {
             warningFindings.append("\(missing.count) of \(selected.count) weighted JD terms are missing from the resume.")
         }
 
+        if !skillsPromotionKeywords.isEmpty {
+            warningFindings.append(
+                "\(skillsPromotionKeywords.count) JD term\(skillsPromotionKeywords.count == 1 ? "" : "s") can be promoted into the Skills section from existing resume evidence."
+            )
+        }
+
         return KeywordAnalysis(
             score: score,
-            matched: matched,
-            missing: missing,
+            matched: deduplicated(matched),
+            missing: deduplicated(missing),
+            skillsPromotionKeywords: deduplicated(skillsPromotionKeywords),
+            keywordEvidenceSummary: deduplicated(keywordEvidenceSummary),
             criticalFindings: deduplicated(criticalFindings),
             warningFindings: deduplicated(warningFindings),
             totalWeightedTerms: selected.count
@@ -402,29 +558,33 @@ public enum ATSCompatibilityScoringService {
     }
 
     private static func analyzeSections(resume: ResumeSchema) -> SectionAnalysis {
-        var presentCount = 0
-        var warningFindings: [String] = []
+        let hasExperienceSection = !resume.experience.isEmpty
+        let hasEducationSection = !resume.education.isEmpty
+        let hasSkillsSection = !resume.skills.isEmpty
 
-        if !resume.experience.isEmpty {
-            presentCount += 1
-        } else {
-            warningFindings.append("Experience section is missing or empty.")
+        let presentCount = [hasExperienceSection, hasEducationSection, hasSkillsSection]
+            .filter { $0 }
+            .count
+
+        var findings: [String] = []
+        if !hasExperienceSection {
+            findings.append("Experience section is missing or empty.")
         }
-
-        if !resume.education.isEmpty {
-            presentCount += 1
-        } else {
-            warningFindings.append("Education section is missing or empty.")
+        if !hasEducationSection {
+            findings.append("Education section is missing or empty.")
         }
-
-        if !resume.skills.isEmpty {
-            presentCount += 1
-        } else {
-            warningFindings.append("Skills section is missing or empty.")
+        if !hasSkillsSection {
+            findings.append("Skills section is missing or empty.")
         }
 
         let score = Int((Double(presentCount) / 3.0 * 100.0).rounded())
-        return SectionAnalysis(score: score, warningFindings: warningFindings)
+        return SectionAnalysis(
+            score: score,
+            hasExperienceSection: hasExperienceSection,
+            hasEducationSection: hasEducationSection,
+            hasSkillsSection: hasSkillsSection,
+            findings: findings
+        )
     }
 
     private static func analyzeContact(resume: ResumeSchema) -> ContactAnalysis {
@@ -456,12 +616,15 @@ public enum ATSCompatibilityScoringService {
 
         return ContactAnalysis(
             score: max(0, score),
-            warningFindings: warningFindings,
-            criticalFindings: criticalFindings
+            warningFindings: deduplicated(warningFindings),
+            criticalFindings: deduplicated(criticalFindings)
         )
     }
 
-    private static func analyzeFormat(resume: ResumeSchema) -> FormatAnalysis {
+    private static func analyzeFormat(
+        resume: ResumeSchema,
+        unknownFieldPaths: [String]
+    ) -> FormatAnalysis {
         var score = 100
         var warningFindings: [String] = []
         var criticalFindings: [String] = []
@@ -470,6 +633,11 @@ public enum ATSCompatibilityScoringService {
            wordCount(summary) > 80 {
             score -= 12
             warningFindings.append("Summary is longer than 80 words.")
+        }
+
+        if resume.experience.contains(where: { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+            score -= 15
+            criticalFindings.append("At least one experience entry is missing a title.")
         }
 
         if resume.experience.contains(where: { $0.company.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
@@ -501,7 +669,7 @@ public enum ATSCompatibilityScoringService {
         let denseSkillCategories = resume.skills.filter { $0.value.count >= 8 }
         if !denseSkillCategories.isEmpty {
             score -= 8
-            warningFindings.append("Skills section is dense and will render as comma-separated lines in the exported PDF.")
+            warningFindings.append("Skills section is dense and exports as long comma-separated lines, which some ATS systems parse poorly.")
         }
 
         if resume.projects.contains(where: { project in
@@ -512,6 +680,13 @@ public enum ATSCompatibilityScoringService {
         }) {
             score -= 5
             warningFindings.append("At least one project URL looks malformed.")
+        }
+
+        if !unknownFieldPaths.isEmpty {
+            score -= min(10, unknownFieldPaths.count * 2)
+            warningFindings.append(
+                "\(unknownFieldPaths.count) resume field\(unknownFieldPaths.count == 1 ? "" : "s") are not rendered by Pipeline exports and may be omitted from ATS-visible output."
+            )
         }
 
         return FormatAnalysis(
@@ -531,7 +706,11 @@ public enum ATSCompatibilityScoringService {
         parts.append("Matched \(keywordAnalysis.matched.count) of \(keywordAnalysis.totalWeightedTerms) weighted JD keywords.")
 
         if let primaryGap = keywordAnalysis.missing.first {
-            parts.append("Biggest keyword gap: \(primaryGap).")
+            parts.append("Biggest missing keyword: \(primaryGap).")
+        }
+
+        if !keywordAnalysis.skillsPromotionKeywords.isEmpty {
+            parts.append("\(keywordAnalysis.skillsPromotionKeywords.count) keyword\(keywordAnalysis.skillsPromotionKeywords.count == 1 ? "" : "s") can be promoted into Skills from existing resume evidence.")
         }
 
         if sectionAnalysis.score < 100 {
@@ -540,8 +719,10 @@ public enum ATSCompatibilityScoringService {
 
         if contactAnalysis.score < 100 {
             parts.append("Contact parsing needs cleanup.")
-        } else if formatAnalysis.score == 100 {
-            parts.append("Pipeline's exported PDF remains machine-readable.")
+        }
+
+        if formatAnalysis.score == 100 {
+            parts.append("Pipeline's structured export remains ATS-friendly.")
         }
 
         return parts.joined(separator: " ")
@@ -640,22 +821,51 @@ public enum ATSCompatibilityScoringService {
         }
     }
 
+    private static func searchKeyword(for keyword: String) -> SearchKeyword {
+        if let specialTerm = specialTerms.first(where: {
+            $0.display.caseInsensitiveCompare(keyword) == .orderedSame
+                || specialKey(for: $0.display) == specialKey(for: keyword)
+        }) {
+            return SearchKeyword(
+                display: specialTerm.display,
+                normalized: specialKey(for: specialTerm.display),
+                aliases: specialTerm.aliases,
+                usesWordBoundaries: specialTerm.usesWordBoundaries
+            )
+        }
+
+        return SearchKeyword(
+            display: keyword,
+            normalized: normalizePhrase(keyword),
+            aliases: [keyword.lowercased()],
+            usesWordBoundaries: true
+        )
+    }
+
     private static func keyword(
         _ candidate: WeightedKeyword,
         appearsIn rawText: String,
         normalizedText: String
     ) -> Bool {
-        if let specialTerm = candidate.specialTerm {
-            return specialTerm.aliases.contains { alias in
+        keyword(searchKeyword(for: candidate.display), appearsIn: rawText, normalizedText: normalizedText)
+    }
+
+    private static func keyword(
+        _ searchKeyword: SearchKeyword,
+        appearsIn rawText: String,
+        normalizedText: String
+    ) -> Bool {
+        if searchKeyword.aliases.count > 1 || specialTerms.contains(where: { $0.display == searchKeyword.display }) {
+            return searchKeyword.aliases.contains { alias in
                 countOccurrences(
                     of: alias.lowercased(),
                     in: rawText.lowercased(),
-                    usesWordBoundaries: specialTerm.usesWordBoundaries
+                    usesWordBoundaries: searchKeyword.usesWordBoundaries
                 ) > 0
             }
         }
 
-        let needle = " \(candidate.normalized) "
+        let needle = " \(searchKeyword.normalized) "
         return normalizedText.contains(needle)
     }
 
@@ -673,10 +883,17 @@ public enum ATSCompatibilityScoringService {
         for project in resume.projects {
             text.append(" \(project.name) \(project.url ?? "") \(project.technologies.joined(separator: " ")) \(project.date) \(project.description.joined(separator: " "))")
         }
-        for (category, values) in resume.skills {
-            text.append(" \(category) \(values.joined(separator: " "))")
-        }
+        text.append(" \(resumeSkillsSearchText(from: resume))")
         return text
+    }
+
+    private static func resumeSkillsSearchText(from resume: ResumeSchema) -> String {
+        resume.skills
+            .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
+            .map { category, values in
+                "\(category) \(values.joined(separator: " "))"
+            }
+            .joined(separator: " ")
     }
 
     private static func normalizedSearchText(from text: String) -> String {
@@ -756,6 +973,13 @@ public enum ATSCompatibilityScoringService {
             ? trimmed
             : "https://\(trimmed)"
         return URL(string: normalized)?.host != nil
+    }
+
+    private static func occurrencePhrase(for occurrences: Int) -> String {
+        if occurrences == 1 {
+            return "appears once"
+        }
+        return "appears \(occurrences) times"
     }
 
     private static func atsResumeSourceKind(for kind: ResumeSourceSelection.Kind) -> ATSResumeSourceKind {

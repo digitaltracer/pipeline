@@ -140,6 +140,169 @@ import Testing
     #expect(draft.matchedKeywords.contains("DataDog"))
 }
 
+@Test func atsTracksEvidenceBackedSkillPromotionCandidates() throws {
+    let application = JobApplication(
+        companyName: "Acme",
+        role: "Platform Engineer",
+        location: "Remote",
+        jobDescription: "Lead Kubernetes platform work, improve Kubernetes reliability, and ship CI/CD automation."
+    )
+
+    let source = ResumeSourceSelection(
+        kind: .masterResume,
+        rawJSON: """
+        {
+          "name": "Taylor Candidate",
+          "contact": {
+            "phone": "+1 555 123 4567",
+            "email": "taylor@example.com",
+            "linkedin": "linkedin.com/in/taylor",
+            "github": "github.com/taylor"
+          },
+          "education": [{"university":"State University","location":"CA","degree":"BS","date":"2020"}],
+          "summary": "Platform engineer improving developer workflows.",
+          "experience": [{
+            "title":"Software Engineer",
+            "company":"Example",
+            "location":"Remote",
+            "dates":"2021-Present",
+            "responsibilities":[
+              "Scaled Kubernetes clusters and improved Kubernetes deployment reliability.",
+              "Maintained CI/CD automation for production rollouts."
+            ]
+          }],
+          "projects": [],
+          "skills": {"Platforms":["AWS"],"Practices":["CI/CD"]}
+        }
+        """,
+        snapshotID: nil,
+        masterRevisionID: UUID(uuidString: "ABABABAB-ABAB-ABAB-ABAB-ABABABABABAB"),
+        createdAt: Date(timeIntervalSince1970: 1_000)
+    )
+
+    let draft = try ATSCompatibilityScoringService.prepareDraft(
+        application: application,
+        resumeSource: source
+    )
+
+    #expect(draft.matchedKeywords.contains("Kubernetes"))
+    #expect(!draft.missingKeywords.contains("Kubernetes"))
+    #expect(draft.skillsPromotionKeywords.contains("Kubernetes"))
+    #expect(draft.keywordEvidenceSummary.contains(where: { $0.contains("Kubernetes appears") }))
+}
+
+@Test func atsFlagsUnknownRenderedFieldsInFormatWarnings() throws {
+    let application = JobApplication(
+        companyName: "Acme",
+        role: "Backend Engineer",
+        location: "Remote",
+        jobDescription: sampleATSJobDescription
+    )
+
+    let source = ResumeSourceSelection(
+        kind: .masterResume,
+        rawJSON: """
+        {
+          "name": "Taylor Candidate",
+          "contact": {
+            "phone": "+1 555 123 4567",
+            "email": "taylor@example.com",
+            "linkedin": "linkedin.com/in/taylor",
+            "github": "github.com/taylor"
+          },
+          "education": [{
+            "university":"State University",
+            "location":"CA",
+            "degree":"BS Computer Science",
+            "date":"2020"
+          }],
+          "summary": "Backend engineer improving platform reliability and API performance.",
+          "experience": [{
+            "title":"Software Engineer",
+            "company":"Example",
+            "location":"Remote",
+            "dates":"2021-Present",
+            "responsibilities":[
+              "Built Kubernetes services and improved CI/CD pipelines for API deployments."
+            ],
+            "internalNotes":"Not rendered"
+          }],
+          "projects": [],
+          "skills": {
+            "Platforms":["Kubernetes","Terraform","CI/CD","DataDog","gRPC"]
+          },
+          "metadata": {
+            "favoriteColor": "blue"
+          }
+        }
+        """,
+        snapshotID: nil,
+        masterRevisionID: UUID(uuidString: "EFEFEFEF-EFEF-EFEF-EFEF-EFEFEFEFEFEF"),
+        createdAt: Date(timeIntervalSince1970: 1_000)
+    )
+
+    let draft = try ATSCompatibilityScoringService.prepareDraft(
+        application: application,
+        resumeSource: source
+    )
+
+    #expect(draft.formatWarningFindings.contains(where: { $0.contains("not rendered by Pipeline exports") }))
+}
+
+@Test func atsQuickFixServiceBuildsEvidenceBackedSkillPatches() throws {
+    let assessment = ATSCompatibilityAssessment(
+        skillsPromotionKeywords: ["Kubernetes"]
+    )
+
+    let result = try ATSCompatibilityQuickFixService.makeSkillPromotionPatches(
+        assessment: assessment,
+        resumeJSON: """
+        {
+          "name": "Taylor Candidate",
+          "contact": {
+            "phone": "+1 555 123 4567",
+            "email": "taylor@example.com",
+            "linkedin": "linkedin.com/in/taylor",
+            "github": "github.com/taylor"
+          },
+          "education": [{"university":"State University","location":"CA","degree":"BS","date":"2020"}],
+          "summary": "Platform engineer focused on reliability.",
+          "experience": [{
+            "title":"Software Engineer",
+            "company":"Example",
+            "location":"Remote",
+            "dates":"2021-Present",
+            "responsibilities":[
+              "Scaled Kubernetes clusters for internal platforms."
+            ]
+          }],
+          "projects": [],
+          "skills": {"Platforms":["AWS"]}
+        }
+        """
+    )
+
+    #expect(result.unsupportedKeywords.isEmpty)
+    #expect(result.patches.count == 1)
+    #expect(result.patches[0].path == "/skills/Platforms")
+    #expect(result.patches[0].evidencePaths.contains("/experience/0/responsibilities/0"))
+    #expect(result.patches[0].risk == .low)
+}
+
+@Test func atsQuickFixServiceSkipsUnsupportedKeywordsWithoutEvidence() throws {
+    let assessment = ATSCompatibilityAssessment(
+        skillsPromotionKeywords: ["Terraform"]
+    )
+
+    let result = try ATSCompatibilityQuickFixService.makeSkillPromotionPatches(
+        assessment: assessment,
+        resumeJSON: sampleATSResumeJSON.replacingOccurrences(of: "Terraform", with: "Docker")
+    )
+
+    #expect(result.patches.isEmpty)
+    #expect(result.unsupportedKeywords == ["Terraform"])
+}
+
 @Test func atsScoresAreDeterministicAndWeighted() throws {
     let application = JobApplication(
         companyName: "Acme",
@@ -208,8 +371,18 @@ import Testing
         summary: draft.summary ?? "",
         matchedKeywords: draft.matchedKeywords,
         missingKeywords: draft.missingKeywords,
+        skillsPromotionKeywords: draft.skillsPromotionKeywords,
+        keywordEvidenceSummary: draft.keywordEvidenceSummary,
         criticalFindings: draft.criticalFindings,
         warningFindings: draft.warningFindings,
+        sectionFindings: draft.sectionFindings,
+        contactWarningFindings: draft.contactWarningFindings,
+        contactCriticalFindings: draft.contactCriticalFindings,
+        formatWarningFindings: draft.formatWarningFindings,
+        formatCriticalFindings: draft.formatCriticalFindings,
+        hasExperienceSection: draft.hasExperienceSection,
+        hasEducationSection: draft.hasEducationSection,
+        hasSkillsSection: draft.hasSkillsSection,
         resumeSourceKind: draft.resumeSourceKind ?? .masterResume,
         resumeSourceSnapshotID: draft.resumeSourceSnapshotID,
         resumeSourceRevisionID: draft.resumeSourceRevisionID,
@@ -313,13 +486,16 @@ private func makeATSContainer() throws -> ModelContainer {
         ApplicationContactLink.self,
         ApplicationActivity.self,
         InterviewDebrief.self,
+        RejectionLog.self,
         InterviewQuestionEntry.self,
         InterviewLearningSnapshot.self,
+        RejectionLearningSnapshot.self,
         ApplicationTask.self,
         ApplicationChecklistSuggestion.self,
         ApplicationAttachment.self,
         CoverLetterDraft.self,
         ATSCompatibilityAssessment.self,
+        ATSCompatibilityScanRun.self,
         ResumeMasterRevision.self,
         ResumeJobSnapshot.self,
         AIUsageRecord.self,

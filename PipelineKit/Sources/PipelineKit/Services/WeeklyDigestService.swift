@@ -73,11 +73,16 @@ public final class WeeklyDigestService: @unchecked Sendable {
             return .noData(nextRun: nextRun)
         }
 
+        let rejectionLearningSnapshot = try context.fetch(FetchDescriptor<RejectionLearningSnapshot>())
+            .sorted { $0.generatedAt > $1.generatedAt }
+            .first
+
         let snapshot = buildSnapshot(
             applications: liveApplications,
             currentResumeRevisionID: currentResumeRevisionID,
             matchPreferences: matchPreferences,
             completedInterval: completedInterval,
+            rejectionLearningSnapshot: rejectionLearningSnapshot,
             referenceDate: referenceDate
         )
 
@@ -97,6 +102,7 @@ public final class WeeklyDigestService: @unchecked Sendable {
         currentResumeRevisionID: UUID?,
         matchPreferences: JobMatchPreferences,
         completedInterval: DateInterval,
+        rejectionLearningSnapshot: RejectionLearningSnapshot?,
         referenceDate: Date
     ) -> WeeklyDigestSnapshot {
         let previousInterval = DateInterval(
@@ -156,6 +162,7 @@ public final class WeeklyDigestService: @unchecked Sendable {
             applications: applications,
             currentSubmitted: currentSubmitted,
             overdueFollowUps: overdueFollowUps,
+            rejectionLearningSnapshot: rejectionLearningSnapshot,
             referenceDate: referenceDate,
             currentResumeRevisionID: currentResumeRevisionID,
             preferences: matchPreferences
@@ -167,6 +174,7 @@ public final class WeeklyDigestService: @unchecked Sendable {
             upcomingInterval: upcomingInterval,
             overdueFollowUps: overdueFollowUps,
             needsTailoringApplications: needsTailoringApps,
+            rejectionLearningSnapshot: rejectionLearningSnapshot,
             referenceDate: referenceDate
         )
 
@@ -301,6 +309,7 @@ public final class WeeklyDigestService: @unchecked Sendable {
         applications: [JobApplication],
         currentSubmitted: [JobApplication],
         overdueFollowUps: [JobApplication],
+        rejectionLearningSnapshot: RejectionLearningSnapshot?,
         referenceDate: Date,
         currentResumeRevisionID: UUID?,
         preferences: JobMatchPreferences
@@ -328,6 +337,13 @@ public final class WeeklyDigestService: @unchecked Sendable {
             candidates.append(candidate)
         }
         if let candidate = appliedStageStalenessInsight(applications: applications, referenceDate: referenceDate) {
+            candidates.append(candidate)
+        }
+        if let candidate = rejectionLearningInsight(
+            applications: applications,
+            rejectionLearningSnapshot: rejectionLearningSnapshot,
+            referenceDate: referenceDate
+        ) {
             candidates.append(candidate)
         }
 
@@ -543,6 +559,35 @@ public final class WeeklyDigestService: @unchecked Sendable {
         )
     }
 
+    private func rejectionLearningInsight(
+        applications: [JobApplication],
+        rejectionLearningSnapshot: RejectionLearningSnapshot?,
+        referenceDate: Date
+    ) -> InsightCandidate? {
+        guard let rejectionLearningSnapshot else { return nil }
+        guard rejectionLearningSnapshot.rejectionCount >= 3 else { return nil }
+        guard referenceDate.timeIntervalSince(rejectionLearningSnapshot.generatedAt) <= 30 * 86_400 else { return nil }
+
+        let loggedRejections = applications.filter { $0.latestRejectionLog != nil }.count
+        guard loggedRejections >= 3 else { return nil }
+
+        let primarySignal = rejectionLearningSnapshot.patternSignals.first
+            ?? rejectionLearningSnapshot.targetingSignals.first
+            ?? rejectionLearningSnapshot.processSignals.first
+
+        guard let primarySignal, !primarySignal.isEmpty else { return nil }
+
+        let recoveryHint = rejectionLearningSnapshot.recoverySuggestions.first
+
+        return InsightCandidate(
+            priority: 85,
+            sourceKind: .ai,
+            title: "Rejection patterns are starting to repeat.",
+            body: recoveryHint.map { "\(primarySignal) \($0)" } ?? primarySignal,
+            evidence: rejectionLearningSnapshot.stageCounts.prefix(2).joined(separator: " · ")
+        )
+    }
+
     private struct ActionCandidate {
         let kind: WeeklyDigestActionKind
         let title: String
@@ -558,6 +603,7 @@ public final class WeeklyDigestService: @unchecked Sendable {
         upcomingInterval: DateInterval,
         overdueFollowUps: [JobApplication],
         needsTailoringApplications: [JobApplication],
+        rejectionLearningSnapshot: RejectionLearningSnapshot?,
         referenceDate: Date
     ) -> [ActionCandidate] {
         var items: [ActionCandidate] = []
@@ -615,6 +661,26 @@ public final class WeeklyDigestService: @unchecked Sendable {
                     applicationID: application.id,
                     isOverdue: false,
                     sortKey: 2
+                )
+            )
+        }
+
+        if let rejectionLearningSnapshot,
+           rejectionLearningSnapshot.rejectionCount >= 3,
+           referenceDate.timeIntervalSince(rejectionLearningSnapshot.generatedAt) <= 30 * 86_400,
+           let recoverySuggestion = RejectionRecoveryService.topActionableSuggestion(
+                among: applications,
+                referenceDate: referenceDate
+           ) {
+            items.append(
+                ActionCandidate(
+                    kind: .task,
+                    title: recoverySuggestion.title,
+                    subtitle: recoverySuggestion.body,
+                    dueDate: nil,
+                    applicationID: recoverySuggestion.applicationID,
+                    isOverdue: false,
+                    sortKey: 3
                 )
             )
         }

@@ -5,6 +5,13 @@ import PipelineKit
 
 @Observable
 final class AddEditApplicationViewModel {
+    struct SaveResult {
+        let application: JobApplication
+        let rejectionStatusActivityID: UUID?
+
+        var needsRejectionLogPrompt: Bool { rejectionStatusActivityID != nil }
+    }
+
     enum SaveError: LocalizedError {
         case validationFailed([String])
 
@@ -197,10 +204,12 @@ final class AddEditApplicationViewModel {
 
     // MARK: - Actions
 
-    func save(context: ModelContext) throws {
+    @MainActor
+    func save(context: ModelContext) throws -> SaveResult {
         guard isValid else { throw SaveError.validationFailed(validationErrors) }
 
         let savedApplication: JobApplication
+        var rejectionStatusActivityID: UUID?
         let saveTimestamp = Date()
         let checklistService = ApplicationChecklistService()
 
@@ -211,13 +220,19 @@ final class AddEditApplicationViewModel {
 
                 try updateApplication(app, context: context)
                 _ = try CompanyLinkingService.ensureCompanyLinked(for: app, in: context)
-                ApplicationTimelineRecorderService.recordStatusChange(
-                    for: app,
-                    from: previousStatus,
-                    to: app.status,
-                    occurredAt: saveTimestamp,
-                    in: context
-                )
+
+                let transitionResult: StatusTransitionResult
+                if previousStatus != status {
+                    transitionResult = try ApplicationStatusTransitionService.applyStatus(
+                        status,
+                        to: app,
+                        occurredAt: saveTimestamp,
+                        in: context
+                    )
+                } else {
+                    transitionResult = StatusTransitionResult(didChange: false)
+                }
+
                 ApplicationTimelineRecorderService.recordFollowUpChange(
                     for: app,
                     from: previousFollowUpDate,
@@ -226,7 +241,15 @@ final class AddEditApplicationViewModel {
                     in: context
                 )
 
-                try checklistService.sync(for: app, trigger: .statusChanged, in: context)
+                if !transitionResult.didChange {
+                    try checklistService.sync(for: app, trigger: .statusChanged, in: context)
+                } else if context.hasChanges {
+                    try context.save()
+                }
+
+                if transitionResult.needsRejectionLogPrompt {
+                    rejectionStatusActivityID = transitionResult.statusActivityID
+                }
                 savedApplication = app
             } else {
                 let app = try createApplication(context: context)
@@ -238,6 +261,7 @@ final class AddEditApplicationViewModel {
                     in: context
                 )
                 try checklistService.sync(for: app, trigger: .applicationCreated, in: context)
+                rejectionStatusActivityID = app.status == .rejected ? app.latestRejectionActivity?.id : nil
                 savedApplication = app
             }
         } catch {
@@ -249,6 +273,11 @@ final class AddEditApplicationViewModel {
             @MainActor in
             await NotificationService.shared.syncReminderState(for: savedApplication)
         }
+
+        return SaveResult(
+            application: savedApplication,
+            rejectionStatusActivityID: rejectionStatusActivityID
+        )
     }
 
     private func createApplication(context: ModelContext) throws -> JobApplication {
@@ -295,7 +324,6 @@ final class AddEditApplicationViewModel {
         app.location = location.trimmingCharacters(in: .whitespacesAndNewlines)
         app.jobURL = normalizedJobURL
         app.jobDescription = jobDescription.isEmpty ? nil : jobDescription
-        app.status = status
         app.priority = priority
         app.source = source
         app.platform = platform

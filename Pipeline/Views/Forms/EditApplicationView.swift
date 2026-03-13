@@ -10,6 +10,8 @@ struct EditApplicationView: View {
     let application: JobApplication
     @State private var viewModel: AddEditApplicationViewModel
     @State private var saveErrorMessage: String?
+    @State private var rejectionPromptActivity: ApplicationActivity?
+    @State private var dismissAfterRejectionPrompt = false
 
     init(application: JobApplication) {
         self.application = application
@@ -58,12 +60,7 @@ struct EditApplicationView: View {
                         .buttonStyle(.bordered)
 
                     Button("Save Changes") {
-                        do {
-                            try viewModel.save(context: modelContext)
-                            dismiss()
-                        } catch {
-                            saveErrorMessage = error.localizedDescription
-                        }
+                        saveChanges()
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(DesignSystem.Colors.accent)
@@ -86,12 +83,7 @@ struct EditApplicationView: View {
 
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Save") {
-                                do {
-                                    try viewModel.save(context: modelContext)
-                                    dismiss()
-                                } catch {
-                                    saveErrorMessage = error.localizedDescription
-                                }
+                                saveChanges()
                             }
                             .disabled(!viewModel.isValid)
                         }
@@ -107,6 +99,38 @@ struct EditApplicationView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(saveErrorMessage ?? "An unknown error occurred.")
+        }
+        .sheet(item: $rejectionPromptActivity, onDismiss: {
+            if dismissAfterRejectionPrompt {
+                dismiss()
+            }
+        }) { activity in
+            RejectionLogSheet(
+                viewModel: RejectionLogEditorViewModel(
+                    activity: activity,
+                    application: application,
+                    modelContext: modelContext,
+                    settingsViewModel: SettingsViewModel()
+                ),
+                onSaved: {
+                    dismiss()
+                }
+            )
+        }
+    }
+
+    private func saveChanges() {
+        do {
+            let result = try viewModel.save(context: modelContext)
+            if let activityID = result.rejectionStatusActivityID,
+               let activity = result.application.sortedActivities.first(where: { $0.id == activityID }) {
+                dismissAfterRejectionPrompt = true
+                rejectionPromptActivity = activity
+            } else {
+                dismiss()
+            }
+        } catch {
+            saveErrorMessage = error.localizedDescription
         }
     }
 }
@@ -135,14 +159,17 @@ struct EditApplicationView: View {
             ApplicationContactLink.self,
             ApplicationActivity.self,
             InterviewDebrief.self,
+            RejectionLog.self,
             InterviewQuestionEntry.self,
             InterviewLearningSnapshot.self,
+            RejectionLearningSnapshot.self,
             ApplicationTask.self,
             ApplicationChecklistSuggestion.self,
             ApplicationAttachment.self,
             CoverLetterDraft.self,
             JobMatchAssessment.self,
-            ATSCompatibilityAssessment.self
+            ATSCompatibilityAssessment.self,
+            ATSCompatibilityScanRun.self
         ],
         inMemory: true
     )

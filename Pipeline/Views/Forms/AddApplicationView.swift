@@ -10,7 +10,10 @@ struct AddApplicationView: View {
     @State private var aiViewModel: AIParsingViewModel
     @State private var selectedTab: AddTab = .manual
     @State private var saveErrorMessage: String?
+    @State private var rejectionPromptActivity: ApplicationActivity?
+    @State private var dismissAfterRejectionPrompt = false
     @Environment(\.colorScheme) private var colorScheme
+    let settingsViewModel: SettingsViewModel
     let onOpenSettings: (() -> Void)?
 
     enum AddTab: String, CaseIterable {
@@ -29,6 +32,7 @@ struct AddApplicationView: View {
         settingsViewModel: SettingsViewModel = SettingsViewModel(),
         onOpenSettings: (() -> Void)? = nil
     ) {
+        self.settingsViewModel = settingsViewModel
         _aiViewModel = State(initialValue: AIParsingViewModel(settingsViewModel: settingsViewModel))
         self.onOpenSettings = onOpenSettings
     }
@@ -114,12 +118,7 @@ struct AddApplicationView: View {
 
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Save") {
-                            do {
-                                try viewModel.save(context: modelContext)
-                                dismiss()
-                            } catch {
-                                saveErrorMessage = error.localizedDescription
-                            }
+                            saveApplication()
                         }
                         .disabled(!viewModel.isValid || selectedTab == .aiParse)
                     }
@@ -136,8 +135,44 @@ struct AddApplicationView: View {
         } message: {
             Text(saveErrorMessage ?? "An unknown error occurred.")
         }
+        .sheet(item: $rejectionPromptActivity, onDismiss: {
+            if dismissAfterRejectionPrompt {
+                dismiss()
+            }
+        }) { activity in
+            RejectionLogSheet(
+                viewModel: RejectionLogEditorViewModel(
+                    activity: activity,
+                    application: activity.application ?? JobApplication(
+                        companyName: viewModel.companyName,
+                        role: viewModel.role,
+                        location: viewModel.location
+                    ),
+                    modelContext: modelContext,
+                    settingsViewModel: settingsViewModel
+                ),
+                onSaved: {
+                    dismiss()
+                }
+            )
+        }
         .onAppear {
             aiViewModel.modelContext = modelContext
+        }
+    }
+
+    private func saveApplication() {
+        do {
+            let result = try viewModel.save(context: modelContext)
+            if let activityID = result.rejectionStatusActivityID,
+               let activity = result.application.sortedActivities.first(where: { $0.id == activityID }) {
+                dismissAfterRejectionPrompt = true
+                rejectionPromptActivity = activity
+            } else {
+                dismiss()
+            }
+        } catch {
+            saveErrorMessage = error.localizedDescription
         }
     }
 
@@ -192,12 +227,7 @@ struct AddApplicationView: View {
                 .buttonStyle(.bordered)
 
             Button("Add Application") {
-                do {
-                    try viewModel.save(context: modelContext)
-                    dismiss()
-                } catch {
-                    saveErrorMessage = error.localizedDescription
-                }
+                saveApplication()
             }
             .buttonStyle(.borderedProminent)
             .tint(DesignSystem.Colors.accent)
@@ -250,17 +280,20 @@ struct TabButton: View {
                 CompanyResearchSource.self,
                 CompanySalarySnapshot.self,
                 Contact.self,
-                ApplicationContactLink.self,
-                ApplicationActivity.self,
-                InterviewDebrief.self,
-                InterviewQuestionEntry.self,
-                InterviewLearningSnapshot.self,
-                ApplicationTask.self,
+            ApplicationContactLink.self,
+            ApplicationActivity.self,
+            InterviewDebrief.self,
+            RejectionLog.self,
+            InterviewQuestionEntry.self,
+            InterviewLearningSnapshot.self,
+            RejectionLearningSnapshot.self,
+            ApplicationTask.self,
                 ApplicationChecklistSuggestion.self,
                 ApplicationAttachment.self,
                 CoverLetterDraft.self,
                 JobMatchAssessment.self,
-                ATSCompatibilityAssessment.self
+                ATSCompatibilityAssessment.self,
+                ATSCompatibilityScanRun.self
             ],
             inMemory: true
         )

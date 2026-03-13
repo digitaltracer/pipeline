@@ -8,6 +8,7 @@ struct ATSCompatibilitySection: View {
 
     let application: JobApplication
     let onGenerateFixes: (ATSCompatibilityAssessment) -> Void
+    let onGenerateQuickFixes: (ATSCompatibilityAssessment) -> Void
 
     @State private var isExpanded = true
     @State private var isRefreshing = false
@@ -43,6 +44,16 @@ struct ATSCompatibilitySection: View {
         ].joined(separator: "|")
     }
 
+    private var latestScanRuns: [ATSCompatibilityScanRun] {
+        Array(application.sortedATSScanRuns.prefix(4))
+    }
+
+    private var visibleMatchedKeywords: [String] {
+        guard let assessment else { return [] }
+        let promoted = Set(assessment.skillsPromotionKeywords)
+        return assessment.matchedKeywords.filter { !promoted.contains($0) }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             DisclosureGroup(isExpanded: $isExpanded) {
@@ -66,7 +77,7 @@ struct ATSCompatibilitySection: View {
         .padding(16)
         .appCard(cornerRadius: 14, elevated: true, shadow: false)
         .task(id: refreshTaskKey) {
-            await refreshIfNeeded(force: false)
+            await refreshIfNeeded(force: false, trigger: .autoViewRefresh)
         }
     }
 
@@ -110,7 +121,7 @@ struct ATSCompatibilitySection: View {
             Spacer()
 
             Button(isRefreshing ? "Refreshing..." : (isStale ? "Refresh ATS" : "Re-scan")) {
-                Task { await refreshIfNeeded(force: true) }
+                Task { await refreshIfNeeded(force: true, trigger: .manualRescan) }
             }
             .buttonStyle(.bordered)
             .disabled(isRefreshing)
@@ -131,21 +142,25 @@ struct ATSCompatibilitySection: View {
         if let assessment {
             switch assessment.status {
             case .ready:
-                if let sourceKind = assessment.resumeSourceKind {
-                    Label("Using \(sourceKind.title)", systemImage: "doc.text")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                provenanceBlock(assessment)
 
                 if let summary = normalized(assessment.summary) {
                     Text(summary)
                         .font(.subheadline)
                 }
 
+                complianceRows(assessment)
+
                 findingGroup(
                     title: "Successes",
                     severity: .success,
                     values: successFindings(for: assessment)
+                )
+
+                findingGroup(
+                    title: "Keyword Evidence",
+                    severity: .warning,
+                    values: assessment.keywordEvidenceSummary
                 )
 
                 findingGroup(
@@ -160,25 +175,12 @@ struct ATSCompatibilitySection: View {
                     values: assessment.criticalFindings
                 )
 
-                keywordList(title: "Missing Keywords", values: assessment.missingKeywords, tint: .orange)
-                keywordList(title: "Matched Keywords", values: assessment.matchedKeywords, tint: .green)
+                keywordList(title: "Missing From Resume", values: assessment.missingKeywords, tint: .orange)
+                keywordList(title: "Present But Not In Skills", values: assessment.skillsPromotionKeywords, tint: .blue)
+                keywordList(title: "Matched Keywords", values: visibleMatchedKeywords, tint: .green)
 
-                HStack(spacing: 12) {
-                    Button("Generate ATS Fixes") {
-                        onGenerateFixes(assessment)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(DesignSystem.Colors.accent)
-
-                    if isStale {
-                        Label(
-                            "This ATS scan is stale because the job description or preferred resume changed.",
-                            systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90"
-                        )
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    }
-                }
+                actionRow(assessment)
+                historySection
             case .blocked:
                 Label(
                     assessment.blockedReason?.message ?? "ATS analysis is missing the inputs required to run.",
@@ -214,6 +216,139 @@ struct ATSCompatibilitySection: View {
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.secondary.opacity(0.08))
+        )
+    }
+
+    private func provenanceBlock(_ assessment: ATSCompatibilityAssessment) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let sourceKind = assessment.resumeSourceKind {
+                Label("Using \(sourceKind.title)", systemImage: "doc.text")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            ATSFlowLayout(values: provenanceTags(for: assessment)) { value in
+                Text(value)
+                    .font(.caption.weight(.medium))
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(
+                        Capsule()
+                            .fill(Color.secondary.opacity(0.10))
+                    )
+            }
+        }
+    }
+
+    private func complianceRows(_ assessment: ATSCompatibilityAssessment) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            complianceRow(
+                title: "Contact",
+                state: contactState(for: assessment),
+                detail: contactDetail(for: assessment)
+            )
+            complianceRow(
+                title: "Sections",
+                state: sectionState(for: assessment),
+                detail: sectionDetail(for: assessment)
+            )
+            complianceRow(
+                title: "Format",
+                state: formatState(for: assessment),
+                detail: formatDetail(for: assessment)
+            )
+        }
+    }
+
+    private func complianceRow(title: String, state: ATSFindingSeverity, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon(for: state))
+                .foregroundColor(color(for: state))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                Text(detail)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(color(for: state).opacity(0.08))
+        )
+    }
+
+    private func actionRow(_ assessment: ATSCompatibilityAssessment) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                if !assessment.skillsPromotionKeywords.isEmpty {
+                    Button("Add Evidence-Backed Keywords to Skills") {
+                        onGenerateQuickFixes(assessment)
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Button("Generate ATS Fixes") {
+                    onGenerateFixes(assessment)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DesignSystem.Colors.accent)
+            }
+
+            if isStale {
+                Label(
+                    "This ATS scan is stale because the job description, preferred resume source, or scoring version changed.",
+                    systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90"
+                )
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var historySection: some View {
+        if !latestScanRuns.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Recent Scans")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.secondary)
+
+                ForEach(Array(latestScanRuns.enumerated()), id: \.element.id) { index, run in
+                    historyRow(run, previous: latestScanRuns[safe: index + 1])
+                }
+            }
+        }
+    }
+
+    private func historyRow(_ run: ATSCompatibilityScanRun, previous: ATSCompatibilityScanRun?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(run.scanTrigger.title)
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Text(scoreDeltaText(for: run, previous: previous))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Text(historyTimestamp(for: run))
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            if let changeSummary = changeSummary(for: run, previous: previous) {
+                Text(changeSummary)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.secondary.opacity(0.06))
         )
     }
 
@@ -267,21 +402,129 @@ struct ATSCompatibilitySection: View {
             findings.append("Contact info parsed correctly.")
         }
         if assessment.sectionScore ?? 0 > 0, !application.sortedResumeSnapshots.isEmpty || currentMasterRevision != nil {
-            let resumeSource = assessment.resumeSourceKind
-            if resumeSource != nil {
-                findings.append("ATS scan ran against a Pipeline-managed resume source.")
-            }
+            findings.append("ATS scan ran against a Pipeline-managed structured resume source.")
         }
-        if !assessment.matchedKeywords.isEmpty {
-            findings.append("\(assessment.matchedKeywords.count) weighted JD keyword\(assessment.matchedKeywords.count == 1 ? "" : "s") already appear in the resume.")
+        if !visibleMatchedKeywords.isEmpty {
+            findings.append("\(visibleMatchedKeywords.count) weighted JD keyword\(visibleMatchedKeywords.count == 1 ? "" : "s") already appear in the resume.")
         }
         if assessment.formatScore == 100 {
-            findings.append("Pipeline export format remains machine-readable for ATS parsing.")
+            findings.append("Pipeline's JSON-first export checks passed for the current resume.")
         }
-        if (assessment.sectionScore ?? 0) == 100 {
+        if assessment.hasExperienceSection && assessment.hasEducationSection && assessment.hasSkillsSection {
             findings.append("Experience, Education, and Skills sections were detected.")
         }
         return findings
+    }
+
+    private func provenanceTags(for assessment: ATSCompatibilityAssessment) -> [String] {
+        var tags: [String] = []
+        tags.append("Scorer \(assessment.scoringVersion)")
+        if let latestRun = latestScanRuns.first {
+            tags.append(latestRun.scanTrigger.title)
+        }
+        if assessment.resumeSourceSnapshotID != nil {
+            tags.append("Tailored Snapshot")
+        } else if assessment.resumeSourceRevisionID != nil {
+            tags.append("Master Resume")
+        }
+        return tags
+    }
+
+    private func contactState(for assessment: ATSCompatibilityAssessment) -> ATSFindingSeverity {
+        if !assessment.contactCriticalFindings.isEmpty {
+            return .critical
+        }
+        if !assessment.contactWarningFindings.isEmpty {
+            return .warning
+        }
+        return .success
+    }
+
+    private func contactDetail(for assessment: ATSCompatibilityAssessment) -> String {
+        if let critical = assessment.contactCriticalFindings.first {
+            return critical
+        }
+        if let warning = assessment.contactWarningFindings.first {
+            return warning
+        }
+        return "Email and phone parsed correctly."
+    }
+
+    private func sectionState(for assessment: ATSCompatibilityAssessment) -> ATSFindingSeverity {
+        if assessment.hasExperienceSection && assessment.hasEducationSection && assessment.hasSkillsSection {
+            return .success
+        }
+        return .warning
+    }
+
+    private func sectionDetail(for assessment: ATSCompatibilityAssessment) -> String {
+        if assessment.sectionFindings.isEmpty {
+            return "Experience, Education, and Skills were detected."
+        }
+        return assessment.sectionFindings.joined(separator: " ")
+    }
+
+    private func formatState(for assessment: ATSCompatibilityAssessment) -> ATSFindingSeverity {
+        if !assessment.formatCriticalFindings.isEmpty {
+            return .critical
+        }
+        if !assessment.formatWarningFindings.isEmpty {
+            return .warning
+        }
+        return .success
+    }
+
+    private func formatDetail(for assessment: ATSCompatibilityAssessment) -> String {
+        if let critical = assessment.formatCriticalFindings.first {
+            return critical
+        }
+        if let warning = assessment.formatWarningFindings.first {
+            return warning
+        }
+        return "JSON-first ATS checks passed for Pipeline export assumptions."
+    }
+
+    private func scoreDeltaText(for run: ATSCompatibilityScanRun, previous: ATSCompatibilityScanRun?) -> String {
+        guard let score = run.overallScore else {
+            return run.status == .failed ? "Failed" : run.status.title
+        }
+        guard let previousScore = previous?.overallScore else {
+            return "\(score)%"
+        }
+        let delta = score - previousScore
+        if delta == 0 {
+            return "\(score)%"
+        }
+        let sign = delta > 0 ? "+" : ""
+        return "\(score)% (\(sign)\(delta))"
+    }
+
+    private func historyTimestamp(for run: ATSCompatibilityScanRun) -> String {
+        let date = run.scoredAt ?? run.createdAt
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private func changeSummary(for run: ATSCompatibilityScanRun, previous: ATSCompatibilityScanRun?) -> String? {
+        guard let previous else { return "Initial persisted ATS scan." }
+        var reasons: [String] = []
+
+        if run.jobDescriptionHash != previous.jobDescriptionHash {
+            reasons.append("JD changed")
+        }
+        if run.resumeSourceFingerprint != previous.resumeSourceFingerprint {
+            reasons.append("Resume changed")
+        }
+        if run.scoringVersion != previous.scoringVersion {
+            reasons.append("Scorer updated")
+        }
+        if run.warningFindings != previous.warningFindings || run.criticalFindings != previous.criticalFindings {
+            reasons.append("Findings changed")
+        }
+
+        if reasons.isEmpty {
+            return "Inputs matched the prior scan."
+        }
+        return reasons.joined(separator: " • ")
     }
 
     private func icon(for severity: ATSFindingSeverity) -> String {
@@ -319,7 +562,7 @@ struct ATSCompatibilitySection: View {
     }
 
     @MainActor
-    private func refreshIfNeeded(force: Bool) async {
+    private func refreshIfNeeded(force: Bool, trigger: ATSScanTrigger) async {
         if !force,
            let assessment,
            !ATSCompatibilityScoringService.shouldAutoRefresh(
@@ -335,7 +578,8 @@ struct ATSCompatibilitySection: View {
         await ATSCompatibilityCoordinator.shared.refresh(
             application: application,
             modelContext: modelContext,
-            force: force
+            force: force,
+            trigger: trigger
         )
     }
 }
@@ -360,6 +604,23 @@ private extension Array {
     func chunked(into size: Int) -> [[Element]] {
         stride(from: 0, to: count, by: Swift.max(1, size)).map {
             Array(self[$0..<Swift.min($0 + size, count)])
+        }
+    }
+
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
+}
+
+private extension ATSAssessmentStatus {
+    var title: String {
+        switch self {
+        case .ready:
+            return "Ready"
+        case .blocked:
+            return "Blocked"
+        case .failed:
+            return "Failed"
         }
     }
 }

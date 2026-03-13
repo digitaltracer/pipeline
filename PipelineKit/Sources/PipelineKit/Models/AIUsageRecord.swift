@@ -13,6 +13,7 @@ public enum AIUsageFeature: String, Codable, CaseIterable, Sendable, Identifiabl
     case jobMatchScoring = "job_match_scoring"
     case resumeATSFixes = "resume_ats_fixes"
     case interviewLearnings = "interview_learnings"
+    case rejectionLearnings = "rejection_learnings"
 
     public var id: String { rawValue }
 
@@ -40,6 +41,8 @@ public enum AIUsageFeature: String, Codable, CaseIterable, Sendable, Identifiabl
             return "Resume ATS Fixes"
         case .interviewLearnings:
             return "Interview Learnings"
+        case .rejectionLearnings:
+            return "Rejection Learnings"
         }
     }
 }

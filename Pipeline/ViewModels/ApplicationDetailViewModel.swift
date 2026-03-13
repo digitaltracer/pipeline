@@ -26,25 +26,11 @@ final class ApplicationDetailViewModel {
 
     // MARK: - Actions
 
+    @MainActor
     func archive(_ application: JobApplication, context: ModelContext) throws {
-        let previousStatus = application.status
-        application.status = .archived
-        application.updateTimestamp()
-        ApplicationTimelineRecorderService.recordStatusChange(
-            for: application,
-            from: previousStatus,
-            to: application.status,
-            in: context
-        )
-
-        do {
-            try syncChecklist(for: application, trigger: .statusChanged, context: context)
-            Task { @MainActor in
-                await NotificationService.shared.syncReminderState(for: application)
-            }
-        } catch {
-            context.rollback()
-            throw error
+        _ = try ApplicationStatusTransitionService.applyStatus(.archived, to: application, in: context)
+        Task { @MainActor in
+            await NotificationService.shared.syncReminderState(for: application)
         }
     }
 
@@ -59,37 +45,17 @@ final class ApplicationDetailViewModel {
         }
     }
 
-    func updateStatus(_ status: ApplicationStatus, for application: JobApplication, context: ModelContext) throws {
-        let previousStatus = application.status
-        application.status = status
-        application.updateTimestamp()
-
-        // If moving to interviewing, set applied date if not set
-        if status == .interviewing && application.appliedDate == nil {
-            application.appliedDate = Date()
+    @MainActor
+    func updateStatus(
+        _ status: ApplicationStatus,
+        for application: JobApplication,
+        context: ModelContext
+    ) throws -> StatusTransitionResult {
+        let result = try ApplicationStatusTransitionService.applyStatus(status, to: application, in: context)
+        Task { @MainActor in
+            await NotificationService.shared.syncReminderState(for: application)
         }
-
-        // If moving to applied, set applied date
-        if status == .applied && application.appliedDate == nil {
-            application.appliedDate = Date()
-        }
-
-        ApplicationTimelineRecorderService.recordStatusChange(
-            for: application,
-            from: previousStatus,
-            to: application.status,
-            in: context
-        )
-
-        do {
-            try context.save()
-            Task { @MainActor in
-                await NotificationService.shared.syncFollowUpReminder(for: application)
-            }
-        } catch {
-            context.rollback()
-            throw error
-        }
+        return result
     }
 
     func updateInterviewStage(_ stage: InterviewStage?, for application: JobApplication, context: ModelContext) throws {
@@ -1237,5 +1203,270 @@ final class CompanyResearchViewModel {
             errorMessage: message,
             in: modelContext
         )
+    }
+}
+
+@MainActor
+@Observable
+final class RejectionLearningsViewModel {
+    var isAnalyzing = false
+    var error: String?
+    var snapshot: RejectionLearningSnapshot?
+
+    private let settingsViewModel: SettingsViewModel
+    private let modelContext: ModelContext
+    private let builder = RejectionLearningContextBuilder()
+
+    init(settingsViewModel: SettingsViewModel, modelContext: ModelContext) {
+        self.settingsViewModel = settingsViewModel
+        self.modelContext = modelContext
+    }
+
+    var hasConfiguredAI: Bool {
+        let provider = settingsViewModel.selectedAIProvider
+        let model = settingsViewModel.preferredModel(for: provider)
+        guard !model.isEmpty else { return false }
+        return settingsViewModel.hasAPIKey(for: provider)
+    }
+
+    func load() {
+        snapshot = latestSnapshot()
+    }
+
+    func refresh() async {
+        let provider = settingsViewModel.selectedAIProvider
+        let model = settingsViewModel.preferredModel(for: provider)
+
+        guard !model.isEmpty else {
+            error = "Configure an AI model in Settings to analyze rejection patterns."
+            return
+        }
+
+        guard settingsViewModel.hasAPIKey(for: provider) else {
+            error = "Add an API key in Settings to analyze rejection patterns."
+            return
+        }
+
+        do {
+            let applications = try modelContext.fetch(FetchDescriptor<JobApplication>())
+            let context = builder.build(from: applications)
+            guard context.rejectionCount >= 3 else {
+                error = "Log at least 3 rejections before running rejection analysis."
+                snapshot = latestSnapshot()
+                return
+            }
+
+            let requestStartedAt = Date()
+            isAnalyzing = true
+            defer { isAnalyzing = false }
+
+            let result = try await settingsViewModel.withAPIKeyWaterfall(for: provider) { apiKey in
+                try await RejectionLearningService.generateSnapshot(
+                    provider: provider,
+                    apiKey: apiKey,
+                    model: model,
+                    applications: applications,
+                    in: modelContext
+                )
+            }
+
+            snapshot = result.snapshot
+            _ = try? AIUsageLedgerService.record(
+                feature: .rejectionLearnings,
+                provider: provider,
+                model: model,
+                usage: result.usage,
+                status: .succeeded,
+                startedAt: requestStartedAt,
+                finishedAt: Date(),
+                errorMessage: nil,
+                in: modelContext
+            )
+        } catch let keyError as SettingsViewModel.APIKeyValidationError {
+            error = keyError.localizedDescription
+        } catch let aiError as AIServiceError {
+            error = aiError.localizedDescription
+        } catch let unexpectedError {
+            error = "Failed to analyze rejection patterns: \(unexpectedError.localizedDescription)"
+        }
+    }
+
+    private func latestSnapshot() -> RejectionLearningSnapshot? {
+        ((try? modelContext.fetch(FetchDescriptor<RejectionLearningSnapshot>())) ?? [])
+            .sorted { $0.generatedAt > $1.generatedAt }
+            .first
+    }
+}
+
+@MainActor
+@Observable
+final class RejectionLogEditorViewModel {
+    var stageCategory: RejectionStageCategory
+    var reasonCategory: RejectionReasonCategory
+    var feedbackSource: RejectionFeedbackSource
+    var feedbackText: String
+    var candidateReflection: String
+    var doNotReapply: Bool
+    var isSaving = false
+    var errorMessage: String?
+    var postSaveWarning: String?
+
+    private let activity: ApplicationActivity
+    private let application: JobApplication
+    private let modelContext: ModelContext
+    private let settingsViewModel: SettingsViewModel
+    private let builder = RejectionLearningContextBuilder()
+
+    init(
+        activity: ApplicationActivity,
+        application: JobApplication,
+        modelContext: ModelContext,
+        settingsViewModel: SettingsViewModel
+    ) {
+        self.activity = activity
+        self.application = application
+        self.modelContext = modelContext
+        self.settingsViewModel = settingsViewModel
+
+        if let log = activity.rejectionLog {
+            self.stageCategory = log.stageCategory
+            self.reasonCategory = log.reasonCategory
+            self.feedbackSource = log.feedbackSource
+            self.feedbackText = log.feedbackText ?? ""
+            self.candidateReflection = log.candidateReflection ?? ""
+            self.doNotReapply = log.doNotReapply
+        } else {
+            self.stageCategory = Self.defaultStageCategory(for: application, activity: activity)
+            self.reasonCategory = .unknown
+            self.feedbackSource = .none
+            self.feedbackText = ""
+            self.candidateReflection = ""
+            self.doNotReapply = false
+        }
+    }
+
+    func save() async throws {
+        guard activity.isRejectionStatusChange else {
+            throw SaveError.invalidActivity
+        }
+
+        isSaving = true
+        defer { isSaving = false }
+        postSaveWarning = nil
+
+        let log: RejectionLog
+        if let existing = activity.rejectionLog {
+            log = existing
+        } else {
+            log = RejectionLog(activity: activity)
+            modelContext.insert(log)
+            activity.rejectionLog = log
+        }
+
+        log.update(
+            stageCategory: stageCategory,
+            reasonCategory: reasonCategory,
+            feedbackSource: feedbackSource,
+            feedbackText: normalized(feedbackText),
+            candidateReflection: normalized(candidateReflection),
+            doNotReapply: doNotReapply
+        )
+        activity.updateTimestamp()
+        application.updateTimestamp()
+        try modelContext.save()
+
+        await refreshLearningsIfPossible()
+    }
+
+    private func refreshLearningsIfPossible() async {
+        let provider = settingsViewModel.selectedAIProvider
+        let model = settingsViewModel.preferredModel(for: provider)
+
+        guard !model.isEmpty, settingsViewModel.hasAPIKey(for: provider) else { return }
+
+        let applications = ((try? modelContext.fetch(FetchDescriptor<JobApplication>())) ?? [])
+        let context = builder.build(from: applications)
+        guard context.rejectionCount >= 3 else { return }
+
+        let requestStartedAt = Date()
+
+        do {
+            let result = try await settingsViewModel.withAPIKeyWaterfall(for: provider) { apiKey in
+                try await RejectionLearningService.generateSnapshot(
+                    provider: provider,
+                    apiKey: apiKey,
+                    model: model,
+                    applications: applications,
+                    in: modelContext
+                )
+            }
+
+            _ = result
+            _ = try? AIUsageLedgerService.record(
+                feature: .rejectionLearnings,
+                provider: provider,
+                model: model,
+                usage: result.usage,
+                status: .succeeded,
+                applicationID: application.id,
+                startedAt: requestStartedAt,
+                finishedAt: Date(),
+                errorMessage: nil,
+                in: modelContext
+            )
+        } catch {
+            postSaveWarning = "The rejection log was saved, but Pipeline could not refresh rejection learnings."
+        }
+    }
+
+    private func normalized(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    static func defaultStageCategory(
+        for application: JobApplication,
+        activity: ApplicationActivity
+    ) -> RejectionStageCategory {
+        if let interviewStage = activity.interviewStage
+            ?? application.latestRejectionActivity?.interviewStage
+            ?? application.latestInterviewActivity?.interviewStage
+            ?? application.interviewStage {
+            switch interviewStage {
+            case .phoneScreen, .hrRound:
+                return .phoneScreen
+            case .technicalRound1, .technicalRound2, .designChallenge, .systemDesign:
+                return .technical
+            case .finalRound:
+                return .final
+            case .offerExtended:
+                return .offerStage
+            case .custom:
+                return .unknown
+            }
+        }
+
+        if application.appliedDate != nil {
+            return .preScreen
+        }
+
+        return .unknown
+    }
+
+    enum SaveError: LocalizedError {
+        case invalidActivity
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidActivity:
+                return "Pipeline can only save rejection logs on rejected status changes."
+            }
+        }
+    }
+}
+
+private extension JobApplication {
+    var latestInterviewActivity: ApplicationActivity? {
+        sortedInterviewActivities.first
     }
 }

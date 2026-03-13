@@ -228,6 +228,63 @@ import Testing
     #expect(activities.first?.isSystemGenerated == true)
 }
 
+@Test @MainActor func statusTransitionServiceReturnsPromptForRejectedApplications() throws {
+    let container = try makeContactsContainer()
+    let context = ModelContext(container)
+
+    let application = JobApplication(
+        companyName: "Arc",
+        role: "iOS Engineer",
+        location: "Remote",
+        status: .interviewing,
+        interviewStage: .technicalRound2
+    )
+    context.insert(application)
+
+    let result = try ApplicationStatusTransitionService.applyStatus(.rejected, to: application, in: context)
+
+    #expect(result.didChange == true)
+    #expect(result.needsRejectionLogPrompt == true)
+    #expect(application.status == .rejected)
+    #expect(application.latestRejectionActivity?.toStatus == .rejected)
+    #expect(application.latestRejectionActivity?.interviewStage == .technicalRound2)
+    #expect(application.needsRejectionLog == true)
+}
+
+@Test func rejectionLogAttachesToRejectedStatusActivity() throws {
+    let container = try makeContactsContainer()
+    let context = ModelContext(container)
+
+    let application = JobApplication(
+        companyName: "Notion",
+        role: "Product Engineer",
+        location: "Remote",
+        status: .rejected
+    )
+    context.insert(application)
+    ApplicationTimelineRecorderService.seedInitialHistory(for: application, in: context)
+
+    guard let activity = application.latestRejectionActivity else {
+        Issue.record("Expected a rejection status activity.")
+        return
+    }
+
+    let log = RejectionLog(
+        stageCategory: .technical,
+        reasonCategory: .skillsMismatch,
+        feedbackSource: .explicit,
+        feedbackText: "Needed deeper API design examples.",
+        activity: activity
+    )
+    context.insert(log)
+    activity.rejectionLog = log
+    try context.save()
+
+    #expect(activity.hasRejectionLog == true)
+    #expect(activity.needsRejectionLog == false)
+    #expect(application.latestRejectionLog?.reasonCategory == .skillsMismatch)
+}
+
 @Test func followUpRecorderTracksSetRescheduleAndClear() throws {
     let container = try makeContactsContainer()
     let context = ModelContext(container)
@@ -430,11 +487,14 @@ private func makeContactsContainer() throws -> ModelContainer {
         ApplicationContactLink.self,
         ApplicationActivity.self,
         InterviewDebrief.self,
+        RejectionLog.self,
         InterviewQuestionEntry.self,
         InterviewLearningSnapshot.self,
+        RejectionLearningSnapshot.self,
         ApplicationTask.self,
         ApplicationChecklistSuggestion.self,
         ATSCompatibilityAssessment.self,
+        ATSCompatibilityScanRun.self,
         CoverLetterDraft.self
     ])
     let configuration = ModelConfiguration(isStoredInMemoryOnly: true)

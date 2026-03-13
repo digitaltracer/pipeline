@@ -9,6 +9,7 @@ struct DashboardView: View {
     @Query(sort: \JobSearchCycle.updatedAt, order: .reverse) private var cycles: [JobSearchCycle]
     @Query(sort: \SearchGoal.updatedAt, order: .reverse) private var goals: [SearchGoal]
     @Query(sort: \ResumeMasterRevision.createdAt, order: .reverse) private var resumeRevisions: [ResumeMasterRevision]
+    @Query(sort: \RejectionLearningSnapshot.generatedAt, order: .reverse) private var rejectionLearningSnapshots: [RejectionLearningSnapshot]
     @State private var viewModel = DashboardViewModel()
     @Environment(\.colorScheme) private var colorScheme
 
@@ -62,6 +63,7 @@ struct DashboardView: View {
                 cycles: cycles,
                 goals: goals,
                 baseCurrency: settingsViewModel.analyticsBaseCurrency,
+                rejectionLearningSnapshot: rejectionLearningSnapshots.first,
                 currentResumeRevisionID: currentResumeRevision?.id,
                 matchPreferences: settingsViewModel.jobMatchPreferences
             )
@@ -557,6 +559,7 @@ struct DashboardView: View {
 
                 VStack(spacing: 16) {
                     ratesSection(analytics: analytics)
+                    rejectionSection(analytics: analytics)
                     goalTrackingSection(analytics: analytics)
                     checklistSection(analytics: analytics)
                     cadenceHeatmapSection(analytics: analytics)
@@ -567,6 +570,7 @@ struct DashboardView: View {
             VStack(spacing: 16) {
                 funnelSection(analytics: analytics)
                 ratesSection(analytics: analytics)
+                rejectionSection(analytics: analytics)
                 goalTrackingSection(analytics: analytics)
                 checklistSection(analytics: analytics)
                 salarySection(analytics: analytics)
@@ -1010,6 +1014,114 @@ struct DashboardView: View {
                 }
             }
         }
+    }
+
+    private func rejectionSection(analytics: DashboardAnalyticsResult) -> some View {
+        dashboardSectionCard {
+            VStack(alignment: .leading, spacing: 16) {
+                dashboardSectionHeader(
+                    title: "Rejection Learnings",
+                    systemImage: "arrow.counterclockwise.circle",
+                    eyebrow: "Learning Loop",
+                    trailingText: analytics.rejectionSummary.hasFreshInsights ? "AI-ready" : "Capture more data"
+                )
+
+                if analytics.rejectionSummary.rejectedApplications == 0 {
+                    dashboardEmptyState(
+                        title: "No rejected applications in scope",
+                        systemImage: "checkmark.circle",
+                        message: "Rejection learnings appear once rejected applications enter the current analytics window."
+                    )
+                } else if analytics.rejectionSummary.loggedRejections < 3 {
+                    VStack(alignment: .leading, spacing: 12) {
+                        rejectionMetricRow(
+                            title: "Logged Rejections",
+                            value: "\(analytics.rejectionSummary.loggedRejections)",
+                            subtitle: "\(analytics.rejectionSummary.missingLogCount) missing structured logs"
+                        )
+
+                        Text("Capture at least 3 rejection logs to unlock higher-confidence pattern analysis.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                } else if analytics.rejectionSummary.hasFreshInsights {
+                    VStack(alignment: .leading, spacing: 12) {
+                        rejectionMetricRow(
+                            title: "Logged Rejections",
+                            value: "\(analytics.rejectionSummary.loggedRejections)",
+                            subtitle: analytics.rejectionSummary.missingLogCount == 0
+                                ? "All rejected applications are logged"
+                                : "\(analytics.rejectionSummary.missingLogCount) missing structured logs"
+                        )
+
+                        if let topSignal = analytics.rejectionSummary.topSignal {
+                            insightCard(title: "Pattern", body: topSignal)
+                        }
+
+                        if let suggestion = analytics.rejectionSummary.topRecoverySuggestion {
+                            insightCard(title: "Recovery", body: suggestion)
+                        }
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 12) {
+                        rejectionMetricRow(
+                            title: "Logged Rejections",
+                            value: "\(analytics.rejectionSummary.loggedRejections)",
+                            subtitle: "Waiting for a fresh AI analysis snapshot"
+                        )
+
+                        Text("Your rejection logs are captured, but the latest AI learnings are stale or missing.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private func rejectionMetricRow(title: String, value: String, subtitle: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.secondary)
+            Text(value)
+                .font(.title3.weight(.bold))
+            Text(subtitle)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(DesignSystem.Colors.surface(colorScheme).opacity(colorScheme == .dark ? 0.82 : 0.98))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+        )
+    }
+
+    private func insightCard(title: String, body: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.secondary)
+                .textCase(.uppercase)
+            Text(body)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(DesignSystem.Colors.surface(colorScheme).opacity(colorScheme == .dark ? 0.82 : 0.98))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+        )
     }
 
     private func rateGauge(label: String, value: Double, color: Color) -> some View {
@@ -1598,14 +1710,17 @@ private struct GoalManagementSheet: View {
                 ApplicationContactLink.self,
                 ApplicationActivity.self,
                 InterviewDebrief.self,
+                RejectionLog.self,
                 InterviewQuestionEntry.self,
                 InterviewLearningSnapshot.self,
+                RejectionLearningSnapshot.self,
                 ApplicationTask.self,
                 ApplicationChecklistSuggestion.self,
                 ApplicationAttachment.self,
                 CoverLetterDraft.self,
                 JobMatchAssessment.self,
-                ATSCompatibilityAssessment.self
+                ATSCompatibilityAssessment.self,
+                ATSCompatibilityScanRun.self
             ],
             inMemory: true
         )

@@ -31,6 +31,7 @@ final class DashboardViewModel {
         cycles: [JobSearchCycle],
         goals: [SearchGoal],
         baseCurrency: Currency,
+        rejectionLearningSnapshot: RejectionLearningSnapshot?,
         currentResumeRevisionID: UUID?,
         matchPreferences: JobMatchPreferences
     ) async {
@@ -44,6 +45,7 @@ final class DashboardViewModel {
             goals: goals,
             scope: selectedScope,
             baseCurrency: baseCurrency,
+            rejectionLearningSnapshot: rejectionLearningSnapshot,
             currentResumeRevisionID: currentResumeRevisionID,
             matchPreferences: matchPreferences
         )

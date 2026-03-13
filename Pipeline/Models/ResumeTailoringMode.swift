@@ -38,9 +38,22 @@ struct ATSFixContext: Equatable {
     }
 }
 
+struct ATSQuickFixContext: Equatable {
+    let summary: String
+    let promotedKeywords: [String]
+    let unsupportedKeywords: [String]
+
+    init(assessment: ATSCompatibilityAssessment, unsupportedKeywords: [String] = []) {
+        self.summary = assessment.summary ?? ""
+        self.promotedKeywords = assessment.skillsPromotionKeywords
+        self.unsupportedKeywords = unsupportedKeywords
+    }
+}
+
 enum ResumeTailoringMode: Equatable {
     case standard
     case atsFixes(ATSFixContext)
+    case atsQuickFixes(ATSQuickFixContext)
 
     var navigationTitle: String {
         switch self {
@@ -48,6 +61,8 @@ enum ResumeTailoringMode: Equatable {
             return "Tailor Resume"
         case .atsFixes:
             return "ATS Fixes"
+        case .atsQuickFixes:
+            return "ATS Quick Fixes"
         }
     }
 
@@ -56,6 +71,8 @@ enum ResumeTailoringMode: Equatable {
         case .standard:
             return "Target"
         case .atsFixes:
+            return "ATS Focus"
+        case .atsQuickFixes:
             return "ATS Focus"
         }
     }
@@ -66,6 +83,8 @@ enum ResumeTailoringMode: Equatable {
             return "Generating Tailored Suggestions"
         case .atsFixes:
             return "Generating ATS Fixes"
+        case .atsQuickFixes:
+            return "Preparing ATS Quick Fixes"
         }
     }
 
@@ -75,15 +94,19 @@ enum ResumeTailoringMode: Equatable {
             return "Live timeline of resume tailoring steps."
         case .atsFixes:
             return "Live timeline of ATS-focused resume patch generation."
+        case .atsQuickFixes:
+            return "Review deterministic ATS-safe skills patches before saving."
         }
     }
 
-    var usageFeature: AIUsageFeature {
+    var usageFeature: AIUsageFeature? {
         switch self {
         case .standard:
             return .resumeTailoring
         case .atsFixes:
             return .resumeATSFixes
+        case .atsQuickFixes:
+            return nil
         }
     }
 }

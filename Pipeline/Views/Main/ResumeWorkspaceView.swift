@@ -1053,6 +1053,7 @@ struct ResumeTailoringView: View {
 
     @Bindable var application: JobApplication
     private let mode: ResumeTailoringMode
+    private let seededPatches: [ResumePatch]
     private let onClose: (() -> Void)?
     private let onUnsavedChangesChanged: ((Bool) -> Void)?
 
@@ -1096,11 +1097,13 @@ struct ResumeTailoringView: View {
     init(
         application: JobApplication,
         mode: ResumeTailoringMode = .standard,
+        seededPatches: [ResumePatch] = [],
         onClose: (() -> Void)? = nil,
         onUnsavedChangesChanged: ((Bool) -> Void)? = nil
     ) {
         self.application = application
         self.mode = mode
+        self.seededPatches = seededPatches
         self.onClose = onClose
         self.onUnsavedChangesChanged = onUnsavedChangesChanged
     }
@@ -1201,8 +1204,13 @@ struct ResumeTailoringView: View {
                     Spacer()
                 }
 
-                if case .atsFixes(let context) = mode {
+                switch mode {
+                case .atsFixes(let context):
                     atsFocusCard(context)
+                case .atsQuickFixes(let context):
+                    atsQuickFixCard(context)
+                case .standard:
+                    EmptyView()
                 }
 
                 if isGenerating {
@@ -1298,6 +1306,33 @@ struct ResumeTailoringView: View {
 
             if !context.criticalFindings.isEmpty {
                 Text("Critical findings: \(context.criticalFindings.joined(separator: " | "))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .appCard(cornerRadius: 10, elevated: true, shadow: false)
+    }
+
+    private func atsQuickFixCard(_ context: ATSQuickFixContext) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("ATS quick-fix review", systemImage: "wrench.and.screwdriver")
+                .font(.headline)
+
+            if !context.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(context.summary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !context.promotedKeywords.isEmpty {
+                Text("Promoting to Skills: \(context.promotedKeywords.joined(separator: ", "))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !context.unsupportedKeywords.isEmpty {
+                Text("Needs AI review instead: \(context.unsupportedKeywords.joined(separator: ", "))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -2263,6 +2298,19 @@ struct ResumeTailoringView: View {
             return
         }
 
+        guard let masterRevision else {
+            preflightError = "Save a master resume in the Resume section before tailoring."
+            return
+        }
+
+        resetDraftState(baseJSON: masterRevision.rawJSON)
+
+        if case .atsQuickFixes = mode {
+            preflightError = nil
+            loadSeededQuickFixes(from: masterRevision.rawJSON)
+            return
+        }
+
         guard let jd = application.jobDescription,
               !jd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             preflightError = "This job is missing a job description. Add one in Edit Application before tailoring."
@@ -2289,7 +2337,24 @@ struct ResumeTailoringView: View {
         }
 
         preflightError = nil
-        editedJSON = masterRevision?.rawJSON ?? ""
+    }
+
+    private func triggerInitialGenerationIfNeeded() {
+        guard !hasTriggeredInitialGeneration, preflightError == nil else { return }
+        if case .atsQuickFixes = mode {
+            return
+        }
+        hasTriggeredInitialGeneration = true
+        Task { await generateSuggestions() }
+    }
+
+    private func resetDraftState(baseJSON: String) {
+        editedJSON = baseJSON
+        patches = []
+        sectionGaps = []
+        safetyRejections = []
+        acceptedPatchIDs = []
+        rejectedPatchIDs = []
         lastPersistedJSON = editedJSON
         lastPersistedAcceptedPatchIDs = []
         lastPersistedRejectedPatchIDs = []
@@ -2305,10 +2370,23 @@ struct ResumeTailoringView: View {
         publishUnsavedChangesState()
     }
 
-    private func triggerInitialGenerationIfNeeded() {
-        guard !hasTriggeredInitialGeneration, preflightError == nil else { return }
-        hasTriggeredInitialGeneration = true
-        Task { await generateSuggestions() }
+    private func loadSeededQuickFixes(from originalJSON: String) {
+        do {
+            let validation = try ResumePatchSafetyValidator.validate(
+                patches: seededPatches,
+                originalJSON: originalJSON
+            )
+            patches = validation.accepted
+            safetyRejections = validation.rejected
+            refreshEditedJSON()
+            lastPersistedJSON = editedJSON
+            if patches.isEmpty && !seededPatches.isEmpty {
+                actionError = "Pipeline could not build any safe deterministic ATS quick fixes for this resume."
+            }
+            publishUnsavedChangesState()
+        } catch {
+            preflightError = error.localizedDescription
+        }
     }
 
     private func closeTailoringView() {
@@ -2693,6 +2771,8 @@ struct ResumeTailoringView: View {
                             }
                         }
                     )
+                case .atsQuickFixes:
+                    throw AIServiceError.parsingError("ATS quick fixes are loaded locally.")
                 }
             }
 
@@ -2740,8 +2820,9 @@ struct ResumeTailoringView: View {
         startedAt: Date,
         errorMessage: String?
     ) {
+        guard let feature = mode.usageFeature else { return }
         _ = try? AIUsageLedgerService.record(
-            feature: mode.usageFeature,
+            feature: feature,
             provider: provider,
             model: model,
             usage: usage,
@@ -2808,7 +2889,8 @@ struct ResumeTailoringView: View {
             await ATSCompatibilityCoordinator.shared.refresh(
                 application: application,
                 modelContext: modelContext,
-                force: true
+                force: true,
+                trigger: .autoSnapshot
             )
             lastPersistedJSON = validated.normalizedJSON
             lastPersistedAcceptedPatchIDs = acceptedPatchIDs

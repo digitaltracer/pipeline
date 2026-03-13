@@ -126,6 +126,31 @@ public struct DashboardChecklistSnapshot: Sendable {
     }
 }
 
+public struct DashboardRejectionSummary: Sendable {
+    public let rejectedApplications: Int
+    public let loggedRejections: Int
+    public let missingLogCount: Int
+    public let topSignal: String?
+    public let topRecoverySuggestion: String?
+    public let hasFreshInsights: Bool
+
+    public init(
+        rejectedApplications: Int,
+        loggedRejections: Int,
+        missingLogCount: Int,
+        topSignal: String?,
+        topRecoverySuggestion: String?,
+        hasFreshInsights: Bool
+    ) {
+        self.rejectedApplications = rejectedApplications
+        self.loggedRejections = loggedRejections
+        self.missingLogCount = missingLogCount
+        self.topSignal = topSignal
+        self.topRecoverySuggestion = topRecoverySuggestion
+        self.hasFreshInsights = hasFreshInsights
+    }
+}
+
 public struct DashboardAnalyticsResult {
     public let scope: AnalyticsComparisonScope
     public let currentSnapshot: DashboardSnapshot
@@ -138,6 +163,7 @@ public struct DashboardAnalyticsResult {
     public let averageOfferedComp: Double?
     public let currentChecklist: DashboardChecklistSnapshot
     public let previousChecklist: DashboardChecklistSnapshot
+    public let rejectionSummary: DashboardRejectionSummary
     public let averageMatchScore: Double?
     public let staleMatchCount: Int
     public let goalProgress: [DashboardGoalProgress]
@@ -159,6 +185,7 @@ public struct DashboardAnalyticsResult {
         averageOfferedComp: Double?,
         currentChecklist: DashboardChecklistSnapshot,
         previousChecklist: DashboardChecklistSnapshot,
+        rejectionSummary: DashboardRejectionSummary,
         averageMatchScore: Double?,
         staleMatchCount: Int,
         goalProgress: [DashboardGoalProgress],
@@ -179,6 +206,7 @@ public struct DashboardAnalyticsResult {
         self.averageOfferedComp = averageOfferedComp
         self.currentChecklist = currentChecklist
         self.previousChecklist = previousChecklist
+        self.rejectionSummary = rejectionSummary
         self.averageMatchScore = averageMatchScore
         self.staleMatchCount = staleMatchCount
         self.goalProgress = goalProgress
@@ -208,6 +236,7 @@ public final class DashboardAnalyticsService: @unchecked Sendable {
         goals: [SearchGoal],
         scope: AnalyticsComparisonScope,
         baseCurrency: Currency,
+        rejectionLearningSnapshot: RejectionLearningSnapshot? = nil,
         currentResumeRevisionID: UUID? = nil,
         matchPreferences: JobMatchPreferences = JobMatchPreferences(),
         referenceDate: Date = Date()
@@ -233,6 +262,11 @@ public final class DashboardAnalyticsService: @unchecked Sendable {
         let cadenceHeatmap = makeCadenceHeatmap(for: scopedApps.current, referenceDate: referenceDate)
         let currentChecklist = makeChecklistSnapshot(for: scopedApps.current, referenceDate: referenceDate)
         let previousChecklist = makeChecklistSnapshot(for: scopedApps.previous, referenceDate: referenceDate)
+        let rejectionSummary = makeRejectionSummary(
+            for: scopedApps.current,
+            rejectionLearningSnapshot: rejectionLearningSnapshot,
+            referenceDate: referenceDate
+        )
         let matchAnalytics = makeMatchAnalytics(
             for: scopedApps.current,
             currentResumeRevisionID: currentResumeRevisionID,
@@ -272,6 +306,7 @@ public final class DashboardAnalyticsService: @unchecked Sendable {
             averageOfferedComp: salaryAnalytics.averageOfferedComp,
             currentChecklist: currentChecklist,
             previousChecklist: previousChecklist,
+            rejectionSummary: rejectionSummary,
             averageMatchScore: matchAnalytics.averageScore,
             staleMatchCount: matchAnalytics.staleCount,
             goalProgress: goalProgress,
@@ -334,6 +369,34 @@ public final class DashboardAnalyticsService: @unchecked Sendable {
             openItems: openItems,
             overdueItems: overdueItems,
             completionRate: checklistTasks.isEmpty ? 0 : Double(completedItems) / Double(checklistTasks.count)
+        )
+    }
+
+    private func makeRejectionSummary(
+        for applications: [JobApplication],
+        rejectionLearningSnapshot: RejectionLearningSnapshot?,
+        referenceDate: Date
+    ) -> DashboardRejectionSummary {
+        let rejectedApplications = applications.filter { $0.status == .rejected }
+        let loggedRejections = rejectedApplications.filter { $0.latestRejectionLog != nil }
+        let missingLogCount = max(0, rejectedApplications.count - loggedRejections.count)
+        let hasFreshInsights: Bool
+
+        if let rejectionLearningSnapshot {
+            hasFreshInsights =
+                rejectionLearningSnapshot.rejectionCount >= 3 &&
+                referenceDate.timeIntervalSince(rejectionLearningSnapshot.generatedAt) <= 30 * 86_400
+        } else {
+            hasFreshInsights = false
+        }
+
+        return DashboardRejectionSummary(
+            rejectedApplications: rejectedApplications.count,
+            loggedRejections: loggedRejections.count,
+            missingLogCount: missingLogCount,
+            topSignal: hasFreshInsights ? rejectionLearningSnapshot?.patternSignals.first : nil,
+            topRecoverySuggestion: hasFreshInsights ? rejectionLearningSnapshot?.recoverySuggestions.first : nil,
+            hasFreshInsights: hasFreshInsights
         )
     }
 

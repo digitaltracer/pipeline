@@ -15,6 +15,8 @@ struct JobDetailView: View {
     @Query private var allApplications: [JobApplication]
     @Query(sort: \InterviewLearningSnapshot.generatedAt, order: .reverse)
     private var interviewLearningSnapshots: [InterviewLearningSnapshot]
+    @Query(sort: \RejectionLearningSnapshot.generatedAt, order: .reverse)
+    private var rejectionLearningSnapshots: [RejectionLearningSnapshot]
     @Bindable var application: JobApplication
     var onClose: (() -> Void)? = nil
     var onSelectContact: ((Contact) -> Void)? = nil
@@ -32,16 +34,19 @@ struct JobDetailView: View {
     @State private var showingDeleteAlert = false
     @State private var showingInterviewPrep = false
     @State private var showingInterviewLearnings = false
+    @State private var selectedRejectionActivityForLog: ApplicationActivity?
     @State private var showingFollowUpDrafter = false
     @State private var showingCoverLetterEditor = false
     @State private var showingTailorResume = false
     @State private var resumeTailoringMode: ResumeTailoringMode = .standard
+    @State private var resumeSeededPatches: [ResumePatch] = []
     @State private var showingCompanyWorkspace = false
     @State private var companyWorkspaceTab: CompanyWorkspaceTab = .overview
     @State private var actionErrorMessage: String?
     @State private var descriptionDenoiseViewModel: JobDescriptionDenoiseViewModel
     @State private var checklistSuggestionsViewModel: ChecklistSuggestionsViewModel
     @State private var selectedInterviewActivityForDebrief: ApplicationActivity?
+    @State private var rejectionLearningsViewModel: RejectionLearningsViewModel?
     @Environment(\.colorScheme) private var colorScheme
 
     init(
@@ -78,7 +83,10 @@ struct JobDetailView: View {
                 onDelete: { showingDeleteAlert = true },
                 onStatusChange: { status in
                     do {
-                        try viewModel.updateStatus(status, for: application, context: modelContext)
+                        let result = try viewModel.updateStatus(status, for: application, context: modelContext)
+                        if result.needsRejectionLogPrompt, let activityID = result.statusActivityID {
+                            selectedRejectionActivityForLog = application.sortedActivities.first(where: { $0.id == activityID })
+                        }
                     } catch {
                         actionErrorMessage = error.localizedDescription
                     }
@@ -154,8 +162,12 @@ struct JobDetailView: View {
                     ATSCompatibilitySection(
                         application: application,
                         onGenerateFixes: { assessment in
+                            resumeSeededPatches = []
                             resumeTailoringMode = .atsFixes(ATSFixContext(assessment: assessment))
                             showingTailorResume = true
+                        },
+                        onGenerateQuickFixes: { assessment in
+                            openATSQuickFixes(for: assessment)
                         }
                     )
 
@@ -173,6 +185,33 @@ struct JobDetailView: View {
                         application: application,
                         viewModel: viewModel
                     )
+
+                    if application.status == .rejected || application.latestRejectionLog != nil {
+                        RejectionAnalysisSection(
+                            application: application,
+                            latestSnapshot: rejectionLearningSnapshots.first,
+                            recoverySuggestions: RejectionRecoveryService.suggestions(
+                                for: application,
+                                among: allApplications
+                            ),
+                            hasConfiguredAI: rejectionLearningsViewModel?.hasConfiguredAI ?? false,
+                            isAnalyzing: rejectionLearningsViewModel?.isAnalyzing ?? false,
+                            onFillLog: {
+                                if let latestRejectionActivity = application.latestRejectionActivity {
+                                    selectedRejectionActivityForLog = latestRejectionActivity
+                                }
+                            },
+                            onAnalyze: {
+                                Task {
+                                    await rejectionLearningsViewModel?.refresh()
+                                    if let error = rejectionLearningsViewModel?.error {
+                                        actionErrorMessage = error
+                                        rejectionLearningsViewModel?.error = nil
+                                    }
+                                }
+                            }
+                        )
+                    }
 
                     if !application.sortedInterviewActivities.isEmpty {
                         InterviewLearningsSection(
@@ -277,7 +316,8 @@ struct JobDetailView: View {
         .sheet(isPresented: $showingTailorResume) {
             ResumeTailoringView(
                 application: application,
-                mode: resumeTailoringMode
+                mode: resumeTailoringMode,
+                seededPatches: resumeSeededPatches
             )
         }
         .sheet(isPresented: $showingInterviewPrep) {
@@ -296,6 +336,19 @@ struct JobDetailView: View {
                     application: application,
                     modelContext: modelContext
                 )
+            )
+        }
+        .sheet(item: $selectedRejectionActivityForLog) { activity in
+            RejectionLogSheet(
+                viewModel: RejectionLogEditorViewModel(
+                    activity: activity,
+                    application: application,
+                    modelContext: modelContext,
+                    settingsViewModel: SettingsViewModel()
+                ),
+                onSaved: {
+                    rejectionLearningsViewModel?.load()
+                }
             )
         }
         .sheet(isPresented: $showingInterviewLearnings) {
@@ -395,6 +448,11 @@ struct JobDetailView: View {
             checklistSuggestionsViewModel.clearError()
         }
         .task(id: application.id) {
+            rejectionLearningsViewModel = RejectionLearningsViewModel(
+                settingsViewModel: SettingsViewModel(),
+                modelContext: modelContext
+            )
+            rejectionLearningsViewModel?.load()
             descriptionDenoiseViewModel.setModelContext(modelContext)
             checklistSuggestionsViewModel.setModelContext(modelContext)
             if application.company == nil {
@@ -435,6 +493,7 @@ struct JobDetailView: View {
         case .none:
             break
         case .resumeTailoring:
+            resumeSeededPatches = []
             resumeTailoringMode = .standard
             showingTailorResume = true
         case .coverLetter:
@@ -449,6 +508,38 @@ struct JobDetailView: View {
             showingFollowUpDrafter = true
         case .salaryComparison:
             openCompanyWorkspace(.salary)
+        }
+    }
+
+    private func openATSQuickFixes(for assessment: ATSCompatibilityAssessment) {
+        do {
+            guard let masterRevision = try ResumeStoreService.currentMasterRevision(
+                in: modelContext
+            ) else {
+                actionErrorMessage = ATSBlockedReason.missingResumeSource.message
+                return
+            }
+
+            let result = try ATSCompatibilityQuickFixService.makeSkillPromotionPatches(
+                assessment: assessment,
+                resumeJSON: masterRevision.rawJSON
+            )
+
+            guard !result.patches.isEmpty else {
+                actionErrorMessage = "No deterministic ATS quick fixes are available for this resume yet."
+                return
+            }
+
+            resumeSeededPatches = result.patches
+            resumeTailoringMode = .atsQuickFixes(
+                ATSQuickFixContext(
+                    assessment: assessment,
+                    unsupportedKeywords: result.unsupportedKeywords
+                )
+            )
+            showingTailorResume = true
+        } catch {
+            actionErrorMessage = error.localizedDescription
         }
     }
 
@@ -2938,6 +3029,299 @@ private struct InterviewLearningsView: View {
     }
 }
 
+private struct RejectionAnalysisSection: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    let application: JobApplication
+    let latestSnapshot: RejectionLearningSnapshot?
+    let recoverySuggestions: [RejectionRecoverySuggestion]
+    let hasConfiguredAI: Bool
+    let isAnalyzing: Bool
+    let onFillLog: () -> Void
+    let onAnalyze: () -> Void
+
+    private var latestLog: RejectionLog? {
+        application.latestRejectionLog
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label("Rejection Analysis", systemImage: "arrow.counterclockwise.circle")
+                    .font(.headline)
+
+                Spacer()
+
+                if application.latestRejectionActivity != nil {
+                    Button(latestLog == nil ? "Complete Log" : "Edit Log") {
+                        onFillLog()
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(DesignSystem.Colors.accent)
+                }
+            }
+
+            if application.needsRejectionLog {
+                bannerCard(
+                    title: "Rejection log missing",
+                    body: "Capture the stage, likely reason, and any feedback so Pipeline can turn this rejection into a useful learning signal.",
+                    accent: .orange,
+                    actionTitle: "Complete Log",
+                    action: onFillLog
+                )
+            } else if let latestLog {
+                loggedState(log: latestLog)
+            }
+
+            if !recoverySuggestions.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Recovery Suggestions")
+                        .font(.subheadline.weight(.semibold))
+
+                    ForEach(recoverySuggestions) { suggestion in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(suggestion.title)
+                                .font(.subheadline.weight(.medium))
+                            Text(suggestion.body)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+                        )
+                    }
+                }
+            }
+
+            if let latestSnapshot, latestSnapshot.rejectionCount >= 3 {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("Global Signals")
+                            .font(.subheadline.weight(.semibold))
+
+                        Spacer()
+
+                        Button {
+                            onAnalyze()
+                        } label: {
+                            Label("Refresh", systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(DesignSystem.Colors.accent)
+                        .disabled(isAnalyzing)
+                    }
+
+                    if isAnalyzing {
+                        ProgressView("Refreshing rejection learnings…")
+                            .font(.caption)
+                    }
+
+                    signalGroup(title: "Patterns", items: latestSnapshot.patternSignals, icon: "waveform.path.ecg")
+                    signalGroup(title: "Targeting", items: latestSnapshot.targetingSignals, icon: "scope")
+                    signalGroup(title: "Process", items: latestSnapshot.processSignals, icon: "list.clipboard")
+                }
+            } else if application.latestRejectionLog != nil {
+                bannerCard(
+                    title: hasConfiguredAI ? "Analyze patterns after a few more rejections" : "Configure AI to analyze rejection patterns",
+                    body: hasConfiguredAI
+                        ? "Pipeline will start surfacing higher-confidence rejection learnings once you have at least 3 logged rejections."
+                        : "Capture rejection logs now, then add an AI provider in Settings when you want Pipeline to synthesize patterns and recovery ideas.",
+                    accent: hasConfiguredAI ? .blue : .secondary,
+                    actionTitle: hasConfiguredAI ? "Analyze Now" : nil,
+                    action: onAnalyze
+                )
+            }
+        }
+        .padding(16)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+    }
+
+    private func loggedState(log: RejectionLog) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                capsule(log.stageCategory.displayName)
+                capsule(log.reasonCategory.displayName)
+                capsule(log.feedbackSource.displayName)
+                if log.doNotReapply {
+                    capsule("Do Not Reapply", tint: .red)
+                }
+            }
+
+            if let feedback = log.feedbackText {
+                detailBlock(title: "Feedback", body: feedback)
+            }
+
+            if let reflection = log.candidateReflection {
+                detailBlock(title: "Reflection", body: reflection)
+            }
+        }
+    }
+
+    private func signalGroup(title: String, items: [String], icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: icon)
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.secondary)
+                .textCase(.uppercase)
+
+            if items.isEmpty {
+                Text("No \(title.lowercased()) yet.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(items, id: \.self) { item in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "sparkles")
+                            .font(.caption)
+                            .foregroundColor(DesignSystem.Colors.accent)
+                            .padding(.top, 2)
+                        Text(item)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private func bannerCard(
+        title: String,
+        body: String,
+        accent: Color,
+        actionTitle: String? = nil,
+        action: (() -> Void)? = nil
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+
+            Text(body)
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .buttonStyle(.borderedProminent)
+                    .tint(accent)
+                    .controlSize(.small)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(accent.opacity(colorScheme == .dark ? 0.16 : 0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(accent.opacity(0.25), lineWidth: 1)
+        )
+    }
+
+    private func detailBlock(title: String, body: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.secondary)
+            Text(body)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private func capsule(_ text: String, tint: Color = .secondary) -> some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .foregroundColor(tint)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(tint.opacity(colorScheme == .dark ? 0.18 : 0.10))
+            .clipShape(Capsule())
+    }
+}
+
+struct RejectionLogSheet: View {
+    @State var viewModel: RejectionLogEditorViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    let onSaved: (() -> Void)?
+
+    var body: some View {
+        @Bindable var bindableViewModel = viewModel
+
+        NavigationStack {
+            Form {
+                Section("Stage") {
+                    Picker("Rejected At", selection: $bindableViewModel.stageCategory) {
+                        ForEach(RejectionStageCategory.allCases) { stage in
+                            Text(stage.displayName).tag(stage)
+                        }
+                    }
+                }
+
+                Section("Reason") {
+                    Picker("Likely Reason", selection: $bindableViewModel.reasonCategory) {
+                        ForEach(RejectionReasonCategory.allCases) { reason in
+                            Text(reason.displayName).tag(reason)
+                        }
+                    }
+
+                    Picker("Feedback Source", selection: $bindableViewModel.feedbackSource) {
+                        ForEach(RejectionFeedbackSource.allCases) { source in
+                            Text(source.displayName).tag(source)
+                        }
+                    }
+                }
+
+                Section("Notes") {
+                    TextField("Feedback received", text: $bindableViewModel.feedbackText, axis: .vertical)
+                        .lineLimit(2 ... 5)
+
+                    TextField("Your reflection", text: $bindableViewModel.candidateReflection, axis: .vertical)
+                        .lineLimit(2 ... 5)
+
+                    Toggle("Do not suggest re-applying here", isOn: $bindableViewModel.doNotReapply)
+                }
+            }
+            .navigationTitle("Rejection Log")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Skip") { dismiss() }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(viewModel.isSaving ? "Saving…" : "Save") {
+                        Task {
+                            do {
+                                try await viewModel.save()
+                                onSaved?()
+                                dismiss()
+                            } catch {
+                                viewModel.errorMessage = error.localizedDescription
+                            }
+                        }
+                    }
+                    .disabled(viewModel.isSaving)
+                }
+            }
+            #if os(macOS)
+            .frame(minWidth: 540, idealWidth: 620, minHeight: 520, idealHeight: 620)
+            #endif
+        }
+        .alert("Unable to Save Rejection Log", isPresented: Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { if !$0 { viewModel.errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(viewModel.errorMessage ?? "An unknown error occurred.")
+        }
+    }
+}
+
 #Preview {
     NavigationStack {
         JobDetailView(
@@ -2974,14 +3358,17 @@ private struct InterviewLearningsView: View {
             ApplicationContactLink.self,
             ApplicationActivity.self,
             InterviewDebrief.self,
+            RejectionLog.self,
             InterviewQuestionEntry.self,
             InterviewLearningSnapshot.self,
+            RejectionLearningSnapshot.self,
             ApplicationTask.self,
             ApplicationChecklistSuggestion.self,
             ApplicationAttachment.self,
             CoverLetterDraft.self,
             JobMatchAssessment.self,
             ATSCompatibilityAssessment.self,
+            ATSCompatibilityScanRun.self,
             ResumeMasterRevision.self,
             ResumeJobSnapshot.self,
             AIUsageRecord.self,

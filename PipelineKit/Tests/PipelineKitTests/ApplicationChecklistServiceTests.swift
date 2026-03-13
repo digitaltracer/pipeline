@@ -192,13 +192,16 @@ private func makeChecklistContainer() throws -> ModelContainer {
         ApplicationContactLink.self,
         ApplicationActivity.self,
         InterviewDebrief.self,
+        RejectionLog.self,
         InterviewQuestionEntry.self,
         InterviewLearningSnapshot.self,
+        RejectionLearningSnapshot.self,
         ApplicationTask.self,
         ApplicationChecklistSuggestion.self,
         ApplicationAttachment.self,
         CoverLetterDraft.self,
         ATSCompatibilityAssessment.self,
+        ATSCompatibilityScanRun.self,
         ResumeMasterRevision.self,
         ResumeJobSnapshot.self
     ])

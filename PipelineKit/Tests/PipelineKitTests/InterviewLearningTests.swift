@@ -119,8 +119,10 @@ private func makeInterviewLearningContainer() throws -> ModelContainer {
         ApplicationContactLink.self,
         ApplicationActivity.self,
         InterviewDebrief.self,
+        RejectionLog.self,
         InterviewQuestionEntry.self,
         InterviewLearningSnapshot.self,
+        RejectionLearningSnapshot.self,
         ApplicationTask.self,
         ApplicationChecklistSuggestion.self,
         ApplicationAttachment.self,
@@ -129,6 +131,7 @@ private func makeInterviewLearningContainer() throws -> ModelContainer {
         ResumeJobSnapshot.self,
         JobMatchAssessment.self,
         ATSCompatibilityAssessment.self,
+        ATSCompatibilityScanRun.self,
         AIUsageRecord.self,
         AIModelRate.self
     ])

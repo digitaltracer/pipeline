@@ -63,6 +63,9 @@ public final class JobApplication {
     @Relationship(deleteRule: .cascade, inverse: \ATSCompatibilityAssessment.application)
     public var atsAssessment: ATSCompatibilityAssessment?
 
+    @Relationship(deleteRule: .cascade, inverse: \ATSCompatibilityScanRun.application)
+    public var atsScanRuns: [ATSCompatibilityScanRun]?
+
     @Relationship(deleteRule: .cascade, inverse: \ApplicationAttachment.application)
     public var attachments: [ApplicationAttachment]?
 
@@ -241,6 +244,22 @@ public final class JobApplication {
         sortedInterviewActivities.filter(\.needsDebrief)
     }
 
+    public var sortedRejectionActivities: [ApplicationActivity] {
+        sortedActivities.filter(\.isRejectionStatusChange)
+    }
+
+    public var latestRejectionActivity: ApplicationActivity? {
+        sortedRejectionActivities.first
+    }
+
+    public var latestRejectionLog: RejectionLog? {
+        latestRejectionActivity?.rejectionLog
+    }
+
+    public var needsRejectionLog: Bool {
+        latestRejectionActivity?.needsRejectionLog == true
+    }
+
     public var sortedTasks: [ApplicationTask] {
         (tasks ?? []).sorted { lhs, rhs in
             if lhs.isCompleted != rhs.isCompleted {
@@ -268,6 +287,15 @@ public final class JobApplication {
                 return lhs.createdAt > rhs.createdAt
             }
 
+            return lhs.id.uuidString > rhs.id.uuidString
+        }
+    }
+
+    public var sortedATSScanRuns: [ATSCompatibilityScanRun] {
+        (atsScanRuns ?? []).sorted { lhs, rhs in
+            if lhs.createdAt != rhs.createdAt {
+                return lhs.createdAt > rhs.createdAt
+            }
             return lhs.id.uuidString > rhs.id.uuidString
         }
     }
@@ -397,6 +425,7 @@ public final class JobApplication {
         coverLetterDraft: CoverLetterDraft? = nil,
         matchAssessment: JobMatchAssessment? = nil,
         atsAssessment: ATSCompatibilityAssessment? = nil,
+        atsScanRuns: [ATSCompatibilityScanRun]? = nil,
         attachments: [ApplicationAttachment]? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
@@ -441,6 +470,7 @@ public final class JobApplication {
         self.coverLetterDraft = coverLetterDraft
         self.matchAssessment = matchAssessment
         self.atsAssessment = atsAssessment
+        self.atsScanRuns = atsScanRuns
         self.attachments = attachments
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -632,6 +662,13 @@ public final class JobApplication {
         guard atsAssessment?.id != assessment?.id else { return }
         atsAssessment = assessment
         updateTimestamp()
+    }
+
+    public func addATSScanRun(_ run: ATSCompatibilityScanRun) {
+        if atsScanRuns == nil {
+            atsScanRuns = []
+        }
+        atsScanRuns?.append(run)
     }
 
     private func totalCompensation(base: Int?, bonus: Int?, equity: Int?) -> Int? {

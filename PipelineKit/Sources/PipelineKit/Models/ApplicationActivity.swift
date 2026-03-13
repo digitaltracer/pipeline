@@ -24,6 +24,7 @@ public final class ApplicationActivity {
     public var application: JobApplication?
     public var contact: Contact?
     public var debrief: InterviewDebrief?
+    public var rejectionLog: RejectionLog?
 
     public var kind: ApplicationActivityKind {
         get { ApplicationActivityKind(rawValue: kindRawValue) }
@@ -172,6 +173,18 @@ public final class ApplicationActivity {
 
     public var hasDebrief: Bool {
         debrief != nil
+    }
+
+    public var isRejectionStatusChange: Bool {
+        kind == .statusChange && toStatus == .rejected
+    }
+
+    public var hasRejectionLog: Bool {
+        rejectionLog != nil
+    }
+
+    public var needsRejectionLog: Bool {
+        isRejectionStatusChange && rejectionLog == nil
     }
 
     public var needsDebrief: Bool {

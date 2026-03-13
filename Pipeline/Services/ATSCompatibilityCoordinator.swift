@@ -13,7 +13,8 @@ final class ATSCompatibilityCoordinator {
     func refresh(
         application: JobApplication,
         modelContext: ModelContext,
-        force: Bool
+        force: Bool,
+        trigger: ATSScanTrigger = .autoViewRefresh
     ) async {
         guard !processingApplicationIDs.contains(application.id) else { return }
         processingApplicationIDs.insert(application.id)
@@ -45,15 +46,21 @@ final class ATSCompatibilityCoordinator {
                 draft: draft,
                 application: application,
                 assessment: existingAssessment,
-                modelContext: modelContext
+                modelContext: modelContext,
+                trigger: trigger
             )
         } catch {
-            try? persistFailure(
+            let draft = failureDraft(
                 message: error.localizedDescription,
                 application: application,
+                resumeSource: resumeSource
+            )
+            try? persist(
+                draft: draft,
+                application: application,
                 assessment: existingAssessment,
-                resumeSource: resumeSource,
-                modelContext: modelContext
+                modelContext: modelContext,
+                trigger: trigger
             )
         }
     }
@@ -62,7 +69,8 @@ final class ATSCompatibilityCoordinator {
         draft: ATSCompatibilityAssessmentDraft,
         application: JobApplication,
         assessment: ATSCompatibilityAssessment?,
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        trigger: ATSScanTrigger = .autoViewRefresh
     ) throws {
         let target = assessment ?? ATSCompatibilityAssessment()
         if assessment == nil {
@@ -70,6 +78,8 @@ final class ATSCompatibilityCoordinator {
             application.assignATSAssessment(target)
             target.application = application
         }
+
+        let shouldAppendRun = !(assessment?.isEquivalent(to: draft) ?? false)
 
         switch draft.status {
         case .ready:
@@ -82,8 +92,18 @@ final class ATSCompatibilityCoordinator {
                 summary: draft.summary ?? "",
                 matchedKeywords: draft.matchedKeywords,
                 missingKeywords: draft.missingKeywords,
+                skillsPromotionKeywords: draft.skillsPromotionKeywords,
+                keywordEvidenceSummary: draft.keywordEvidenceSummary,
                 criticalFindings: draft.criticalFindings,
                 warningFindings: draft.warningFindings,
+                sectionFindings: draft.sectionFindings,
+                contactWarningFindings: draft.contactWarningFindings,
+                contactCriticalFindings: draft.contactCriticalFindings,
+                formatWarningFindings: draft.formatWarningFindings,
+                formatCriticalFindings: draft.formatCriticalFindings,
+                hasExperienceSection: draft.hasExperienceSection,
+                hasEducationSection: draft.hasEducationSection,
+                hasSkillsSection: draft.hasSkillsSection,
                 resumeSourceKind: draft.resumeSourceKind ?? .masterResume,
                 resumeSourceSnapshotID: draft.resumeSourceSnapshotID,
                 resumeSourceRevisionID: draft.resumeSourceRevisionID,
@@ -116,33 +136,84 @@ final class ATSCompatibilityCoordinator {
             )
         }
 
+        if shouldAppendRun {
+            let run = ATSCompatibilityScanRun(
+                overallScore: draft.overallScore,
+                keywordScore: draft.keywordScore,
+                sectionScore: draft.sectionScore,
+                contactScore: draft.contactScore,
+                formatScore: draft.formatScore,
+                summary: draft.summary,
+                matchedKeywords: draft.matchedKeywords,
+                missingKeywords: draft.missingKeywords,
+                skillsPromotionKeywords: draft.skillsPromotionKeywords,
+                keywordEvidenceSummary: draft.keywordEvidenceSummary,
+                criticalFindings: draft.criticalFindings,
+                warningFindings: draft.warningFindings,
+                sectionFindings: draft.sectionFindings,
+                contactWarningFindings: draft.contactWarningFindings,
+                contactCriticalFindings: draft.contactCriticalFindings,
+                formatWarningFindings: draft.formatWarningFindings,
+                formatCriticalFindings: draft.formatCriticalFindings,
+                hasExperienceSection: draft.hasExperienceSection,
+                hasEducationSection: draft.hasEducationSection,
+                hasSkillsSection: draft.hasSkillsSection,
+                status: draft.status,
+                blockedReason: draft.blockedReason,
+                resumeSourceKind: draft.resumeSourceKind,
+                scanTrigger: trigger,
+                resumeSourceSnapshotID: draft.resumeSourceSnapshotID,
+                resumeSourceRevisionID: draft.resumeSourceRevisionID,
+                resumeSourceFingerprint: draft.resumeSourceFingerprint,
+                jobDescriptionHash: draft.jobDescriptionHash,
+                scoringVersion: draft.scoringVersion,
+                lastErrorMessage: draft.lastErrorMessage,
+                scoredAt: draft.scoredAt
+            )
+            run.application = application
+            application.addATSScanRun(run)
+            modelContext.insert(run)
+        }
+
         try modelContext.save()
     }
 
-    private func persistFailure(
+    private func failureDraft(
         message: String,
         application: JobApplication,
-        assessment: ATSCompatibilityAssessment?,
-        resumeSource: ResumeSourceSelection?,
-        modelContext: ModelContext
-    ) throws {
-        let target = assessment ?? ATSCompatibilityAssessment()
-        if assessment == nil {
-            modelContext.insert(target)
-            application.assignATSAssessment(target)
-            target.application = application
-        }
-
-        target.applyFailedState(
+        resumeSource: ResumeSourceSelection?
+    ) -> ATSCompatibilityAssessmentDraft {
+        ATSCompatibilityAssessmentDraft(
+            overallScore: nil,
+            keywordScore: nil,
+            sectionScore: nil,
+            contactScore: nil,
+            formatScore: nil,
+            summary: nil,
+            matchedKeywords: [],
+            missingKeywords: [],
+            skillsPromotionKeywords: [],
+            keywordEvidenceSummary: [],
+            criticalFindings: [],
+            warningFindings: [],
+            sectionFindings: [],
+            contactWarningFindings: [],
+            contactCriticalFindings: [],
+            formatWarningFindings: [],
+            formatCriticalFindings: [],
+            hasExperienceSection: false,
+            hasEducationSection: false,
+            hasSkillsSection: false,
+            status: .failed,
+            blockedReason: nil,
             resumeSourceKind: resumeSource.map { ATSResumeSourceKind(rawValue: $0.kind.rawValue) ?? .masterResume },
             resumeSourceSnapshotID: resumeSource?.snapshotID,
             resumeSourceRevisionID: resumeSource?.masterRevisionID,
             resumeSourceFingerprint: ATSCompatibilityScoringService.resumeSourceFingerprint(for: resumeSource),
+            lastErrorMessage: message,
             jobDescriptionHash: ATSCompatibilityScoringService.jobDescriptionHash(for: application),
             scoringVersion: ATSCompatibilityScoringService.scoringVersion,
-            errorMessage: message
+            scoredAt: Date()
         )
-
-        try modelContext.save()
     }
 }

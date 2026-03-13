@@ -16,6 +16,7 @@ public enum ApplicationTimelineRecorderService {
             kind: .statusChange,
             occurredAt: occurredAt,
             application: application,
+            interviewStage: newStatus == .rejected ? application.interviewStage : nil,
             fromStatus: previousStatus,
             toStatus: newStatus,
             isSystemGenerated: true

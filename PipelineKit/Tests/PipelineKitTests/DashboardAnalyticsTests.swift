@@ -197,6 +197,68 @@ import Testing
     #expect(analytics.previousChecklist.completedItems == 0)
 }
 
+@Test func dashboardAnalyticsIncludesRejectionSummaryWhenFreshSnapshotExists() async {
+    let rejected = JobApplication(
+        companyName: "OpenAI",
+        role: "Senior Engineer",
+        location: "Remote",
+        status: .rejected,
+        appliedDate: makeDate("2026-03-03"),
+        updatedAt: makeDate("2026-03-03")
+    )
+    let rejectedActivity = ApplicationActivity(
+        kind: .statusChange,
+        occurredAt: makeDate("2026-03-05"),
+        application: rejected,
+        toStatus: .rejected
+    )
+    let rejectedLog = RejectionLog(
+        stageCategory: .technical,
+        reasonCategory: .experienceMismatch,
+        feedbackSource: .explicit,
+        feedbackText: "Wanted more infra depth.",
+        activity: rejectedActivity
+    )
+    rejected.activities = [rejectedActivity]
+    rejectedActivity.rejectionLog = rejectedLog
+
+    let missingLog = JobApplication(
+        companyName: "Anthropic",
+        role: "Staff Engineer",
+        location: "Remote",
+        status: .rejected,
+        appliedDate: makeDate("2026-03-02"),
+        updatedAt: makeDate("2026-03-02")
+    )
+
+    let snapshot = RejectionLearningSnapshot(
+        patternSignals: ["Technical-stage rejections are recurring."],
+        targetingSignals: ["Senior titles are converting worse than mid-level roles."],
+        processSignals: ["Explicit feedback is appearing in a minority of rejection logs."],
+        recoverySuggestions: ["Bias similar retries toward roles with narrower scope."],
+        rejectionCount: 3,
+        explicitFeedbackCount: 1,
+        generatedAt: makeDate("2026-03-07")
+    )
+
+    let analyticsService = DashboardAnalyticsService(exchangeRateService: MockExchangeRateProvider(rate: 1.0))
+    let analytics = await analyticsService.analyze(
+        applications: [rejected, missingLog],
+        cycles: [],
+        goals: [],
+        scope: .thisMonth,
+        baseCurrency: .usd,
+        rejectionLearningSnapshot: snapshot,
+        referenceDate: makeDate("2026-03-08")
+    )
+
+    #expect(analytics.rejectionSummary.rejectedApplications == 2)
+    #expect(analytics.rejectionSummary.loggedRejections == 1)
+    #expect(analytics.rejectionSummary.missingLogCount == 1)
+    #expect(analytics.rejectionSummary.hasFreshInsights == true)
+    #expect(analytics.rejectionSummary.topSignal == "Technical-stage rejections are recurring.")
+}
+
 @Test func exchangeRateServiceFallsBackToLatestOfflineCachedRate() async {
     let suiteName = "ExchangeRateServiceTests-\(UUID().uuidString)"
     let userDefaults = UserDefaults(suiteName: suiteName)!
@@ -269,13 +331,16 @@ private func makeAnalyticsContainer() throws -> ModelContainer {
         ApplicationContactLink.self,
         ApplicationActivity.self,
         InterviewDebrief.self,
+        RejectionLog.self,
         InterviewQuestionEntry.self,
         InterviewLearningSnapshot.self,
+        RejectionLearningSnapshot.self,
         ApplicationTask.self,
         ApplicationChecklistSuggestion.self,
         ApplicationAttachment.self,
         CoverLetterDraft.self,
         ATSCompatibilityAssessment.self,
+        ATSCompatibilityScanRun.self,
         ResumeMasterRevision.self,
         ResumeJobSnapshot.self,
         AIUsageRecord.self,

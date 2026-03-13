@@ -14,35 +14,16 @@ final class KanbanViewModel {
             .sorted { $0.updatedAt > $1.updatedAt }
     }
 
-    func moveApplication(_ application: JobApplication, to status: ApplicationStatus, context: ModelContext) {
-        let oldStatus = application.status
-        guard oldStatus != status else { return }
-        let checklistService = ApplicationChecklistService()
-
-        application.status = status
-
-        // Auto-set appliedDate when moving to Applied or beyond
-        if application.appliedDate == nil,
-           [.applied, .interviewing, .offered].contains(where: { $0 == status }) {
-            application.appliedDate = Date()
+    @MainActor
+    func moveApplication(
+        _ application: JobApplication,
+        to status: ApplicationStatus,
+        context: ModelContext
+    ) throws -> StatusTransitionResult {
+        let result = try ApplicationStatusTransitionService.applyStatus(status, to: application, in: context)
+        Task { @MainActor in
+            await NotificationService.shared.syncReminderState(for: application)
         }
-
-        application.updateTimestamp()
-        ApplicationTimelineRecorderService.recordStatusChange(
-            for: application,
-            from: oldStatus,
-            to: application.status,
-            in: context
-        )
-
-        do {
-            try checklistService.sync(for: application, trigger: .statusChanged, in: context)
-            Task { @MainActor in
-                await NotificationService.shared.syncReminderState(for: application)
-            }
-        } catch {
-            context.rollback()
-            print("KanbanViewModel: failed to save after move: \(error)")
-        }
+        return result
     }
 }

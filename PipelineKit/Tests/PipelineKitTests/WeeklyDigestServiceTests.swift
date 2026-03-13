@@ -136,6 +136,80 @@ import Testing
     #expect(snapshot.sortedInsights.first?.title == "Follow-up hygiene is slipping.")
 }
 
+@Test func weeklyDigestIncludesRejectionLearningInsightWhenSnapshotIsFresh() throws {
+    let container = try makeWeeklyDigestContainer()
+    let context = ModelContext(container)
+
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "UTC")!
+    let service = WeeklyDigestService(calendar: calendar)
+    let referenceDate = makeDigestDate("2026-03-11T12:00:00Z")
+
+    let apps = (0..<3).map { index in
+        JobApplication(
+            companyName: "Company \(index)",
+            role: "Senior Engineer",
+            location: "Remote",
+            status: .rejected,
+            appliedDate: makeDigestDate("2026-03-0\(index + 2)T10:00:00Z"),
+            updatedAt: makeDigestDate("2026-03-0\(index + 3)T10:00:00Z")
+        )
+    }
+
+    for application in apps {
+        context.insert(application)
+        let activity = ApplicationActivity(
+            kind: .statusChange,
+            occurredAt: application.updatedAt,
+            application: application,
+            interviewStage: .technicalRound1,
+            toStatus: .rejected
+        )
+        let log = RejectionLog(
+            stageCategory: .technical,
+            reasonCategory: .skillsMismatch,
+            feedbackSource: .explicit,
+            feedbackText: "Needed stronger systems examples.",
+            activity: activity
+        )
+        context.insert(activity)
+        context.insert(log)
+        application.addActivity(activity)
+        activity.rejectionLog = log
+    }
+
+    let snapshot = RejectionLearningSnapshot(
+        patternSignals: ["Technical-round rejections are repeating across similar roles."],
+        targetingSignals: ["Senior titles are trending weaker than adjacent mid-level roles."],
+        processSignals: ["Most logs still rely on inferred rather than explicit feedback."],
+        recoverySuggestions: ["Prioritize technical refresh before retrying similar jobs."],
+        rejectionCount: 3,
+        explicitFeedbackCount: 3,
+        generatedAt: makeDigestDate("2026-03-10T12:00:00Z")
+    )
+    context.insert(snapshot)
+    try context.save()
+
+    let result = try service.generateLatestDigestIfNeeded(
+        applications: apps,
+        existingDigests: [],
+        in: context,
+        currentResumeRevisionID: nil,
+        matchPreferences: JobMatchPreferences(),
+        schedule: WeeklyDigestSchedule.sundayEvening,
+        referenceDate: referenceDate
+    )
+
+    guard case .created(let digest) = result else {
+        Issue.record("Expected a created weekly digest snapshot.")
+        return
+    }
+
+    #expect(digest.sortedInsights.contains(where: { $0.sourceKind == .ai }))
+    #expect(digest.sortedInsights.contains(where: { $0.title == "Rejection patterns are starting to repeat." }))
+    #expect(digest.sortedActionItems.contains(where: { $0.title == "Technical rounds are the current bottleneck." }))
+}
+
 private func makeWeeklyDigestContainer() throws -> ModelContainer {
     let schema = Schema([
         JobApplication.self,
@@ -150,8 +224,10 @@ private func makeWeeklyDigestContainer() throws -> ModelContainer {
         ApplicationContactLink.self,
         ApplicationActivity.self,
         InterviewDebrief.self,
+        RejectionLog.self,
         InterviewQuestionEntry.self,
         InterviewLearningSnapshot.self,
+        RejectionLearningSnapshot.self,
         ApplicationTask.self,
         ApplicationChecklistSuggestion.self,
         ApplicationAttachment.self,
@@ -160,6 +236,7 @@ private func makeWeeklyDigestContainer() throws -> ModelContainer {
         ResumeJobSnapshot.self,
         JobMatchAssessment.self,
         ATSCompatibilityAssessment.self,
+        ATSCompatibilityScanRun.self,
         AIUsageRecord.self,
         AIModelRate.self,
         WeeklyDigestSnapshot.self,

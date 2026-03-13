@@ -394,14 +394,17 @@ struct AddInterviewLogView: View {
             ApplicationContactLink.self,
             ApplicationActivity.self,
             InterviewDebrief.self,
+            RejectionLog.self,
             InterviewQuestionEntry.self,
             InterviewLearningSnapshot.self,
+            RejectionLearningSnapshot.self,
             ApplicationTask.self,
             ApplicationChecklistSuggestion.self,
             ApplicationAttachment.self,
             CoverLetterDraft.self,
             JobMatchAssessment.self,
-            ATSCompatibilityAssessment.self
+            ATSCompatibilityAssessment.self,
+            ATSCompatibilityScanRun.self
         ],
         inMemory: true
     )
