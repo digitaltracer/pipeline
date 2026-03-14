@@ -151,6 +151,25 @@ public struct DashboardRejectionSummary: Sendable {
     }
 }
 
+public struct DashboardReferralSummary: Sendable {
+    public let applicationsWithReceivedReferral: Int
+    public let interviewingApplicationsWithReferral: Int
+    public let receivedReferralAttempts: Int
+    public let interviewReferralRate: Double
+
+    public init(
+        applicationsWithReceivedReferral: Int,
+        interviewingApplicationsWithReferral: Int,
+        receivedReferralAttempts: Int,
+        interviewReferralRate: Double
+    ) {
+        self.applicationsWithReceivedReferral = applicationsWithReceivedReferral
+        self.interviewingApplicationsWithReferral = interviewingApplicationsWithReferral
+        self.receivedReferralAttempts = receivedReferralAttempts
+        self.interviewReferralRate = interviewReferralRate
+    }
+}
+
 public struct DashboardAnalyticsResult {
     public let scope: AnalyticsComparisonScope
     public let currentSnapshot: DashboardSnapshot
@@ -164,6 +183,7 @@ public struct DashboardAnalyticsResult {
     public let currentChecklist: DashboardChecklistSnapshot
     public let previousChecklist: DashboardChecklistSnapshot
     public let rejectionSummary: DashboardRejectionSummary
+    public let referralSummary: DashboardReferralSummary
     public let averageMatchScore: Double?
     public let staleMatchCount: Int
     public let goalProgress: [DashboardGoalProgress]
@@ -186,6 +206,7 @@ public struct DashboardAnalyticsResult {
         currentChecklist: DashboardChecklistSnapshot,
         previousChecklist: DashboardChecklistSnapshot,
         rejectionSummary: DashboardRejectionSummary,
+        referralSummary: DashboardReferralSummary,
         averageMatchScore: Double?,
         staleMatchCount: Int,
         goalProgress: [DashboardGoalProgress],
@@ -207,6 +228,7 @@ public struct DashboardAnalyticsResult {
         self.currentChecklist = currentChecklist
         self.previousChecklist = previousChecklist
         self.rejectionSummary = rejectionSummary
+        self.referralSummary = referralSummary
         self.averageMatchScore = averageMatchScore
         self.staleMatchCount = staleMatchCount
         self.goalProgress = goalProgress
@@ -267,6 +289,7 @@ public final class DashboardAnalyticsService: @unchecked Sendable {
             rejectionLearningSnapshot: rejectionLearningSnapshot,
             referenceDate: referenceDate
         )
+        let referralSummary = makeReferralSummary(for: scopedApps.current)
         let matchAnalytics = makeMatchAnalytics(
             for: scopedApps.current,
             currentResumeRevisionID: currentResumeRevisionID,
@@ -307,6 +330,7 @@ public final class DashboardAnalyticsService: @unchecked Sendable {
             currentChecklist: currentChecklist,
             previousChecklist: previousChecklist,
             rejectionSummary: rejectionSummary,
+            referralSummary: referralSummary,
             averageMatchScore: matchAnalytics.averageScore,
             staleMatchCount: matchAnalytics.staleCount,
             goalProgress: goalProgress,
@@ -456,6 +480,45 @@ public final class DashboardAnalyticsService: @unchecked Sendable {
             interviewingApplications: interviews,
             offeredApplications: offers,
             responseRate: responseRate
+        )
+    }
+
+    private func makeReferralSummary(for applications: [JobApplication]) -> DashboardReferralSummary {
+        let referredApplications = applications.filter(\.hasReceivedReferral)
+        let interviewingApplicationsWithReferral = referredApplications.filter { application in
+            switch application.status {
+            case .interviewing, .offered, .rejected:
+                return true
+            case .saved, .applied, .archived, .custom(_):
+                return false
+            }
+        }.count
+
+        let totalInterviewingApplications = applications.filter { application in
+            switch application.status {
+            case .interviewing, .offered, .rejected:
+                return true
+            case .saved, .applied, .archived, .custom(_):
+                return false
+            }
+        }.count
+
+        let receivedReferralAttempts = referredApplications.reduce(0) { partialResult, application in
+            partialResult + application.sortedReferralAttempts.filter { $0.status == .received }.count
+        }
+
+        let interviewReferralRate: Double
+        if totalInterviewingApplications == 0 {
+            interviewReferralRate = 0
+        } else {
+            interviewReferralRate = Double(interviewingApplicationsWithReferral) / Double(totalInterviewingApplications)
+        }
+
+        return DashboardReferralSummary(
+            applicationsWithReceivedReferral: referredApplications.count,
+            interviewingApplicationsWithReferral: interviewingApplicationsWithReferral,
+            receivedReferralAttempts: receivedReferralAttempts,
+            interviewReferralRate: interviewReferralRate
         )
     }
 

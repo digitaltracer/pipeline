@@ -559,6 +559,7 @@ struct DashboardView: View {
 
                 VStack(spacing: 16) {
                     ratesSection(analytics: analytics)
+                    referralSection(analytics: analytics)
                     rejectionSection(analytics: analytics)
                     goalTrackingSection(analytics: analytics)
                     checklistSection(analytics: analytics)
@@ -570,6 +571,7 @@ struct DashboardView: View {
             VStack(spacing: 16) {
                 funnelSection(analytics: analytics)
                 ratesSection(analytics: analytics)
+                referralSection(analytics: analytics)
                 rejectionSection(analytics: analytics)
                 goalTrackingSection(analytics: analytics)
                 checklistSection(analytics: analytics)
@@ -1014,6 +1016,72 @@ struct DashboardView: View {
                 }
             }
         }
+    }
+
+    private func referralSection(analytics: DashboardAnalyticsResult) -> some View {
+        dashboardSectionCard {
+            VStack(alignment: .leading, spacing: 16) {
+                dashboardSectionHeader(
+                    title: "Referral Tracker",
+                    systemImage: "person.3.fill",
+                    eyebrow: "Network",
+                    trailingText: viewModel.percentString(analytics.referralSummary.interviewReferralRate)
+                )
+
+                Text("\(analytics.referralSummary.interviewingApplicationsWithReferral) of \(analytics.currentSnapshot.interviewingApplications) interview tracks came from received referrals.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    dashboardMetricPill(
+                        title: "Referred Apps",
+                        value: "\(analytics.referralSummary.applicationsWithReceivedReferral)",
+                        icon: "briefcase.fill",
+                        tint: .green
+                    )
+                    dashboardMetricPill(
+                        title: "Interview Wins",
+                        value: "\(analytics.referralSummary.interviewingApplicationsWithReferral)",
+                        icon: "bubble.left.and.bubble.right.fill",
+                        tint: .blue
+                    )
+                    dashboardMetricPill(
+                        title: "Received Referrals",
+                        value: "\(analytics.referralSummary.receivedReferralAttempts)",
+                        icon: "checkmark.circle.fill",
+                        tint: .orange
+                    )
+                    dashboardMetricPill(
+                        title: "Conversion",
+                        value: viewModel.percentString(analytics.referralSummary.interviewReferralRate),
+                        icon: "chart.line.uptrend.xyaxis",
+                        tint: .purple
+                    )
+                }
+            }
+        }
+    }
+
+    private func dashboardMetricPill(title: String, value: String, icon: String, tint: Color) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .foregroundColor(tint)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(value)
+                    .font(.subheadline.weight(.semibold))
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(tint.opacity(colorScheme == .dark ? 0.14 : 0.08))
+        )
     }
 
     private func rejectionSection(analytics: DashboardAnalyticsResult) -> some View {

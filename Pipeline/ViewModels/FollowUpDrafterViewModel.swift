@@ -231,6 +231,245 @@ final class FollowUpDrafterViewModel {
     }
 }
 
+@Observable
+final class ReferralRequestViewModel {
+    var isLoading = false
+    var error: String?
+    var result: ReferralRequestDraftResult?
+    var editableSubject: String = ""
+    var editableBody: String = ""
+
+    private let application: JobApplication
+    private let importedConnection: ImportedNetworkConnection
+    private let settingsViewModel: SettingsViewModel
+    private let modelContext: ModelContext
+
+    init(
+        application: JobApplication,
+        importedConnection: ImportedNetworkConnection,
+        settingsViewModel: SettingsViewModel,
+        modelContext: ModelContext
+    ) {
+        self.application = application
+        self.importedConnection = importedConnection
+        self.settingsViewModel = settingsViewModel
+        self.modelContext = modelContext
+    }
+
+    var hasResult: Bool { result != nil }
+
+    var displayName: String {
+        importedConnection.linkedContact?.fullName ?? importedConnection.fullName
+    }
+
+    var relationship: String? {
+        importedConnection.linkedContact?.relationship
+    }
+
+    var targetEmail: String? {
+        importedConnection.linkedContact?.email ?? importedConnection.email
+    }
+
+    var canSendEmail: Bool {
+        targetEmail?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
+
+    var mailtoURL: URL? {
+        guard let targetEmail else { return nil }
+        var components = URLComponents()
+        components.scheme = "mailto"
+        components.path = targetEmail
+        components.queryItems = [
+            URLQueryItem(name: "subject", value: editableSubject),
+            URLQueryItem(name: "body", value: editableBody)
+        ]
+        return components.url
+    }
+
+    @MainActor
+    func generate() async {
+        let provider = settingsViewModel.selectedAIProvider
+        let model = settingsViewModel.preferredModel(for: provider)
+
+        guard !model.isEmpty else {
+            error = "No AI model configured. Please check Settings."
+            return
+        }
+
+        let requestStartedAt = Date()
+        isLoading = true
+        error = nil
+        result = nil
+        defer { isLoading = false }
+
+        let notes = referralNotesContext()
+        let resumeJSON = (try? ResumeStoreService.currentMasterRevision(in: modelContext))?.rawJSON
+
+        do {
+            let draftResult = try await settingsViewModel.withAPIKeyWaterfall(for: provider) { apiKey in
+                try await ReferralRequestDrafterService.generateDraft(
+                    provider: provider,
+                    apiKey: apiKey,
+                    model: model,
+                    company: application.companyName,
+                    role: application.role,
+                    contactName: displayName,
+                    contactCompany: importedConnection.companyName,
+                    relationship: relationship,
+                    resumeJSON: resumeJSON,
+                    notes: notes
+                )
+            }
+
+            result = draftResult
+            editableSubject = draftResult.subject
+            editableBody = draftResult.body
+            recordUsage(
+                feature: .referralRequestDraft,
+                provider: provider,
+                model: model,
+                usage: draftResult.usage,
+                status: .succeeded,
+                startedAt: requestStartedAt,
+                errorMessage: nil
+            )
+        } catch let keyError as SettingsViewModel.APIKeyValidationError {
+            error = keyError.localizedDescription
+            recordUsage(
+                feature: .referralRequestDraft,
+                provider: provider,
+                model: model,
+                usage: nil,
+                status: .failed,
+                startedAt: requestStartedAt,
+                errorMessage: keyError.localizedDescription
+            )
+        } catch let aiError as AIServiceError {
+            error = aiError.localizedDescription
+            recordUsage(
+                feature: .referralRequestDraft,
+                provider: provider,
+                model: model,
+                usage: nil,
+                status: .failed,
+                startedAt: requestStartedAt,
+                errorMessage: aiError.localizedDescription
+            )
+        } catch {
+            let message = "Failed to draft referral request: \(error.localizedDescription)"
+            self.error = message
+            recordUsage(
+                feature: .referralRequestDraft,
+                provider: provider,
+                model: model,
+                usage: nil,
+                status: .failed,
+                startedAt: requestStartedAt,
+                errorMessage: message
+            )
+        }
+    }
+
+    func copyToClipboard() {
+        let text = "Subject: \(editableSubject)\n\n\(editableBody)"
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #else
+        UIPasteboard.general.string = text
+        #endif
+    }
+
+    @MainActor
+    @discardableResult
+    func logSentReferral(at occurredAt: Date = Date()) throws -> ReferralAttempt {
+        let activityViewModel = ApplicationDetailViewModel()
+        let contact = importedConnection.linkedContact
+
+        try activityViewModel.saveActivity(
+            nil,
+            kind: .email,
+            occurredAt: occurredAt,
+            notes: "Referral outreach to \(displayName)",
+            contact: contact,
+            interviewStage: nil,
+            scheduledDurationMinutes: nil,
+            rating: nil,
+            emailSubject: normalized(editableSubject),
+            emailBodySnapshot: normalized(editableBody),
+            for: application,
+            context: modelContext
+        )
+
+        let activity = application.sortedActivities.first(where: {
+            $0.kind == .email &&
+            $0.occurredAt == occurredAt &&
+            $0.emailSubject == normalized(editableSubject)
+        })
+
+        return try ReferralAttemptService.createAttempt(
+            for: application,
+            importedConnection: importedConnection,
+            contact: contact,
+            subject: normalized(editableSubject),
+            body: normalized(editableBody),
+            status: .asked,
+            askedAt: occurredAt,
+            sentEmailActivity: activity,
+            in: modelContext
+        )
+    }
+
+    private func referralNotesContext() -> String {
+        var sections: [String] = []
+
+        if let relationship = importedConnection.linkedContact?.relationship,
+           !relationship.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            sections.append("Relationship Context:\n\(relationship)")
+        }
+
+        if let overview = application.overviewMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !overview.isEmpty {
+            sections.append("Application Notes:\n\(overview)")
+        }
+
+        if let latestEmail = application.sortedActivities.first(where: { $0.kind == .email }),
+           let body = latestEmail.emailBodySnapshot ?? latestEmail.notes {
+            sections.append("Recent Outreach Notes:\n\(body)")
+        }
+
+        return sections.joined(separator: "\n\n")
+    }
+
+    private func recordUsage(
+        feature: AIUsageFeature,
+        provider: AIProvider,
+        model: String,
+        usage: AIUsageMetrics?,
+        status: AIUsageRequestStatus,
+        startedAt: Date,
+        errorMessage: String?
+    ) {
+        _ = try? AIUsageLedgerService.record(
+            feature: feature,
+            provider: provider,
+            model: model,
+            usage: usage,
+            status: status,
+            applicationID: application.id,
+            startedAt: startedAt,
+            finishedAt: Date(),
+            errorMessage: errorMessage,
+            in: modelContext
+        )
+    }
+
+    private func normalized(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
 private struct CoverLetterGenerationContext {
     let provider: AIProvider
     let model: String

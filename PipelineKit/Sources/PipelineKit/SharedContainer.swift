@@ -38,6 +38,13 @@ public enum SharedContainer {
             ATSCompatibilityScanRun.self,
             AIUsageRecord.self,
             AIModelRate.self,
+            GoogleCalendarAccount.self,
+            GoogleCalendarSubscription.self,
+            GoogleCalendarImportRecord.self,
+            NetworkImportBatch.self,
+            ImportedNetworkConnection.self,
+            CompanyAlias.self,
+            ReferralAttempt.self,
             WeeklyDigestSnapshot.self,
             WeeklyDigestInsight.self,
             WeeklyDigestActionItem.self

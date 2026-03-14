@@ -13,6 +13,10 @@ private enum CompanyWorkspaceTab: String, CaseIterable, Identifiable {
 struct JobDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var allApplications: [JobApplication]
+    @Query(sort: \ImportedNetworkConnection.updatedAt, order: .reverse)
+    private var importedConnections: [ImportedNetworkConnection]
+    @Query(sort: \CompanyAlias.updatedAt, order: .reverse)
+    private var companyAliases: [CompanyAlias]
     @Query(sort: \InterviewLearningSnapshot.generatedAt, order: .reverse)
     private var interviewLearningSnapshots: [InterviewLearningSnapshot]
     @Query(sort: \RejectionLearningSnapshot.generatedAt, order: .reverse)
@@ -37,6 +41,7 @@ struct JobDetailView: View {
     @State private var selectedRejectionActivityForLog: ApplicationActivity?
     @State private var showingFollowUpDrafter = false
     @State private var showingCoverLetterEditor = false
+    @State private var selectedReferralConnection: ImportedNetworkConnection?
     @State private var showingTailorResume = false
     @State private var resumeTailoringMode: ResumeTailoringMode = .standard
     @State private var resumeSeededPatches: [ResumePatch] = []
@@ -73,6 +78,18 @@ struct JobDetailView: View {
                 settingsViewModel: SettingsViewModel()
             )
         )
+    }
+
+    private var referralSuggestions: [NetworkReferralSuggestion] {
+        (try? NetworkReferralMatchingService.suggestions(
+            for: application,
+            connections: importedConnections,
+            aliases: companyAliases
+        )) ?? []
+    }
+
+    private var referralSectionShouldShow: Bool {
+        !referralSuggestions.isEmpty || !application.sortedReferralAttempts.isEmpty
     }
 
     var body: some View {
@@ -178,6 +195,28 @@ struct JobDetailView: View {
                         },
                         onSelectContact: onSelectContact
                     )
+
+                    if referralSectionShouldShow {
+                        ReferralTrackerSection(
+                            suggestions: referralSuggestions,
+                            attempts: application.sortedReferralAttempts,
+                            onPromote: { suggestion in
+                                promoteReferralSuggestion(suggestion)
+                            },
+                            onLink: { suggestion in
+                                linkReferralSuggestion(suggestion)
+                            },
+                            onAsk: { suggestion in
+                                askReferralSuggestion(suggestion)
+                            },
+                            onDismiss: { suggestion in
+                                dismissReferralSuggestion(suggestion)
+                            },
+                            onStatusChange: { attempt, status in
+                                updateReferralAttempt(attempt, status: status)
+                            }
+                        )
+                    }
 
                     JobResumePanel(application: application)
 
@@ -368,6 +407,16 @@ struct JobDetailView: View {
                 )
             )
         }
+        .sheet(item: $selectedReferralConnection) { connection in
+            ReferralRequestDraftView(
+                viewModel: ReferralRequestViewModel(
+                    application: application,
+                    importedConnection: connection,
+                    settingsViewModel: SettingsViewModel(),
+                    modelContext: modelContext
+                )
+            )
+        }
         .sheet(isPresented: $showingCoverLetterEditor) {
             CoverLetterEditorView(
                 viewModel: CoverLetterEditorViewModel(
@@ -538,6 +587,93 @@ struct JobDetailView: View {
                 )
             )
             showingTailorResume = true
+        } catch {
+            actionErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func promoteReferralSuggestion(_ suggestion: NetworkReferralSuggestion) {
+        do {
+            guard let connection = try NetworkReferralMatchingService.connection(
+                id: suggestion.connectionID,
+                in: modelContext
+            ) else {
+                return
+            }
+
+            _ = try NetworkReferralMatchingService.promote(connection: connection, in: modelContext)
+        } catch {
+            actionErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func linkReferralSuggestion(_ suggestion: NetworkReferralSuggestion) {
+        do {
+            guard let connection = try NetworkReferralMatchingService.connection(
+                id: suggestion.connectionID,
+                in: modelContext
+            ) else {
+                return
+            }
+
+            let contact = try NetworkReferralMatchingService.promote(connection: connection, in: modelContext)
+            try viewModel.linkContact(
+                contact,
+                to: application,
+                role: .referrer,
+                markPrimary: false,
+                context: modelContext
+            )
+        } catch {
+            actionErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func askReferralSuggestion(_ suggestion: NetworkReferralSuggestion) {
+        do {
+            selectedReferralConnection = try NetworkReferralMatchingService.connection(
+                id: suggestion.connectionID,
+                in: modelContext
+            )
+        } catch {
+            actionErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func dismissReferralSuggestion(_ suggestion: NetworkReferralSuggestion) {
+        do {
+            guard let connection = try NetworkReferralMatchingService.connection(
+                id: suggestion.connectionID,
+                in: modelContext
+            ) else {
+                return
+            }
+
+            try NetworkReferralMatchingService.setIgnored(true, for: connection, in: modelContext)
+        } catch {
+            actionErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func updateReferralAttempt(
+        _ attempt: ReferralAttempt,
+        status: ReferralAttemptStatus
+    ) {
+        do {
+            let followUpNeededAt: Date?
+            if status == .pending {
+                followUpNeededAt = application.nextFollowUpDate ??
+                    Calendar.current.date(byAdding: .day, value: 7, to: Date())
+            } else {
+                followUpNeededAt = nil
+            }
+
+            try ReferralAttemptService.updateStatus(
+                status,
+                for: attempt,
+                followUpNeededAt: followUpNeededAt,
+                in: modelContext
+            )
         } catch {
             actionErrorMessage = error.localizedDescription
         }
@@ -3319,6 +3455,212 @@ struct RejectionLogSheet: View {
         } message: {
             Text(viewModel.errorMessage ?? "An unknown error occurred.")
         }
+    }
+}
+
+private struct ReferralTrackerSection: View {
+    let suggestions: [NetworkReferralSuggestion]
+    let attempts: [ReferralAttempt]
+    let onPromote: (NetworkReferralSuggestion) -> Void
+    let onLink: (NetworkReferralSuggestion) -> Void
+    let onAsk: (NetworkReferralSuggestion) -> Void
+    let onDismiss: (NetworkReferralSuggestion) -> Void
+    let onStatusChange: (ReferralAttempt, ReferralAttemptStatus) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Referral Opportunities", systemImage: "person.3.sequence.fill")
+                .font(.headline)
+
+            if !suggestions.isEmpty {
+                ForEach(suggestions) { suggestion in
+                    ReferralSuggestionCard(
+                        suggestion: suggestion,
+                        onPromote: { onPromote(suggestion) },
+                        onLink: { onLink(suggestion) },
+                        onAsk: { onAsk(suggestion) },
+                        onDismiss: { onDismiss(suggestion) }
+                    )
+                }
+            }
+
+            if !attempts.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Referral Tracking")
+                        .font(.subheadline.weight(.semibold))
+
+                    ForEach(attempts) { attempt in
+                        ReferralAttemptRow(
+                            attempt: attempt,
+                            onStatusChange: { status in
+                                onStatusChange(attempt, status)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct ReferralSuggestionCard: View {
+    let suggestion: NetworkReferralSuggestion
+    let onPromote: () -> Void
+    let onLink: () -> Void
+    let onAsk: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Circle()
+                    .fill(DesignSystem.Colors.accent.opacity(0.14))
+                    .frame(width: 42, height: 42)
+                    .overlay {
+                        Text(initials(for: suggestion.displayName))
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundColor(DesignSystem.Colors.accent)
+                    }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(suggestion.displayName)
+                            .font(.subheadline.weight(.semibold))
+                        if suggestion.isPromoted {
+                            Text("Saved Contact")
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.green.opacity(0.12))
+                                .foregroundColor(.green)
+                                .clipShape(Capsule())
+                        }
+                    }
+
+                    Text(suggestion.companyName)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    if let title = suggestion.title, !title.isEmpty {
+                        Text(title)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Text(suggestion.reason)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+            }
+
+            if let email = suggestion.email, !email.isEmpty {
+                Label(email, systemImage: "envelope")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                Label("No email on file", systemImage: "exclamationmark.circle")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            }
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    actionButtons
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    actionButtons
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+    }
+
+    @ViewBuilder
+    private var actionButtons: some View {
+        Button(suggestion.isPromoted ? "Refresh Contact" : "Promote") {
+            onPromote()
+        }
+        .buttonStyle(.bordered)
+
+        Button("Link to App") {
+            onLink()
+        }
+        .buttonStyle(.bordered)
+
+        Button("Ask for Referral") {
+            onAsk()
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(DesignSystem.Colors.accent)
+
+        Button("Dismiss", role: .destructive) {
+            onDismiss()
+        }
+        .buttonStyle(.bordered)
+    }
+
+    private func initials(for name: String) -> String {
+        let words = name.split(whereSeparator: \.isWhitespace)
+        let letters = words.prefix(2).compactMap { $0.first.map(String.init) }.joined()
+        return letters.isEmpty ? "?" : letters.uppercased()
+    }
+}
+
+private struct ReferralAttemptRow: View {
+    let attempt: ReferralAttempt
+    let onStatusChange: (ReferralAttemptStatus) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(attempt.displayName)
+                        .font(.subheadline.weight(.semibold))
+                    Text(attempt.status.displayName)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Text(attempt.status.displayName)
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(attempt.status.color.opacity(0.12))
+                    .foregroundColor(attempt.status.color)
+                    .clipShape(Capsule())
+            }
+
+            if let askedAt = attempt.askedAt {
+                Text("Asked \(askedAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            if let followUpNeededAt = attempt.followUpNeededAt {
+                Text("Follow-up target: \(followUpNeededAt.formatted(date: .abbreviated, time: .omitted))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            HStack(spacing: 8) {
+                Button("Pending") { onStatusChange(.pending) }
+                    .buttonStyle(.bordered)
+                Button("Received") { onStatusChange(.received) }
+                    .buttonStyle(.borderedProminent)
+                Button("Declined") { onStatusChange(.declined) }
+                    .buttonStyle(.bordered)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
     }
 }
 

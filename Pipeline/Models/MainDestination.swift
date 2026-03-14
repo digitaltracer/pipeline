@@ -5,6 +5,7 @@ enum MainDestination: Hashable {
     case dashboard
     case weeklyDigest
     case upcoming
+    case integrations
     case applications(SidebarFilter)
     case contacts
     case resume
@@ -25,6 +26,8 @@ enum MainDestination: Hashable {
             return "Weekly Digest"
         case .upcoming:
             return "Upcoming"
+        case .integrations:
+            return "Integrations"
         case .applications(let filter):
             return filter.displayName
         case .contacts:

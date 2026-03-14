@@ -100,6 +100,12 @@ private struct ContactCardView: View {
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
+
+                    if let relationship = contact.relationship, !relationship.isEmpty {
+                        Text(relationship)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
 

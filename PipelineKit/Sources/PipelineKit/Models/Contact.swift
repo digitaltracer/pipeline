@@ -9,6 +9,8 @@ public final class Contact {
     public var phone: String?
     public var companyName: String?
     public var title: String?
+    public var relationship: String?
+    public var linkedInURL: String?
     public var notes: String?
     public var createdAt: Date = Date()
     public var updatedAt: Date = Date()
@@ -19,6 +21,12 @@ public final class Contact {
     @Relationship(deleteRule: .nullify, inverse: \ApplicationActivity.contact)
     public var activities: [ApplicationActivity]?
 
+    @Relationship(deleteRule: .nullify, inverse: \ImportedNetworkConnection.linkedContact)
+    public var importedConnections: [ImportedNetworkConnection]?
+
+    @Relationship(deleteRule: .nullify, inverse: \ReferralAttempt.contact)
+    public var referralAttempts: [ReferralAttempt]?
+
     public init(
         id: UUID = UUID(),
         fullName: String,
@@ -26,9 +34,13 @@ public final class Contact {
         phone: String? = nil,
         companyName: String? = nil,
         title: String? = nil,
+        relationship: String? = nil,
+        linkedInURL: String? = nil,
         notes: String? = nil,
         applicationLinks: [ApplicationContactLink]? = nil,
         activities: [ApplicationActivity]? = nil,
+        importedConnections: [ImportedNetworkConnection]? = nil,
+        referralAttempts: [ReferralAttempt]? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -38,9 +50,13 @@ public final class Contact {
         self.phone = phone
         self.companyName = companyName
         self.title = title
+        self.relationship = CompanyProfile.normalizedText(relationship)
+        self.linkedInURL = CompanyProfile.normalizedURLString(linkedInURL)
         self.notes = notes
         self.applicationLinks = applicationLinks
         self.activities = activities
+        self.importedConnections = importedConnections
+        self.referralAttempts = referralAttempts
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

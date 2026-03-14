@@ -69,6 +69,9 @@ public final class JobApplication {
     @Relationship(deleteRule: .cascade, inverse: \ApplicationAttachment.application)
     public var attachments: [ApplicationAttachment]?
 
+    @Relationship(deleteRule: .cascade, inverse: \ReferralAttempt.application)
+    public var referralAttempts: [ReferralAttempt]?
+
     public var createdAt: Date = Date()
     public var updatedAt: Date = Date()
 
@@ -242,6 +245,19 @@ public final class JobApplication {
 
     public var pendingInterviewDebriefs: [ApplicationActivity] {
         sortedInterviewActivities.filter(\.needsDebrief)
+    }
+
+    public var sortedReferralAttempts: [ReferralAttempt] {
+        (referralAttempts ?? []).sorted { lhs, rhs in
+            if lhs.updatedAt != rhs.updatedAt {
+                return lhs.updatedAt > rhs.updatedAt
+            }
+            return lhs.createdAt > rhs.createdAt
+        }
+    }
+
+    public var hasReceivedReferral: Bool {
+        sortedReferralAttempts.contains(where: { $0.status == .received })
     }
 
     public var sortedRejectionActivities: [ApplicationActivity] {
@@ -427,6 +443,7 @@ public final class JobApplication {
         atsAssessment: ATSCompatibilityAssessment? = nil,
         atsScanRuns: [ATSCompatibilityScanRun]? = nil,
         attachments: [ApplicationAttachment]? = nil,
+        referralAttempts: [ReferralAttempt]? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -472,6 +489,7 @@ public final class JobApplication {
         self.atsAssessment = atsAssessment
         self.atsScanRuns = atsScanRuns
         self.attachments = attachments
+        self.referralAttempts = referralAttempts
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -517,6 +535,14 @@ public final class JobApplication {
             activities = []
         }
         activities?.append(activity)
+        updateTimestamp()
+    }
+
+    public func addReferralAttempt(_ attempt: ReferralAttempt) {
+        if referralAttempts == nil {
+            referralAttempts = []
+        }
+        referralAttempts?.append(attempt)
         updateTimestamp()
     }
 

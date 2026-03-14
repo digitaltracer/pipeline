@@ -1,6 +1,6 @@
 # Pipeline Privacy Policy
 
-Last updated: March 7, 2026
+Last updated: March 13, 2026
 
 ## Overview
 
@@ -29,6 +29,22 @@ Turning iCloud Sync off does not automatically delete data that was previously s
 Pipeline stores AI provider API keys in your system Keychain. API keys are not stored in plain text inside Pipeline's regular app data store.
 
 Pipeline does not currently enforce API key rotation schedules, expiry reminders, or automatic revocation. You are responsible for rotating or removing keys through the provider you use.
+
+## Google Calendar Integration
+
+If you connect Google Calendar, Pipeline stores Google sign-in credentials in your system Keychain and keeps imported calendar metadata in Pipeline's regular app data store so you can review and link events to applications.
+
+Pipeline currently requests read-only Google Calendar access. It can read your selected calendars and event details, but it does not create, edit, or delete events in your Google account.
+
+Disconnecting Google Calendar removes saved Google credentials from Keychain. Imported application activities and review history remain in Pipeline unless you delete them separately.
+
+## LinkedIn CSV Import
+
+If you import a LinkedIn connections CSV, Pipeline stores the imported network rows in its regular app data store so it can suggest referral opportunities, promote useful rows into saved contacts, and track referral outreach history.
+
+Imported LinkedIn network data may include names, company names, job titles, email addresses, profile URLs, and imported connection metadata such as when the connection was created if that information is present in the CSV.
+
+Deleting the imported LinkedIn network from Integrations removes the stored imported rows and import-batch metadata. Any contacts, application links, activities, or referral-attempt history you created from that imported data remain in Pipeline unless you delete them separately.
 
 ## AI Features and Provider Requests
 

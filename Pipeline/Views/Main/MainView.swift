@@ -152,6 +152,9 @@ struct MainView: View {
         case .upcoming:
             upcomingColumn
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        case .integrations:
+            IntegrationsWorkspaceView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         case .resume:
             ResumeWorkspaceView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

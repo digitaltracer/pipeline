@@ -10,6 +10,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     case allApplications
     case analytics
     case notifications
+    case integrations
     case security
     case sync
     case about
@@ -23,6 +24,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .allApplications: return "All Applications"
         case .analytics: return "Analytics"
         case .notifications: return "Notifications"
+        case .integrations: return "Integrations"
         case .security: return "Security"
         case .sync: return "iCloud Sync"
         case .about: return "About"
@@ -41,6 +43,8 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
             return "Dashboard currency and planning preferences"
         case .notifications:
             return "Follow-up reminder behavior"
+        case .integrations:
+            return "Connected tools, permissions, and import workflows"
         case .security:
             return "App lock and privacy policy"
         case .sync:
@@ -57,6 +61,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .allApplications: return "line.3.horizontal.decrease.circle.fill"
         case .analytics: return "chart.xyaxis.line"
         case .notifications: return "bell.badge.fill"
+        case .integrations: return "puzzlepiece.extension.fill"
         case .security: return "lock.shield.fill"
         case .sync: return "icloud.fill"
         case .about: return "info.circle.fill"
@@ -119,6 +124,13 @@ struct SettingsView: View {
                         NotificationSettingsView(viewModel: viewModel)
                     } label: {
                         Label("Notifications", systemImage: "bell")
+                    }
+
+                    NavigationLink {
+                        IntegrationsSettingsContentView()
+                            .navigationTitle("Integrations")
+                    } label: {
+                        Label("Integrations", systemImage: "puzzlepiece.extension")
                     }
 
                     NavigationLink {
@@ -302,6 +314,8 @@ struct SettingsView: View {
             AnalyticsSettingsContent(viewModel: viewModel)
         case .notifications:
             NotificationSettingsContent(viewModel: viewModel)
+        case .integrations:
+            IntegrationsSettingsContentView()
         case .security:
             SecuritySettingsContent(viewModel: viewModel)
         case .sync:
@@ -1345,7 +1359,9 @@ struct NotificationSettingsContent: View {
                                 selection: weeklyDigestTimeBinding,
                                 displayedComponents: .hourAndMinute
                             )
+                            #if os(macOS)
                             .datePickerStyle(.field)
+                            #endif
                             .labelsHidden()
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }

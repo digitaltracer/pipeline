@@ -109,6 +109,14 @@ final class DashboardViewModel {
                 icon: "gift.fill"
             ),
             SummaryCard(
+                id: "referral-rate",
+                title: "Referral Wins",
+                value: percentString(analytics.referralSummary.interviewReferralRate),
+                deltaText: "\(analytics.referralSummary.interviewingApplicationsWithReferral) interview\(analytics.referralSummary.interviewingApplicationsWithReferral == 1 ? "" : "s")",
+                deltaColorName: analytics.referralSummary.interviewingApplicationsWithReferral == 0 ? "secondary" : "positive",
+                icon: "person.3.fill"
+            ),
+            SummaryCard(
                 id: "response-rate",
                 title: "Response Rate",
                 value: percentString(analytics.currentSnapshot.responseRate),

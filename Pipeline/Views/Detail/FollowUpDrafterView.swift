@@ -221,6 +221,259 @@ struct FollowUpDrafterView: View {
     }
 }
 
+struct ReferralRequestDraftView: View {
+    @State var viewModel: ReferralRequestViewModel
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openURL) private var openURL
+
+    @State private var successMessage: String?
+    @State private var actionErrorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if viewModel.isLoading {
+                    loadingView
+                } else if viewModel.hasResult {
+                    editorView
+                } else if let error = viewModel.error {
+                    errorView(error)
+                } else {
+                    emptyView
+                }
+            }
+            .navigationTitle("Ask for Referral")
+            #if os(macOS)
+            .frame(minWidth: 520, idealWidth: 640, minHeight: 480, idealHeight: 640)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+                if viewModel.hasResult {
+                    ToolbarItem(placement: .automatic) {
+                        Button {
+                            viewModel.copyToClipboard()
+                        } label: {
+                            Label("Copy", systemImage: "doc.on.doc")
+                        }
+                    }
+                    ToolbarItem(placement: .automatic) {
+                        Button {
+                            if let url = viewModel.mailtoURL {
+                                openURL(url)
+                            }
+                        } label: {
+                            Label("Mail", systemImage: "envelope")
+                        }
+                        .disabled(!viewModel.canSendEmail)
+                    }
+                    ToolbarItem(placement: .automatic) {
+                        Button {
+                            logReferral()
+                        } label: {
+                            Label("Log Sent", systemImage: "checkmark.circle")
+                        }
+                    }
+                }
+                ToolbarItem(placement: .automatic) {
+                    Button {
+                        Task { await viewModel.generate() }
+                    } label: {
+                        Label(
+                            viewModel.hasResult ? "Regenerate" : "Generate",
+                            systemImage: viewModel.hasResult ? "arrow.clockwise" : "sparkles"
+                        )
+                    }
+                    .disabled(viewModel.isLoading)
+                }
+            }
+        }
+        .alert("Referral Request", isPresented: Binding(
+            get: { successMessage != nil || actionErrorMessage != nil },
+            set: { if !$0 { successMessage = nil; actionErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(successMessage ?? actionErrorMessage ?? "")
+        }
+    }
+
+    private var loadingView: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .scaleEffect(1.2)
+            Text("Drafting referral request...")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var emptyView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "person.2.badge.plus")
+                .font(.system(size: 40))
+                .foregroundColor(.secondary)
+            Text("Draft a referral request")
+                .font(.headline)
+            Text("Pipeline will draft a warm, concise request tailored to the role, company, and your current resume.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+
+            if !viewModel.canSendEmail {
+                Text("This connection has no email address yet. You can still draft and copy outreach text.")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+
+            Button {
+                Task { await viewModel.generate() }
+            } label: {
+                Label("Draft Request", systemImage: "sparkles")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(DesignSystem.Colors.accent)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func errorView(_ message: String) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 36))
+                .foregroundColor(.orange)
+            Text(message)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            Button {
+                Task { await viewModel.generate() }
+            } label: {
+                Label("Try Again", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var editorView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "person.circle")
+                            .foregroundColor(.blue)
+                        Text(viewModel.displayName)
+                            .font(.headline)
+                        Spacer()
+                        if !viewModel.canSendEmail {
+                            Text("No email")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.orange)
+                        }
+                    }
+
+                    if let relationship = viewModel.relationship, !relationship.isEmpty {
+                        Text(relationship)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .appCard(cornerRadius: 14, elevated: true, shadow: false)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "text.alignleft")
+                            .foregroundColor(.blue)
+                        Text("Subject")
+                            .font(.headline)
+                    }
+
+                    TextField("Subject", text: $viewModel.editableSubject)
+                        .textFieldStyle(.roundedBorder)
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .appCard(cornerRadius: 14, elevated: true, shadow: false)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "text.justify.left")
+                            .foregroundColor(.green)
+                        Text("Body")
+                            .font(.headline)
+                    }
+
+                    TextEditor(text: $viewModel.editableBody)
+                        .font(.body)
+                        .frame(minHeight: 260)
+                        #if os(macOS)
+                        .scrollContentBackground(.hidden)
+                        .padding(8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(DesignSystem.Colors.surfaceElevated(colorScheme).opacity(0.5))
+                        )
+                        #endif
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .appCard(cornerRadius: 14, elevated: true, shadow: false)
+
+                HStack(spacing: 12) {
+                    Button {
+                        viewModel.copyToClipboard()
+                    } label: {
+                        Label("Copy to Clipboard", systemImage: "doc.on.doc")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        if let url = viewModel.mailtoURL {
+                            openURL(url)
+                        }
+                    } label: {
+                        Label("Open in Mail", systemImage: "envelope")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(DesignSystem.Colors.accent)
+                    .disabled(!viewModel.canSendEmail)
+                }
+
+                Button {
+                    logReferral()
+                } label: {
+                    Label("Log Sent Referral", systemImage: "checkmark.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .padding(16)
+            }
+            .padding(20)
+        }
+    }
+
+    private func logReferral() {
+        do {
+            _ = try viewModel.logSentReferral()
+            successMessage = "Referral outreach logged."
+        } catch {
+            actionErrorMessage = error.localizedDescription
+        }
+    }
+}
+
 struct CoverLetterEditorView: View {
     @State var viewModel: CoverLetterEditorViewModel
     @Environment(\.dismiss) private var dismiss

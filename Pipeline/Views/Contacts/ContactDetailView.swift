@@ -135,6 +135,8 @@ struct ContactDetailView: View {
                 detailCard(label: "Phone", value: contact.phone ?? "—", icon: "phone")
                 detailCard(label: "Company", value: contact.companyName ?? "—", icon: "building.2")
                 detailCard(label: "Role", value: contact.title ?? "—", icon: "briefcase")
+                detailCard(label: "Relationship", value: contact.relationship ?? "—", icon: "person.2")
+                detailCard(label: "LinkedIn", value: contact.linkedInURL ?? "—", icon: "link")
             }
 
             if let notes = contact.notes, !notes.isEmpty {

@@ -14,9 +14,15 @@ let package = Package(
             targets: ["PipelineKit"]
         )
     ],
+    dependencies: [
+        .package(url: "https://github.com/google/GoogleSignIn-iOS", from: "9.0.0")
+    ],
     targets: [
         .target(
-            name: "PipelineKit"
+            name: "PipelineKit",
+            dependencies: [
+                .product(name: "GoogleSignIn", package: "GoogleSignIn-iOS")
+            ]
         ),
         .testTarget(
             name: "PipelineKitTests",

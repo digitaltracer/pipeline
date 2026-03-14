@@ -13,7 +13,9 @@ final class ContactsListViewModel {
             filtered = filtered.filter { contact in
                 contact.fullName.lowercased().contains(query) ||
                 (contact.companyName?.lowercased().contains(query) ?? false) ||
-                (contact.email?.lowercased().contains(query) ?? false)
+                (contact.email?.lowercased().contains(query) ?? false) ||
+                (contact.relationship?.lowercased().contains(query) ?? false) ||
+                (contact.linkedInURL?.lowercased().contains(query) ?? false)
             }
         }
 

@@ -5,7 +5,14 @@ public enum Constants {
 
     public enum App {
         public static let name = "Pipeline"
-        public static let bundleID = "com.pipeline.app"
+        public static let legacyBundleID = "com.pipeline.app"
+        public static let bundleID: String = {
+            let candidate = Bundle.main.bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let candidate, !candidate.isEmpty, !candidate.contains("xctest") else {
+                return "io.github.digitaltracer.pipeline"
+            }
+            return candidate
+        }()
         public static let version: String = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
         public static let build: String = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
     }

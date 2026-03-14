@@ -78,6 +78,9 @@ struct PipelineApp: App {
                 ContentView(settingsViewModel: settingsViewModel)
             }
             .environment(appLockCoordinator)
+            .onOpenURL { url in
+                _ = GoogleCalendarConfiguration.handleSignInURL(url)
+            }
         }
         .modelContainer(modelContainer)
         #if os(macOS)

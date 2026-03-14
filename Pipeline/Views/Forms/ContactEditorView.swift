@@ -16,6 +16,8 @@ struct ContactEditorView: View {
     @State private var phone: String
     @State private var companyName: String
     @State private var title: String
+    @State private var relationship: String
+    @State private var linkedInURL: String
     @State private var notes: String
     @State private var saveErrorMessage: String?
 
@@ -32,6 +34,8 @@ struct ContactEditorView: View {
         _phone = State(initialValue: contactToEdit?.phone ?? "")
         _companyName = State(initialValue: contactToEdit?.companyName ?? defaultCompanyName ?? "")
         _title = State(initialValue: contactToEdit?.title ?? "")
+        _relationship = State(initialValue: contactToEdit?.relationship ?? "")
+        _linkedInURL = State(initialValue: contactToEdit?.linkedInURL ?? "")
         _notes = State(initialValue: contactToEdit?.notes ?? "")
     }
 
@@ -51,6 +55,14 @@ struct ContactEditorView: View {
 
     private var normalizedCompanyName: String {
         companyName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var normalizedRelationship: String {
+        relationship.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var normalizedLinkedInURL: String {
+        linkedInURL.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var emailValidationMessage: String? {
@@ -173,11 +185,18 @@ struct ContactEditorView: View {
                         icon: "briefcase"
                     )
 
+                ContactPill(
+                    title: normalizedCompanyName.isEmpty ? "Company" : normalizedCompanyName,
+                    icon: "building.2"
+                )
+
+                if !normalizedRelationship.isEmpty {
                     ContactPill(
-                        title: normalizedCompanyName.isEmpty ? "Company" : normalizedCompanyName,
-                        icon: "building.2"
+                        title: normalizedRelationship,
+                        icon: "person.crop.circle.badge.checkmark"
                     )
                 }
+            }
 
                 Text(normalizedName.isEmpty ? "A complete profile helps you link emails, calls, interviews, and notes back to the right person." : "This profile will appear across linked applications and timeline entries.")
                     .font(.subheadline)
@@ -200,6 +219,7 @@ struct ContactEditorView: View {
                 ContactField(label: "Full Name *", placeholder: "Avery Chen", text: $fullName)
                 ContactField(label: "Role / Title", placeholder: "Senior Recruiter", text: $title)
                 ContactField(label: "Company", placeholder: "OpenAI", text: $companyName)
+                ContactField(label: "Relationship", placeholder: "Former teammate", text: $relationship)
             }
         }
     }
@@ -218,6 +238,7 @@ struct ContactEditorView: View {
                     validationMessage: emailValidationMessage
                 )
                 ContactField(label: "Phone", placeholder: "+1 (555) 123-4567", text: $phone)
+                ContactField(label: "LinkedIn URL", placeholder: "https://linkedin.com/in/avery", text: $linkedInURL)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Profile Quality")
@@ -342,6 +363,7 @@ struct ContactEditorView: View {
                     TextField("Full Name", text: $fullName)
                     TextField("Role / Title", text: $title)
                     TextField("Company", text: $companyName)
+                    TextField("Relationship", text: $relationship)
                 }
 
                 Section("Reach") {
@@ -352,6 +374,12 @@ struct ContactEditorView: View {
                             .foregroundColor(.orange)
                     }
                     phoneField
+                    #if os(iOS)
+                    TextField("LinkedIn URL", text: $linkedInURL)
+                        .textInputAutocapitalization(.never)
+                    #else
+                    TextField("LinkedIn URL", text: $linkedInURL)
+                    #endif
                 }
 
                 Section("Notes") {
@@ -402,6 +430,8 @@ struct ContactEditorView: View {
         contact.phone = normalizedPhone.isEmpty ? nil : normalizedPhone
         contact.companyName = normalizedCompanyName.isEmpty ? nil : normalizedCompanyName
         contact.title = normalizedTitle.isEmpty ? nil : normalizedTitle
+        contact.relationship = normalizedRelationship.isEmpty ? nil : normalizedRelationship
+        contact.linkedInURL = normalizedLinkedInURL.isEmpty ? nil : URLHelpers.normalize(normalizedLinkedInURL)
         contact.notes = normalizedNotes.isEmpty ? nil : normalizedNotes
         contact.updateTimestamp()
 

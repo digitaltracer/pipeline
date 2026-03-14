@@ -104,6 +104,8 @@ struct ContentView: View {
                         selectedApplication: $selectedApplication,
                         searchText: $searchText
                     )
+                case .integrations:
+                    IntegrationsWorkspaceView()
                 case .contacts:
                     ContactsListView(
                         contacts: filteredContacts,
@@ -135,6 +137,7 @@ struct ContentView: View {
                         Button("Dashboard") { selectedDestination = .dashboard }
                         Button("Weekly Digest") { selectedDestination = .weeklyDigest }
                         Button("Upcoming") { selectedDestination = .upcoming }
+                        Button("Integrations") { selectedDestination = .integrations }
                         Divider()
                         ForEach(SidebarFilter.allCases) { filter in
                             Button(filter.displayName) {
@@ -205,11 +208,15 @@ struct ContentView: View {
             prewarmJSONEditorIfNeeded()
             await configureNotificationRouting()
             await syncNotifications()
+            await GoogleCalendarImportCoordinator.shared.restoreSessionIfPossible(in: modelContext)
+            await GoogleCalendarImportCoordinator.shared.syncIfNeeded(in: modelContext)
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
             Task {
                 await syncNotifications()
+                await GoogleCalendarImportCoordinator.shared.restoreSessionIfPossible(in: modelContext)
+                await GoogleCalendarImportCoordinator.shared.syncIfNeeded(in: modelContext)
             }
         }
         #endif
@@ -313,7 +320,10 @@ struct ContentView: View {
                 AIModelRate.self,
                 WeeklyDigestSnapshot.self,
                 WeeklyDigestInsight.self,
-                WeeklyDigestActionItem.self
+                WeeklyDigestActionItem.self,
+                GoogleCalendarAccount.self,
+                GoogleCalendarSubscription.self,
+                GoogleCalendarImportRecord.self
             ],
             inMemory: true
         )

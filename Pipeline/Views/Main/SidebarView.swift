@@ -32,7 +32,7 @@ struct SidebarView: View {
                         .font(.title2)
                         .fontWeight(.bold)
 
-                    Text(selectedDestination == .contacts ? "Manage your people" : "Track your applications")
+                    Text(sidebarSubtitle)
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -93,6 +93,15 @@ struct SidebarView: View {
                         count: upcomingCount
                     ) {
                         selectedDestination = .upcoming
+                    }
+
+                    destinationButton(
+                        title: "Integrations",
+                        icon: "puzzlepiece.extension",
+                        isSelected: selectedDestination == .integrations,
+                        accentColor: .pink
+                    ) {
+                        selectedDestination = .integrations
                     }
                 }
 
@@ -188,6 +197,17 @@ struct SidebarView: View {
         .sidebarHandCursor()
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
+    }
+
+    private var sidebarSubtitle: String {
+        switch selectedDestination {
+        case .contacts:
+            return "Manage your people"
+        case .integrations:
+            return "Connect your workflow"
+        default:
+            return "Track your applications"
+        }
     }
 
     private func destinationUtilityRow(

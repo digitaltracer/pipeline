@@ -113,11 +113,19 @@ public final class KeychainService {
         "\(provider.keychainKey).keys"
     }
 
-    private func baseQuery(for provider: AIProvider, account: String, includeAccessGroup: Bool) -> [String: Any] {
+    private func preferredServiceIdentifier() -> String {
+        Constants.App.bundleID
+    }
+
+    private func serviceIdentifiersForLookup() -> [String] {
+        [Constants.App.bundleID, Constants.App.legacyBundleID].uniquedPreservingOrder()
+    }
+
+    private func baseQuery(account: String, service: String, includeAccessGroup: Bool) -> [String: Any] {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: account,
-            kSecAttrService as String: Constants.App.bundleID,
+            kSecAttrService as String: service,
         ]
         if includeAccessGroup {
             #if !targetEnvironment(simulator)
@@ -127,15 +135,34 @@ public final class KeychainService {
         return query
     }
 
-    private func queryVariants(for provider: AIProvider, account: String) -> [[String: Any]] {
+    private func readQueryVariants(for provider: AIProvider, account: String) -> [[String: Any]] {
         #if targetEnvironment(simulator)
-        return [baseQuery(for: provider, account: account, includeAccessGroup: false)]
+        return serviceIdentifiersForLookup().map { service in
+            baseQuery(account: account, service: service, includeAccessGroup: false)
+        }
+        #else
+        return serviceIdentifiersForLookup().flatMap { service in
+            [
+                baseQuery(account: account, service: service, includeAccessGroup: true),
+                baseQuery(account: account, service: service, includeAccessGroup: false)
+            ]
+        }
+        #endif
+    }
+
+    private func writeQueryVariants(for provider: AIProvider, account: String) -> [[String: Any]] {
+        #if targetEnvironment(simulator)
+        return [baseQuery(account: account, service: preferredServiceIdentifier(), includeAccessGroup: false)]
         #else
         return [
-            baseQuery(for: provider, account: account, includeAccessGroup: true),
-            baseQuery(for: provider, account: account, includeAccessGroup: false)
+            baseQuery(account: account, service: preferredServiceIdentifier(), includeAccessGroup: true),
+            baseQuery(account: account, service: preferredServiceIdentifier(), includeAccessGroup: false)
         ]
         #endif
+    }
+
+    private func deleteQueryVariants(for provider: AIProvider, account: String) -> [[String: Any]] {
+        readQueryVariants(for: provider, account: account)
     }
 
     private func normalizeAPIKeys(_ apiKeys: [String]) -> [String] {
@@ -179,7 +206,7 @@ public final class KeychainService {
     private func readData(for provider: AIProvider, account: String) throws -> Data? {
         var lastAuthenticationFailure = false
 
-        for baseQuery in queryVariants(for: provider, account: account) {
+        for baseQuery in readQueryVariants(for: provider, account: account) {
             var query = baseQuery
             query[kSecReturnData as String] = true
             query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -217,7 +244,11 @@ public final class KeychainService {
     private func writeData(_ data: Data, for provider: AIProvider, account: String) throws {
         var lastStatus: OSStatus?
 
-        for query in queryVariants(for: provider, account: account) {
+        for query in deleteQueryVariants(for: provider, account: account) {
+            _ = SecItemDelete(query as CFDictionary)
+        }
+
+        for query in writeQueryVariants(for: provider, account: account) {
             _ = SecItemDelete(query as CFDictionary)
 
             var addQuery = query
@@ -245,7 +276,7 @@ public final class KeychainService {
         var lastStatus: OSStatus = errSecSuccess
         var sawAuthenticationFailure = false
 
-        for query in queryVariants(for: provider, account: account) {
+        for query in deleteQueryVariants(for: provider, account: account) {
             let status = SecItemDelete(query as CFDictionary)
             if status == errSecSuccess || status == errSecItemNotFound {
                 lastStatus = status
