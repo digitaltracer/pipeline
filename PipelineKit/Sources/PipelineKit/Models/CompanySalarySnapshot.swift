@@ -13,6 +13,7 @@ public final class CompanySalarySnapshot {
     public var notes: String?
     public var confidenceNotes: String?
     public var currencyRawValue: String = Currency.usd.rawValue
+    public var seniorityRawValue: String?
     public var minBaseCompensation: Int?
     public var maxBaseCompensation: Int?
     public var minTotalCompensation: Int?
@@ -34,6 +35,7 @@ public final class CompanySalarySnapshot {
         notes: String? = nil,
         confidenceNotes: String? = nil,
         currency: Currency = .usd,
+        seniority: SeniorityBand? = nil,
         minBaseCompensation: Int? = nil,
         maxBaseCompensation: Int? = nil,
         minTotalCompensation: Int? = nil,
@@ -55,6 +57,7 @@ public final class CompanySalarySnapshot {
         self.notes = CompanyProfile.normalizedText(notes)
         self.confidenceNotes = CompanyProfile.normalizedText(confidenceNotes)
         self.currencyRawValue = currency.rawValue
+        self.seniorityRawValue = seniority?.rawValue
         self.minBaseCompensation = minBaseCompensation
         self.maxBaseCompensation = maxBaseCompensation
         self.minTotalCompensation = minTotalCompensation
@@ -76,6 +79,26 @@ public final class CompanySalarySnapshot {
         }
     }
 
+    public var seniority: SeniorityBand? {
+        get {
+            guard let seniorityRawValue,
+                  !seniorityRawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return nil
+            }
+            return SeniorityBand(rawValue: seniorityRawValue)
+        }
+        set {
+            let newRawValue = newValue?.rawValue
+            guard seniorityRawValue != newRawValue else { return }
+            seniorityRawValue = newRawValue
+            updateTimestamp()
+        }
+    }
+
+    public var effectiveSeniority: SeniorityBand? {
+        seniority ?? SeniorityBand.inferred(from: roleTitle)
+    }
+
     public var baseRangeText: String? {
         currency.formatRange(min: minBaseCompensation, max: maxBaseCompensation)
     }
@@ -92,6 +115,7 @@ public final class CompanySalarySnapshot {
         notes: String?,
         confidenceNotes: String?,
         currency: Currency,
+        seniority: SeniorityBand?,
         minBaseCompensation: Int?,
         maxBaseCompensation: Int?,
         minTotalCompensation: Int?,
@@ -107,6 +131,7 @@ public final class CompanySalarySnapshot {
         self.notes = CompanyProfile.normalizedText(notes)
         self.confidenceNotes = CompanyProfile.normalizedText(confidenceNotes)
         self.currencyRawValue = currency.rawValue
+        self.seniorityRawValue = seniority?.rawValue
         self.minBaseCompensation = minBaseCompensation
         self.maxBaseCompensation = maxBaseCompensation
         self.minTotalCompensation = minTotalCompensation

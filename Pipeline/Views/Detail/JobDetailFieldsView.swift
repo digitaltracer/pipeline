@@ -70,10 +70,45 @@ struct JobDetailFieldsView: View {
             )
 
             DetailInfoCard(
-                label: "Offer Total Comp",
-                value: application.offerTotalCompText ?? "—",
+                label: "Offer Total Comp (Year 1)",
+                value: application.offerYearOneTotalCompText ?? "—",
                 icon: "gift.fill",
                 iconColor: .purple
+            )
+
+            DetailInfoCard(
+                label: "Equity (4yr est.)",
+                value: application.offerEquityCompensation.map(application.currency.format) ?? "—",
+                icon: "chart.line.uptrend.xyaxis",
+                iconColor: .purple
+            )
+
+            DetailInfoCard(
+                label: "PTO",
+                value: application.offerPTOText ?? "—",
+                icon: "figure.walk",
+                iconColor: .mint
+            )
+
+            DetailInfoCard(
+                label: "Remote Policy",
+                value: application.offerRemotePolicyText ?? "—",
+                icon: "house",
+                iconColor: .blue
+            )
+
+            DetailInfoCard(
+                label: "Growth Score",
+                value: starText(for: application.offerGrowthScore),
+                icon: "arrow.up.right.circle.fill",
+                iconColor: .orange
+            )
+
+            DetailInfoCard(
+                label: "Team/Culture Fit",
+                value: starText(for: application.offerTeamCultureFitScore),
+                icon: "person.3.fill",
+                iconColor: .pink
             )
 
             if let appliedDate = application.appliedDate {
@@ -93,7 +128,37 @@ struct JobDetailFieldsView: View {
                     iconColor: followUpDate < Date() ? .red : .orange
                 )
             }
+
+            if let postedAt = application.postedAt {
+                DetailInfoCard(
+                    label: "Posted On",
+                    value: postedAt.formatted(date: .long, time: .omitted),
+                    icon: "calendar.badge.plus",
+                    iconColor: .teal
+                )
+            }
+
+            if let applicationDeadline = application.applicationDeadline {
+                DetailInfoCard(
+                    label: "Apply By",
+                    value: applicationDeadline.formatted(date: .long, time: .omitted),
+                    icon: "hourglass",
+                    iconColor: applicationDeadline < Date() ? .red : .orange
+                )
+            }
+
+            DetailInfoCard(
+                label: "Apply Queue",
+                value: application.isQueuedForApplyLater ? "Queued" : "Not queued",
+                icon: application.isQueuedForApplyLater ? "bookmark.fill" : "bookmark",
+                iconColor: application.isQueuedForApplyLater ? .blue : .secondary
+            )
         }
+    }
+
+    private func starText(for score: Int?) -> String {
+        guard let score, score > 0 else { return "—" }
+        return String(repeating: "★", count: score)
     }
 }
 

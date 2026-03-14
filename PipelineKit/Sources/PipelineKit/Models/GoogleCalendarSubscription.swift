@@ -9,6 +9,7 @@ public final class GoogleCalendarSubscription {
     public var colorHex: String?
     public var isPrimary: Bool = false
     public var isSelected: Bool = false
+    public var isWriteTarget: Bool = false
     public var syncToken: String?
     public var lastSyncedAt: Date?
     public var createdAt: Date = Date()
@@ -21,6 +22,7 @@ public final class GoogleCalendarSubscription {
         colorHex: String? = nil,
         isPrimary: Bool = false,
         isSelected: Bool = false,
+        isWriteTarget: Bool = false,
         syncToken: String? = nil,
         lastSyncedAt: Date? = nil,
         createdAt: Date = Date(),
@@ -32,6 +34,7 @@ public final class GoogleCalendarSubscription {
         self.colorHex = colorHex
         self.isPrimary = isPrimary
         self.isSelected = isSelected
+        self.isWriteTarget = isWriteTarget
         self.syncToken = syncToken
         self.lastSyncedAt = lastSyncedAt
         self.createdAt = createdAt

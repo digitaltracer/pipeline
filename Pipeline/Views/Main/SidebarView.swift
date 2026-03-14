@@ -9,8 +9,11 @@ struct SidebarView: View {
     @Binding var showingAddApplication: Bool
     @Binding var showingAddContact: Bool
     @Binding var showingSettings: Bool
+    @Binding var settingsEntryPoint: SettingsEntryPoint
     let statusCounts: [SidebarFilter: Int]
     let upcomingCount: Int
+    let offeredCount: Int
+    let isOfferComparisonEnabled: Bool
     @Bindable var settingsViewModel: SettingsViewModel
     @Environment(\.colorScheme) private var colorScheme
 
@@ -94,15 +97,6 @@ struct SidebarView: View {
                     ) {
                         selectedDestination = .upcoming
                     }
-
-                    destinationButton(
-                        title: "Integrations",
-                        icon: "puzzlepiece.extension",
-                        isSelected: selectedDestination == .integrations,
-                        accentColor: .pink
-                    ) {
-                        selectedDestination = .integrations
-                    }
                 }
 
                 Section {
@@ -140,6 +134,15 @@ struct SidebarView: View {
                 }
 
                 destinationUtilityRow(
+                    title: "Integrations",
+                    icon: "puzzlepiece.extension",
+                    isSelected: selectedDestination == .integrations,
+                    accentColor: .pink
+                ) {
+                    selectedDestination = .integrations
+                }
+
+                destinationUtilityRow(
                     title: "Resume",
                     icon: "doc.text",
                     isSelected: selectedDestination == .resume,
@@ -157,7 +160,34 @@ struct SidebarView: View {
                     selectedDestination = .costCenter
                 }
 
+                if offeredCount >= 2 {
+                    Button {
+                        selectedDestination = .offerComparison
+                    } label: {
+                        utilityRow(
+                            title: "Compare Offers",
+                            icon: "scale.3d",
+                            isSelected: selectedDestination == .offerComparison,
+                            accentColor: .green,
+                            count: offeredCount
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .sidebarHandCursor()
+                    .disabled(!isOfferComparisonEnabled)
+
+                    if !isOfferComparisonEnabled {
+                        Text("Configure AI in Settings to compare offers.")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 10)
+                            .padding(.top, 2)
+                    }
+                }
+
                 Button {
+                    settingsEntryPoint = .root
                     showingSettings = true
                 } label: {
                     utilityRow(
@@ -327,6 +357,7 @@ struct SidebarFilterRow: View {
         showingAddApplication: .constant(false),
         showingAddContact: .constant(false),
         showingSettings: .constant(false),
+        settingsEntryPoint: .constant(.root),
         statusCounts: [
             .all: 25,
             .saved: 5,
@@ -337,6 +368,8 @@ struct SidebarFilterRow: View {
             .archived: 1
         ],
         upcomingCount: 6,
+        offeredCount: 2,
+        isOfferComparisonEnabled: true,
         settingsViewModel: SettingsViewModel()
     )
     .frame(width: 250)
@@ -347,8 +380,11 @@ struct SidebarView: View {
     @Binding var showingAddApplication: Bool
     @Binding var showingAddContact: Bool
     @Binding var showingSettings: Bool
+    @Binding var settingsEntryPoint: SettingsEntryPoint
     let statusCounts: [SidebarFilter: Int]
     let upcomingCount: Int
+    let offeredCount: Int
+    let isOfferComparisonEnabled: Bool
     @Bindable var settingsViewModel: SettingsViewModel
 
     var body: some View {

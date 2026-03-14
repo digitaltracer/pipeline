@@ -21,6 +21,67 @@ public struct GoogleCalendarEventPayload: Equatable {
     public let startDate: Date
     public let endDate: Date
     public let isAllDay: Bool
+    public let privateMetadata: [String: String]
+
+    public init(
+        calendarID: String,
+        calendarName: String,
+        eventID: String,
+        etag: String?,
+        status: String,
+        htmlLink: String?,
+        summary: String?,
+        location: String?,
+        details: String?,
+        organizerEmail: String?,
+        startDate: Date,
+        endDate: Date,
+        isAllDay: Bool,
+        privateMetadata: [String: String] = [:]
+    ) {
+        self.calendarID = calendarID
+        self.calendarName = calendarName
+        self.eventID = eventID
+        self.etag = etag
+        self.status = status
+        self.htmlLink = htmlLink
+        self.summary = summary
+        self.location = location
+        self.details = details
+        self.organizerEmail = organizerEmail
+        self.startDate = startDate
+        self.endDate = endDate
+        self.isAllDay = isAllDay
+        self.privateMetadata = privateMetadata
+    }
+}
+
+public struct GoogleCalendarEventDraft: Equatable, Sendable {
+    public let summary: String
+    public let location: String?
+    public let details: String?
+    public let startDate: Date
+    public let endDate: Date
+    public let timeZoneIdentifier: String
+    public let privateMetadata: [String: String]
+
+    public init(
+        summary: String,
+        location: String? = nil,
+        details: String? = nil,
+        startDate: Date,
+        endDate: Date,
+        timeZoneIdentifier: String = TimeZone.current.identifier,
+        privateMetadata: [String: String] = [:]
+    ) {
+        self.summary = summary
+        self.location = location
+        self.details = details
+        self.startDate = startDate
+        self.endDate = endDate
+        self.timeZoneIdentifier = timeZoneIdentifier
+        self.privateMetadata = privateMetadata
+    }
 }
 
 public struct GoogleCalendarSyncResponse: Equatable {
@@ -120,6 +181,65 @@ public actor GoogleCalendarService {
         return GoogleCalendarSyncResponse(events: collected, nextSyncToken: resolvedNextSyncToken)
     }
 
+    public func fetchEvent(
+        calendarID: String,
+        calendarName: String,
+        eventID: String,
+        accessToken: String
+    ) async throws -> GoogleCalendarEventPayload {
+        let url = eventURL(calendarID: calendarID, eventID: eventID)
+        let item: EventItem = try await request(url: url, accessToken: accessToken)
+        return try payload(from: item, calendarID: calendarID, calendarName: calendarName)
+    }
+
+    public func createEvent(
+        calendarID: String,
+        calendarName: String,
+        accessToken: String,
+        draft: GoogleCalendarEventDraft
+    ) async throws -> GoogleCalendarEventPayload {
+        let url = try eventsMutationURL(calendarID: calendarID)
+        let body = try JSONEncoder().encode(EventMutationRequest(draft: draft))
+        let item: EventItem = try await request(
+            url: url,
+            accessToken: accessToken,
+            method: "POST",
+            body: body
+        )
+        return try payload(from: item, calendarID: calendarID, calendarName: calendarName)
+    }
+
+    public func updateEvent(
+        calendarID: String,
+        calendarName: String,
+        eventID: String,
+        accessToken: String,
+        draft: GoogleCalendarEventDraft
+    ) async throws -> GoogleCalendarEventPayload {
+        let url = eventURL(calendarID: calendarID, eventID: eventID)
+        let body = try JSONEncoder().encode(EventMutationRequest(draft: draft))
+        let item: EventItem = try await request(
+            url: url,
+            accessToken: accessToken,
+            method: "PUT",
+            body: body
+        )
+        return try payload(from: item, calendarID: calendarID, calendarName: calendarName)
+    }
+
+    public func deleteEvent(
+        calendarID: String,
+        eventID: String,
+        accessToken: String
+    ) async throws {
+        let url = eventURL(calendarID: calendarID, eventID: eventID)
+        try await requestWithoutResponse(
+            url: url,
+            accessToken: accessToken,
+            method: "DELETE"
+        )
+    }
+
     private func eventsURL(
         calendarID: String,
         syncToken: String?,
@@ -173,8 +293,20 @@ public actor GoogleCalendarService {
             organizerEmail: item.organizer?.email,
             startDate: start.date,
             endDate: max(end.date, start.date),
-            isAllDay: start.isAllDay
+            isAllDay: start.isAllDay,
+            privateMetadata: item.extendedProperties?.privateValues ?? [:]
         )
+    }
+
+    private func eventsMutationURL(calendarID: String) throws -> URL {
+        guard let url = URL(string: "https://www.googleapis.com/calendar/v3/calendars/\(calendarID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? calendarID)/events") else {
+            throw GoogleCalendarServiceError.invalidResponse
+        }
+        return url
+    }
+
+    private func eventURL(calendarID: String, eventID: String) -> URL {
+        URL(string: "https://www.googleapis.com/calendar/v3/calendars/\(calendarID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? calendarID)/events/\(eventID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? eventID)")!
     }
 
     private func resolveEventDate(_ value: EventDateValue?) throws -> (date: Date, isAllDay: Bool) {
@@ -200,10 +332,20 @@ public actor GoogleCalendarService {
         throw GoogleCalendarServiceError.missingEventDate
     }
 
-    private func request<Response: Decodable>(url: URL, accessToken: String) async throws -> Response {
+    private func request<Response: Decodable>(
+        url: URL,
+        accessToken: String,
+        method: String = "GET",
+        body: Data? = nil
+    ) async throws -> Response {
         var request = URLRequest(url: url)
+        request.httpMethod = method
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if body != nil {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        request.httpBody = body
 
         let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -225,6 +367,30 @@ public actor GoogleCalendarService {
             return try decoder.decode(Response.self, from: data)
         } catch {
             throw GoogleCalendarServiceError.invalidResponse
+        }
+    }
+
+    private func requestWithoutResponse(
+        url: URL,
+        accessToken: String,
+        method: String
+    ) async throws {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GoogleCalendarServiceError.invalidResponse
+        }
+
+        guard (200 ..< 300).contains(httpResponse.statusCode) else {
+            let apiError = try? decoder.decode(GoogleAPIErrorEnvelope.self, from: data)
+            throw GoogleCalendarServiceError.transport(
+                statusCode: httpResponse.statusCode,
+                message: apiError?.error.message
+            )
         }
     }
 }
@@ -258,6 +424,7 @@ private struct EventItem: Decodable {
     let organizer: EventOrganizer?
     let start: EventDateValue?
     let end: EventDateValue?
+    let extendedProperties: EventExtendedProperties?
 }
 
 private struct EventOrganizer: Decodable {
@@ -267,6 +434,55 @@ private struct EventOrganizer: Decodable {
 private struct EventDateValue: Decodable {
     let date: String?
     let dateTime: String?
+    let timeZone: String?
+}
+
+private struct EventExtendedProperties: Decodable {
+    let privateValues: [String: String]
+
+    enum CodingKeys: String, CodingKey {
+        case privateValues = "private"
+    }
+}
+
+private struct EventMutationRequest: Encodable {
+    let summary: String
+    let location: String?
+    let description: String?
+    let start: EventMutationDateValue
+    let end: EventMutationDateValue
+    let extendedProperties: EventMutationExtendedProperties?
+
+    init(draft: GoogleCalendarEventDraft) {
+        summary = draft.summary
+        location = draft.location
+        description = draft.details
+        start = EventMutationDateValue(dateTime: draft.startDate, timeZone: draft.timeZoneIdentifier)
+        end = EventMutationDateValue(dateTime: draft.endDate, timeZone: draft.timeZoneIdentifier)
+        extendedProperties = draft.privateMetadata.isEmpty
+            ? nil
+            : EventMutationExtendedProperties(privateValues: draft.privateMetadata)
+    }
+}
+
+private struct EventMutationDateValue: Encodable {
+    let dateTime: String
+    let timeZone: String
+
+    init(dateTime: Date, timeZone: String) {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        self.dateTime = formatter.string(from: dateTime)
+        self.timeZone = timeZone
+    }
+}
+
+private struct EventMutationExtendedProperties: Encodable {
+    let privateValues: [String: String]
+
+    enum CodingKeys: String, CodingKey {
+        case privateValues = "private"
+    }
 }
 
 private struct GoogleAPIErrorEnvelope: Decodable {

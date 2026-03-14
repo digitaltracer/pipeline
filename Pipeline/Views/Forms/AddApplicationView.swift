@@ -15,6 +15,7 @@ struct AddApplicationView: View {
     @Environment(\.colorScheme) private var colorScheme
     let settingsViewModel: SettingsViewModel
     let onOpenSettings: (() -> Void)?
+    let onReplayOnboarding: (() -> Void)?
 
     enum AddTab: String, CaseIterable {
         case manual = "Manual Entry"
@@ -30,11 +31,13 @@ struct AddApplicationView: View {
 
     init(
         settingsViewModel: SettingsViewModel = SettingsViewModel(),
-        onOpenSettings: (() -> Void)? = nil
+        onOpenSettings: (() -> Void)? = nil,
+        onReplayOnboarding: (() -> Void)? = nil
     ) {
         self.settingsViewModel = settingsViewModel
         _aiViewModel = State(initialValue: AIParsingViewModel(settingsViewModel: settingsViewModel))
         self.onOpenSettings = onOpenSettings
+        self.onReplayOnboarding = onReplayOnboarding
     }
 
     var body: some View {
@@ -57,9 +60,8 @@ struct AddApplicationView: View {
                         case .aiParse:
                             AIParseFormView(
                                 aiViewModel: aiViewModel,
-                                formViewModel: viewModel,
-                                onApplyParsedData: { selectedTab = .manual },
-                                onOpenSettings: onOpenSettings
+                                onOpenSettings: onOpenSettings,
+                                onReplayOnboarding: onReplayOnboarding
                             )
                         }
                     }
@@ -75,8 +77,7 @@ struct AddApplicationView: View {
             #else
             NavigationStack {
                 VStack(spacing: 0) {
-                    // Underlined Tab Bar
-                    HStack(spacing: 0) {
+                    HStack(spacing: 10) {
                         ForEach(AddTab.allCases, id: \.self) { tab in
                             TabButton(
                                 title: tab.rawValue,
@@ -89,6 +90,8 @@ struct AddApplicationView: View {
                             }
                         }
                     }
+                    .padding(12)
+                    .appCard(cornerRadius: 16, elevated: true, shadow: false)
                     .padding(.horizontal)
                     .padding(.top, 8)
 
@@ -100,11 +103,8 @@ struct AddApplicationView: View {
 
                         AIParseFormView(
                             aiViewModel: aiViewModel,
-                            formViewModel: viewModel,
-                            onApplyParsedData: {
-                                selectedTab = .manual
-                            },
-                            onOpenSettings: onOpenSettings
+                            onOpenSettings: onOpenSettings,
+                            onReplayOnboarding: onReplayOnboarding
                         )
                         .tag(AddTab.aiParse)
                     }
@@ -117,10 +117,15 @@ struct AddApplicationView: View {
                     }
 
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") {
-                            saveApplication()
+                        Button(primaryActionTitle) {
+                            switch selectedTab {
+                            case .manual:
+                                saveApplication()
+                            case .aiParse:
+                                applyParsedDataAndContinue()
+                            }
                         }
-                        .disabled(!viewModel.isValid || selectedTab == .aiParse)
+                        .disabled(primaryActionDisabled)
                     }
                 }
                 .frame(minWidth: 500, minHeight: 600)
@@ -176,6 +181,54 @@ struct AddApplicationView: View {
         }
     }
 
+    private func applyParsedDataAndContinue() {
+        guard aiViewModel.parsedData != nil else { return }
+
+        aiViewModel.applyToViewModel(viewModel)
+        withAnimation(.easeInOut(duration: 0.2)) {
+            selectedTab = .manual
+        }
+    }
+
+    private var primaryActionTitle: String {
+        switch selectedTab {
+        case .manual:
+            return "Add Application"
+        case .aiParse:
+            return aiViewModel.parsedData == nil ? "Parse to Continue" : "Apply & Continue"
+        }
+    }
+
+    private var primaryActionDisabled: Bool {
+        switch selectedTab {
+        case .manual:
+            return !viewModel.isValid
+        case .aiParse:
+            return aiViewModel.parsedData == nil
+        }
+    }
+
+    private var footerMessage: String {
+        switch selectedTab {
+        case .manual:
+            return viewModel.validationErrors.first ?? "Review the draft and save when the required fields look right."
+        case .aiParse:
+            if aiViewModel.parsedData != nil {
+                return "Parsed fields are ready. Apply them to Manual Entry before saving."
+            }
+            return "Paste a job URL, run AI Parse, then review the populated fields in Manual Entry."
+        }
+    }
+
+    private var footerMessageIcon: String {
+        switch selectedTab {
+        case .manual:
+            return viewModel.validationErrors.isEmpty ? "checkmark.circle.fill" : "exclamationmark.circle"
+        case .aiParse:
+            return aiViewModel.parsedData == nil ? "wand.and.stars" : "checkmark.circle.fill"
+        }
+    }
+
     #if os(macOS)
     private var header: some View {
         HStack {
@@ -202,7 +255,7 @@ struct AddApplicationView: View {
     }
 
     private var tabBar: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 10) {
             ForEach(AddTab.allCases, id: \.self) { tab in
                 TabButton(
                     title: tab.rawValue,
@@ -215,23 +268,36 @@ struct AddApplicationView: View {
                 }
             }
         }
+        .padding(12)
+        .appCard(cornerRadius: 16, elevated: true, shadow: false)
         .padding(.horizontal, 24)
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
     }
 
     private var footer: some View {
         HStack(spacing: 12) {
-            Spacer()
+            Label(footerMessage, systemImage: footerMessageIcon)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .labelStyle(.titleAndIcon)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             Button("Cancel") { dismiss() }
                 .buttonStyle(.bordered)
+                .controlSize(.large)
 
-            Button("Add Application") {
-                saveApplication()
+            Button(primaryActionTitle) {
+                switch selectedTab {
+                case .manual:
+                    saveApplication()
+                case .aiParse:
+                    applyParsedDataAndContinue()
+                }
             }
             .buttonStyle(.borderedProminent)
             .tint(DesignSystem.Colors.accent)
-            .disabled(!viewModel.isValid || selectedTab == .aiParse)
+            .controlSize(.large)
+            .disabled(primaryActionDisabled)
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
@@ -245,22 +311,38 @@ struct TabButton: View {
     let icon: String
     let isSelected: Bool
     let action: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 8) {
-                HStack(spacing: 6) {
-                    Image(systemName: icon)
-                        .font(.system(size: 14))
-                    Text(title)
-                        .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
-                }
-                .foregroundColor(isSelected ? .blue : .secondary)
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
 
-                Rectangle()
-                    .fill(isSelected ? Color.blue : Color.clear)
-                    .frame(height: 2)
+                Text(title)
+                    .font(.system(size: 14, weight: isSelected ? .semibold : .medium))
             }
+            .foregroundColor(isSelected ? DesignSystem.Colors.accent : .secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(
+                        isSelected
+                            ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.18 : 0.10)
+                            : Color.clear
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(
+                        isSelected
+                            ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.45 : 0.24)
+                            : DesignSystem.Colors.stroke(colorScheme),
+                        lineWidth: 1
+                    )
+            )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
@@ -288,7 +370,8 @@ struct TabButton: View {
             InterviewLearningSnapshot.self,
             RejectionLearningSnapshot.self,
             ApplicationTask.self,
-                ApplicationChecklistSuggestion.self,
+            FollowUpStep.self,
+            ApplicationChecklistSuggestion.self,
                 ApplicationAttachment.self,
                 CoverLetterDraft.self,
                 JobMatchAssessment.self,

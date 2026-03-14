@@ -17,8 +17,13 @@ struct MainView: View {
     @Binding var selectedContact: Contact?
     @Binding var showingAddApplication: Bool
     @Binding var showingAddContact: Bool
+    @Binding var showingSettings: Bool
+    @Binding var settingsEntryPoint: SettingsEntryPoint
     @Binding var searchText: String
     @Bindable var settingsViewModel: SettingsViewModel
+    let onboardingStore: OnboardingStore
+    let onboardingProgress: OnboardingProgress
+    let onOnboardingAction: (OnboardingAction) -> Void
     var pendingNotificationOpenRequest: NotificationOpenRequest? = nil
     var onHandledNotificationOpenRequest: (() -> Void)? = nil
 
@@ -36,7 +41,6 @@ struct MainView: View {
 
     @State private var viewModel = ApplicationListViewModel()
     @State private var contactsViewModel = ContactsListViewModel()
-    @State private var showingSettings = false
     @State private var viewMode: ViewMode = .grid
 #if os(macOS)
     @State private var escapeKeyMonitor: Any?
@@ -116,8 +120,27 @@ struct MainView: View {
         UpcomingItem.build(from: applications, searchText: searchText)
     }
 
+    private var offeredApplications: [JobApplication] {
+        applications.filter { $0.status == .offered }
+    }
+
+    private var isOfferComparisonEnabled: Bool {
+        let provider = settingsViewModel.selectedAIProvider
+        let model = settingsViewModel.preferredModel(for: provider)
+        guard !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        guard AICompletionClient.supportsWebSearch(provider: provider, model: model) else { return false }
+        return (try? settingsViewModel.apiKeys(for: provider).isEmpty == false) ?? false
+    }
+
     private var pendingDueItemCount: Int {
-        UpcomingItem.build(from: applications).count
+        let dueCount = UpcomingItem.build(from: applications).count
+        let queuedCount = ApplyQueueService().snapshot(
+            from: applications,
+            dailyTarget: settingsViewModel.applyQueueDailyTarget,
+            currentResumeRevisionID: currentResumeRevision?.id,
+            matchPreferences: settingsViewModel.jobMatchPreferences
+        ).queuedCount
+        return dueCount + queuedCount
     }
 
     private var shouldShowApplicationDetail: Bool {
@@ -136,7 +159,14 @@ struct MainView: View {
     private var contentColumn: some View {
         switch selectedDestination {
         case .dashboard:
-            DashboardView(settingsViewModel: settingsViewModel)
+            DashboardView(
+                settingsViewModel: settingsViewModel,
+                onboardingProgress: onboardingProgress,
+                onOnboardingAction: onOnboardingAction,
+                onHideOnboardingGuidance: {
+                    onboardingStore.muteGuidance()
+                }
+            )
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         case .weeklyDigest:
             WeeklyDigestView(
@@ -155,8 +185,17 @@ struct MainView: View {
         case .integrations:
             IntegrationsWorkspaceView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        case .offerComparison:
+            OfferComparisonWorkspaceView(settingsViewModel: settingsViewModel)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         case .resume:
-            ResumeWorkspaceView()
+            ResumeWorkspaceView(
+                onboardingProgress: onboardingProgress,
+                onOnboardingAction: onOnboardingAction,
+                onHideOnboardingGuidance: {
+                    onboardingStore.muteGuidance()
+                }
+            )
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         case .costCenter:
             CostCenterView()
@@ -219,14 +258,24 @@ struct MainView: View {
                     selectedApplication: $selectedApplication,
                     searchText: $searchText,
                     currentResumeRevisionID: currentResumeRevision?.id,
-                    matchPreferences: settingsViewModel.jobMatchPreferences
+                    matchPreferences: settingsViewModel.jobMatchPreferences,
+                    onboardingProgress: onboardingProgress,
+                    onOnboardingAction: onOnboardingAction,
+                    onHideOnboardingGuidance: {
+                        onboardingStore.muteGuidance()
+                    }
                 )
             case .kanban:
                 KanbanBoardView(
                     applications: filteredApplications,
                     selectedApplication: $selectedApplication,
                     currentResumeRevisionID: currentResumeRevision?.id,
-                    matchPreferences: settingsViewModel.jobMatchPreferences
+                    matchPreferences: settingsViewModel.jobMatchPreferences,
+                    onboardingProgress: onboardingProgress,
+                    onOnboardingAction: onOnboardingAction,
+                    onHideOnboardingGuidance: {
+                        onboardingStore.muteGuidance()
+                    }
                 )
             }
         }
@@ -273,9 +322,13 @@ struct MainView: View {
 
     private var upcomingColumn: some View {
         UpcomingView(
-            items: upcomingItems,
+            applications: applications,
             selectedApplication: $selectedApplication,
-            searchText: $searchText
+            searchText: $searchText,
+            settingsViewModel: settingsViewModel,
+            currentResumeRevisionID: currentResumeRevision?.id,
+            matchPreferences: settingsViewModel.jobMatchPreferences,
+            highlightApplyQueue: pendingNotificationOpenRequest?.kind == .applyQueue
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(DesignSystem.Colors.contentBackground(colorScheme))
@@ -287,11 +340,14 @@ struct MainView: View {
             showingAddApplication: $showingAddApplication,
             showingAddContact: $showingAddContact,
             showingSettings: $showingSettings,
+            settingsEntryPoint: $settingsEntryPoint,
             statusCounts: viewModel.statusCounts(
                 from: applications,
                 includeInAllApplications: allApplicationsInclusionRule
             ),
             upcomingCount: pendingDueItemCount,
+            offeredCount: offeredApplications.count,
+            isOfferComparisonEnabled: isOfferComparisonEnabled,
             settingsViewModel: settingsViewModel
         )
         .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
@@ -364,8 +420,12 @@ struct MainView: View {
                     showingAddApplication = false
                     Task {
                         try? await Task.sleep(for: .milliseconds(250))
+                        settingsEntryPoint = .aiProvider
                         showingSettings = true
                     }
+                },
+                onReplayOnboarding: {
+                    onOnboardingAction(.replayTour)
                 }
             )
         }
@@ -373,7 +433,18 @@ struct MainView: View {
             ContactEditorView()
         }
         .sheet(isPresented: $showingSettings) {
-            SettingsView(viewModel: settingsViewModel, isPresentedInSheet: true)
+            SettingsView(
+                viewModel: settingsViewModel,
+                isPresentedInSheet: true,
+                entryPoint: settingsEntryPoint,
+                onReplayOnboarding: {
+                    onboardingStore.presentIntro(force: true)
+                },
+                onboardingGuidanceMuted: Binding(
+                    get: { onboardingStore.guidanceMuted },
+                    set: { onboardingStore.guidanceMuted = $0 }
+                )
+            )
         }
         .onChange(of: searchText) { _, newValue in
             viewModel.searchText = newValue
@@ -395,6 +466,11 @@ struct MainView: View {
             enforceViewModeAvailability()
             guard selectedApplication != nil else { return }
             closeSelectedApplication()
+        }
+        .onChange(of: showingSettings) { _, isShowing in
+            if !isShowing {
+                settingsEntryPoint = .root
+            }
         }
         .onAppear {
             viewModel.searchText = searchText
@@ -489,6 +565,10 @@ struct MainView: View {
         guard escapeKeyMonitor == nil else { return }
         escapeKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard event.keyCode == 53 else { return event }
+            if onboardingStore.isPresentingIntro {
+                onboardingStore.skipIntro()
+                return nil
+            }
             guard !showingAddApplication, !showingAddContact, !showingSettings else { return event }
 
             if selectedApplication != nil {
@@ -542,20 +622,86 @@ struct UpcomingView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
 
-    let items: [UpcomingItem]
+    let applications: [JobApplication]
     @Binding var selectedApplication: JobApplication?
     @Binding var searchText: String
+    @Bindable var settingsViewModel: SettingsViewModel
+    let currentResumeRevisionID: UUID?
+    let matchPreferences: JobMatchPreferences
+    var highlightApplyQueue = false
 
     @State private var editingTask: ApplicationTask?
     @State private var actionErrorMessage: String?
+    @State private var draftingFollowUpStep: FollowUpStep?
+    @State private var draftingApplication: JobApplication?
+    @State private var isPreparingQueue = false
 
     private let viewModel = ApplicationDetailViewModel()
+    private let queueService = ApplyQueueService()
+
+    private var items: [UpcomingItem] {
+        UpcomingItem.build(from: applications, searchText: searchText)
+    }
+
+    private var queueSnapshot: ApplyQueueSnapshot {
+        queueService.snapshot(
+            from: applications,
+            dailyTarget: settingsViewModel.applyQueueDailyTarget,
+            currentResumeRevisionID: currentResumeRevisionID,
+            matchPreferences: matchPreferences
+        )
+    }
+
+    private var normalizedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private var filteredTodayQueue: [ApplyQueueItem] {
+        filterQueueItems(queueSnapshot.todayQueue)
+    }
+
+    private var filteredBacklog: [ApplyQueueItem] {
+        filterQueueItems(queueSnapshot.backlog)
+    }
 
     private var sections: [UpcomingSection] {
         UpcomingSection.allCases.compactMap { section in
             let sectionItems = items.filter { $0.section == section }
             return sectionItems.isEmpty ? nil : section
         }
+    }
+
+    private var todaysFollowUpItems: [UpcomingItem] {
+        items.filter { $0.kind == .followUp && $0.followUpStep != nil && $0.section == .today }
+    }
+
+    private var todaysActionsSummary: String {
+        guard !todaysFollowUpItems.isEmpty else {
+            return "No smart follow-ups are due today."
+        }
+
+        let previews = todaysFollowUpItems.prefix(3).map {
+            "\($0.application.companyName) (\($0.title))"
+        }
+        let previewText = previews.joined(separator: ", ")
+        if todaysFollowUpItems.count > 3 {
+            return "You have \(todaysFollowUpItems.count) follow-ups due today: \(previewText), and more."
+        }
+        return "You have \(todaysFollowUpItems.count) follow-ups due today: \(previewText)."
+    }
+
+    private var queueSummaryText: String {
+        let count = filteredTodayQueue.count
+        guard count > 0 else {
+            if normalizedSearchText.isEmpty {
+                return "No queued jobs scheduled for today. Add saved jobs to the apply queue to pace your applications."
+            }
+            return "No queued jobs in today's queue match your search."
+        }
+
+        let readyCount = filteredTodayQueue.filter(\.preparationStatus.isReadyToApply).count
+        let estimatedMinutes = filteredTodayQueue.reduce(0) { $0 + $1.estimatedMinutes }
+        return "Today's apply queue: \(count) job\(count == 1 ? "" : "s"), estimated \(formattedDuration(estimatedMinutes)). \(readyCount) ready to apply."
     }
 
     var body: some View {
@@ -565,7 +711,7 @@ struct UpcomingView: View {
                     .font(.title2)
                     .fontWeight(.semibold)
 
-                Text("\(items.count) due item\(items.count == 1 ? "" : "s")")
+                Text(summaryCountText)
                     .font(.subheadline)
                     .foregroundColor(.secondary)
 
@@ -575,63 +721,181 @@ struct UpcomingView: View {
             .padding(.top, 20)
             .padding(.bottom, 12)
 
-            SearchBar(text: $searchText, placeholder: "Search tasks, companies, or roles...")
+            SearchBar(text: $searchText, placeholder: "Search queue items, tasks, companies, or roles...")
                 .padding(.horizontal)
                 .padding(.bottom, 12)
 
             Divider()
                 .overlay(DesignSystem.Colors.divider(colorScheme))
 
-            if items.isEmpty {
+            if items.isEmpty && filteredTodayQueue.isEmpty && filteredBacklog.isEmpty {
                 ContentUnavailableView {
                     Label("Nothing upcoming", systemImage: "calendar.badge.checkmark")
                 } description: {
-                    Text(searchText.isEmpty ? "Pending tasks with due dates and follow-ups will show up here." : "No matching upcoming items.")
+                    Text(searchText.isEmpty ? "Queued jobs, pending tasks with due dates, and follow-ups will show up here." : "No matching upcoming items.")
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 20) {
-                        ForEach(sections, id: \.self) { section in
+                        applyQueueHeroCard
+
+                        if !filteredTodayQueue.isEmpty {
                             VStack(alignment: .leading, spacing: 12) {
-                                Text(section.title)
+                                Text("Today's Apply Queue")
                                     .font(.headline)
 
-                                ForEach(items.filter { $0.section == section }) { item in
-                                    UpcomingItemRow(
+                                ForEach(filteredTodayQueue) { item in
+                                    ApplyQueueItemCard(
                                         item: item,
                                         onOpen: {
                                             selectedApplication = item.application
                                         },
-                                        onCompleteTask: item.task.map { task in
-                                            {
-                                                do {
-                                                    try viewModel.setTaskCompletion(true, for: task, in: item.application, context: modelContext)
-                                                } catch {
-                                                    actionErrorMessage = error.localizedDescription
-                                                }
+                                        onPrepare: item.preparationStatus.isReadyToApply ? nil : {
+                                            Task {
+                                                await prepareQueue(for: [item.application])
                                             }
                                         },
-                                        onEditTask: item.task.map { task in
-                                            { editingTask = task }
-                                        },
-                                        onDeleteTask: item.task.map { task in
-                                            {
-                                                do {
-                                                    try viewModel.deleteTask(task, from: item.application, context: modelContext)
-                                                } catch {
-                                                    actionErrorMessage = error.localizedDescription
-                                                }
-                                            }
-                                        },
-                                        onClearFollowUp: item.kind == .followUp ? {
+                                        onRemove: {
                                             do {
-                                                try viewModel.clearFollowUp(for: item.application, context: modelContext)
+                                                try viewModel.setApplyQueueMembership(false, for: item.application, context: modelContext)
                                             } catch {
                                                 actionErrorMessage = error.localizedDescription
                                             }
-                                        } : nil
+                                        },
+                                        onMarkApplied: {
+                                            do {
+                                                _ = try viewModel.markAppliedFromQueue(for: item.application, context: modelContext)
+                                            } catch {
+                                                actionErrorMessage = error.localizedDescription
+                                            }
+                                        }
                                     )
+                                }
+                            }
+                        }
+
+                        if !filteredBacklog.isEmpty {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Queued Backlog")
+                                    .font(.headline)
+
+                                ForEach(filteredBacklog) { item in
+                                    ApplyQueueItemCard(
+                                        item: item,
+                                        onOpen: {
+                                            selectedApplication = item.application
+                                        },
+                                        onPrepare: item.preparationStatus.isReadyToApply ? nil : {
+                                            Task {
+                                                await prepareQueue(for: [item.application])
+                                            }
+                                        },
+                                        onRemove: {
+                                            do {
+                                                try viewModel.setApplyQueueMembership(false, for: item.application, context: modelContext)
+                                            } catch {
+                                                actionErrorMessage = error.localizedDescription
+                                            }
+                                        },
+                                        onMarkApplied: {
+                                            do {
+                                                _ = try viewModel.markAppliedFromQueue(for: item.application, context: modelContext)
+                                            } catch {
+                                                actionErrorMessage = error.localizedDescription
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        if !items.isEmpty {
+                            todaysActionsCard
+
+                            ForEach(sections, id: \.self) { section in
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text(section.title)
+                                        .font(.headline)
+
+                                    ForEach(items.filter { $0.section == section }) { item in
+                                        UpcomingItemRow(
+                                            item: item,
+                                            onOpen: {
+                                                selectedApplication = item.application
+                                            },
+                                            onCompleteTask: item.task.map { task in
+                                                {
+                                                    do {
+                                                        try viewModel.setTaskCompletion(true, for: task, in: item.application, context: modelContext)
+                                                    } catch {
+                                                        actionErrorMessage = error.localizedDescription
+                                                    }
+                                                }
+                                            },
+                                            onEditTask: item.task.map { task in
+                                                { editingTask = task }
+                                            },
+                                            onDeleteTask: item.task.map { task in
+                                                {
+                                                    do {
+                                                        try viewModel.deleteTask(task, from: item.application, context: modelContext)
+                                                    } catch {
+                                                        actionErrorMessage = error.localizedDescription
+                                                    }
+                                                }
+                                            },
+                                            onGenerateFollowUp: item.followUpStep?.kind.supportsDraftGeneration == true ? {
+                                                draftingFollowUpStep = item.followUpStep
+                                                draftingApplication = item.application
+                                            } : nil,
+                                            onSnoozeFollowUp: item.followUpStep.map { step in
+                                                {
+                                                    do {
+                                                        try viewModel.snoozeFollowUpStep(
+                                                            step,
+                                                            by: item.snoozeDays,
+                                                            for: item.application,
+                                                            context: modelContext
+                                                        )
+                                                    } catch {
+                                                        actionErrorMessage = error.localizedDescription
+                                                    }
+                                                }
+                                            },
+                                            onMarkFollowUpDone: item.followUpStep.map { step in
+                                                {
+                                                    do {
+                                                        try viewModel.markFollowUpStepDone(step, for: item.application, context: modelContext)
+                                                    } catch {
+                                                        actionErrorMessage = error.localizedDescription
+                                                    }
+                                                }
+                                            },
+                                            onDismissFollowUp: item.followUpStep?.kind == .archiveSuggestion ? {
+                                                guard let step = item.followUpStep else { return }
+                                                do {
+                                                    try viewModel.dismissFollowUpStep(step, for: item.application, context: modelContext)
+                                                } catch {
+                                                    actionErrorMessage = error.localizedDescription
+                                                }
+                                            } : nil,
+                                            onArchiveApplication: item.followUpStep?.kind == .archiveSuggestion ? {
+                                                do {
+                                                    try viewModel.archive(item.application, context: modelContext)
+                                                } catch {
+                                                    actionErrorMessage = error.localizedDescription
+                                                }
+                                            } : nil,
+                                            onClearFollowUp: item.kind == .followUp ? {
+                                                do {
+                                                    try viewModel.clearFollowUp(for: item.application, context: modelContext)
+                                                } catch {
+                                                    actionErrorMessage = error.localizedDescription
+                                                }
+                                            } : nil
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -646,6 +910,16 @@ struct UpcomingView: View {
                 ApplicationTaskEditorView(application: application, taskToEdit: task)
             }
         }
+        .sheet(item: $draftingApplication) { application in
+            FollowUpDrafterView(
+                viewModel: FollowUpDrafterViewModel(
+                    application: application,
+                    settingsViewModel: settingsViewModel,
+                    modelContext: modelContext,
+                    followUpStep: draftingFollowUpStep
+                )
+            )
+        }
         .alert("Action Failed", isPresented: Binding(
             get: { actionErrorMessage != nil },
             set: { if !$0 { actionErrorMessage = nil } }
@@ -655,6 +929,259 @@ struct UpcomingView: View {
             Text(actionErrorMessage ?? "An unknown error occurred.")
         }
     }
+
+    private var summaryCountText: String {
+        let queuedCount = filteredTodayQueue.count + filteredBacklog.count
+        let dueCount = items.count
+        if queuedCount > 0 && dueCount > 0 {
+            return "\(queuedCount) queued • \(dueCount) due"
+        }
+        if queuedCount > 0 {
+            return "\(queuedCount) queued job\(queuedCount == 1 ? "" : "s")"
+        }
+        return "\(dueCount) due item\(dueCount == 1 ? "" : "s")"
+    }
+
+    private var applyQueueHeroCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Today's Apply Queue", systemImage: "bookmark.circle.fill")
+                        .font(.headline)
+                    Text(queueSummaryText)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                if !filteredTodayQueue.isEmpty {
+                    Text("\(filteredTodayQueue.count)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(DesignSystem.Colors.accent)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(DesignSystem.Colors.accent.opacity(0.12))
+                        .clipShape(Capsule())
+                }
+            }
+
+            if !filteredTodayQueue.isEmpty {
+                HStack(spacing: 12) {
+                    Button(isPreparingQueue ? "Preparing..." : "Prepare All") {
+                        Task {
+                            await prepareQueue(for: filteredTodayQueue.map(\.application))
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(DesignSystem.Colors.accent)
+                    .disabled(isPreparingQueue)
+
+                    if !filteredTodayQueue.filter(\.preparationStatus.isReadyToApply).isEmpty {
+                        Text("\(filteredTodayQueue.filter(\.preparationStatus.isReadyToApply).count) ready now")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.green)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(
+                    highlightApplyQueue ? DesignSystem.Colors.accent : DesignSystem.Colors.stroke(colorScheme),
+                    lineWidth: highlightApplyQueue ? 2 : 1
+                )
+        )
+    }
+
+    private var todaysActionsCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Today's Actions", systemImage: "sun.max")
+                    .font(.headline)
+
+                Spacer()
+
+                Text("\(todaysFollowUpItems.count)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(DesignSystem.Colors.accent)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(DesignSystem.Colors.accent.opacity(0.12))
+                    .clipShape(Capsule())
+            }
+
+            Text(todaysActionsSummary)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .appCard(cornerRadius: 16, elevated: true, shadow: false)
+    }
+
+    private func formattedDuration(_ minutes: Int) -> String {
+        if minutes >= 60 {
+            let hours = minutes / 60
+            let remainder = minutes % 60
+            return remainder == 0 ? "\(hours)h" : "\(hours)h \(remainder)m"
+        }
+        return "\(minutes)m"
+    }
+
+    private func prepareQueue(for applications: [JobApplication]) async {
+        guard !applications.isEmpty else { return }
+        isPreparingQueue = true
+        let results = await ApplyQueuePreparationCoordinator.shared.prepare(
+            applications: applications,
+            modelContext: modelContext,
+            settingsViewModel: settingsViewModel
+        )
+        isPreparingQueue = false
+
+        let failureMessages = results.flatMap(\.messages)
+        if let firstMessage = failureMessages.first {
+            actionErrorMessage = firstMessage
+        }
+    }
+
+    private func filterQueueItems(_ items: [ApplyQueueItem]) -> [ApplyQueueItem] {
+        guard !normalizedSearchText.isEmpty else { return items }
+
+        return items.filter { item in
+            let candidates = [
+                item.application.role,
+                item.application.companyName,
+                item.application.location,
+                item.preparationStatus.missingPreparationTitles.joined(separator: " ")
+            ]
+            .map { $0.lowercased() }
+
+            return candidates.contains { $0.contains(normalizedSearchText) }
+        }
+    }
+}
+
+private struct ApplyQueueItemCard: View {
+    let item: ApplyQueueItem
+    var onOpen: () -> Void
+    var onPrepare: (() -> Void)?
+    var onRemove: () -> Void
+    var onMarkApplied: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: item.preparationStatus.isReadyToApply ? "checkmark.circle.fill" : "bookmark.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(item.preparationStatus.isReadyToApply ? .green : .blue)
+                    .frame(width: 18, height: 18)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text(item.application.role)
+                            .font(.subheadline.weight(.semibold))
+
+                        PriorityFlag(priority: item.application.priority)
+                    }
+
+                    Text("\(item.application.companyName) • \(item.application.location)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Text(preparationSummary)
+                        .font(.caption)
+                        .foregroundColor(item.preparationStatus.isReadyToApply ? .green : .secondary)
+
+                    HStack(spacing: 8) {
+                        badge(text: "Est. \(formattedDuration(item.estimatedMinutes))", tint: .orange)
+
+                        if let score = item.freshMatchScore {
+                            badge(text: "Match \(score)%", tint: .blue)
+                        } else if item.isMatchScoreStale {
+                            badge(text: "Match stale", tint: .secondary)
+                        } else {
+                            badge(text: "Unscored", tint: .secondary)
+                        }
+
+                        if let deadline = item.applicationDeadline {
+                            badge(text: "Due \(deadline.formatted(date: .abbreviated, time: .omitted))", tint: deadline < Date() ? .red : .pink)
+                        } else if let postedAt = item.postedAt {
+                            badge(text: "Posted \(postedAt.formatted(date: .abbreviated, time: .omitted))", tint: .teal)
+                        }
+                    }
+                }
+
+                Spacer()
+            }
+
+            HStack(spacing: 12) {
+                Button("Open") {
+                    onOpen()
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(DesignSystem.Colors.accent)
+
+                if let onPrepare {
+                    Button("Prepare Now") {
+                        onPrepare()
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.green)
+                }
+
+                Button("Mark Applied") {
+                    onMarkApplied()
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.blue)
+
+                Button("Remove") {
+                    onRemove()
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
+
+                Spacer()
+            }
+            .font(.caption)
+        }
+        .padding(14)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+    }
+
+    private var preparationSummary: String {
+        if item.preparationStatus.isReadyToApply {
+            return "Ready to apply"
+        }
+
+        return "Prep needed: \(item.preparationStatus.missingPreparationTitles.joined(separator: ", "))"
+    }
+
+    private func badge(text: String, tint: Color) -> some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .foregroundColor(tint)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(tint.opacity(0.12))
+            .clipShape(Capsule())
+    }
+
+    private func formattedDuration(_ minutes: Int) -> String {
+        if minutes >= 60 {
+            let hours = minutes / 60
+            let remainder = minutes % 60
+            return remainder == 0 ? "\(hours)h" : "\(hours)h \(remainder)m"
+        }
+        return "\(minutes)m"
+    }
 }
 
 private struct UpcomingItemRow: View {
@@ -663,6 +1190,11 @@ private struct UpcomingItemRow: View {
     var onCompleteTask: (() -> Void)? = nil
     var onEditTask: (() -> Void)? = nil
     var onDeleteTask: (() -> Void)? = nil
+    var onGenerateFollowUp: (() -> Void)? = nil
+    var onSnoozeFollowUp: (() -> Void)? = nil
+    var onMarkFollowUpDone: (() -> Void)? = nil
+    var onDismissFollowUp: (() -> Void)? = nil
+    var onArchiveApplication: (() -> Void)? = nil
     var onClearFollowUp: (() -> Void)? = nil
 
     @State private var showingDeleteConfirmation = false
@@ -727,6 +1259,46 @@ private struct UpcomingItemRow: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundColor(.green)
+                }
+
+                if let onGenerateFollowUp {
+                    Button("Generate") {
+                        onGenerateFollowUp()
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(DesignSystem.Colors.accent)
+                }
+
+                if let onSnoozeFollowUp {
+                    Button("Snooze \(item.snoozeDays) Days") {
+                        onSnoozeFollowUp()
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.secondary)
+                }
+
+                if let onMarkFollowUpDone {
+                    Button("Mark Done") {
+                        onMarkFollowUpDone()
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.green)
+                }
+
+                if let onArchiveApplication {
+                    Button("Archive") {
+                        onArchiveApplication()
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.orange)
+                }
+
+                if let onDismissFollowUp {
+                    Button("Dismiss") {
+                        onDismissFollowUp()
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.secondary)
                 }
 
                 if let onEditTask {
@@ -797,6 +1369,7 @@ struct UpcomingItem: Identifiable {
     let kind: Kind
     let application: JobApplication
     let task: ApplicationTask?
+    let followUpStep: FollowUpStep?
     let title: String
     let notes: String?
     let dueDate: Date
@@ -856,6 +1429,17 @@ struct UpcomingItem: Identifiable {
         }
     }
 
+    var snoozeDays: Int {
+        switch followUpStep?.kind {
+        case .archiveSuggestion:
+            return 7
+        case .none:
+            return 3
+        default:
+            return 3
+        }
+    }
+
     static func build(from applications: [JobApplication], searchText: String = "") -> [UpcomingItem] {
         let lowercasedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
@@ -864,13 +1448,30 @@ struct UpcomingItem: Identifiable {
             .flatMap { application -> [UpcomingItem] in
                 var applicationItems: [UpcomingItem] = []
 
-                if let followUpDate = application.nextFollowUpDate {
+                if !application.activeFollowUpSteps.isEmpty {
+                    applicationItems.append(
+                        contentsOf: application.activeFollowUpSteps.map { step in
+                            UpcomingItem(
+                                id: "followup-\(step.id.uuidString)",
+                                kind: .followUp,
+                                application: application,
+                                task: nil,
+                                followUpStep: step,
+                                title: step.kind.displayName,
+                                notes: step.kind.rationaleText,
+                                dueDate: step.dueDate,
+                                priority: application.priority
+                            )
+                        }
+                    )
+                } else if let followUpDate = application.nextFollowUpDate {
                     applicationItems.append(
                         UpcomingItem(
                             id: "followup-\(application.id.uuidString)",
                             kind: .followUp,
                             application: application,
                             task: nil,
+                            followUpStep: nil,
                             title: "Follow up with \(application.companyName)",
                             notes: nil,
                             dueDate: followUpDate,
@@ -887,6 +1488,7 @@ struct UpcomingItem: Identifiable {
                         kind: .task,
                         application: application,
                         task: task,
+                        followUpStep: nil,
                         title: task.displayTitle,
                         notes: task.normalizedNotes,
                         dueDate: dueDate,
@@ -913,6 +1515,14 @@ struct UpcomingItem: Identifiable {
         return filteredItems.sorted { lhs, rhs in
             if lhs.dueDate != rhs.dueDate {
                 return lhs.dueDate < rhs.dueDate
+            }
+
+            if lhs.kind != rhs.kind {
+                return lhs.kind == .followUp && rhs.kind == .task
+            }
+
+            if lhs.followUpStep?.sequenceIndex != rhs.followUpStep?.sequenceIndex {
+                return (lhs.followUpStep?.sequenceIndex ?? Int.max) < (rhs.followUpStep?.sequenceIndex ?? Int.max)
             }
 
             if lhs.priority.sortOrder != rhs.priority.sortOrder {

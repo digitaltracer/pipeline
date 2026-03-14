@@ -1,6 +1,6 @@
 # Pipeline Privacy Policy
 
-Last updated: March 13, 2026
+Last updated: March 14, 2026
 
 ## Overview
 
@@ -32,11 +32,11 @@ Pipeline does not currently enforce API key rotation schedules, expiry reminders
 
 ## Google Calendar Integration
 
-If you connect Google Calendar, Pipeline stores Google sign-in credentials in your system Keychain and keeps imported calendar metadata in Pipeline's regular app data store so you can review and link events to applications.
+If you connect Google Calendar, Pipeline stores Google sign-in credentials in your system Keychain and keeps imported calendar metadata, linked interview sync state, and saved interview brief snapshots in Pipeline's regular app data store so you can review, sync, and reopen interview prep context from Google Calendar.
 
-Pipeline currently requests read-only Google Calendar access. It can read your selected calendars and event details, but it does not create, edit, or delete events in your Google account.
+Pipeline requests read access to your selected Google calendars and write access for interview events. It can read calendar lists and event details from the calendars you enable, and it can create, update, or delete Pipeline-managed interview and prep events in the writable calendar you choose.
 
-Disconnecting Google Calendar removes saved Google credentials from Keychain. Imported application activities and review history remain in Pipeline unless you delete them separately.
+Disconnecting Google Calendar removes saved Google credentials from Keychain. Imported application activities, linked interview metadata, and review history remain in Pipeline unless you delete them separately.
 
 ## LinkedIn CSV Import
 
@@ -54,6 +54,7 @@ When you use AI-powered features, Pipeline sends relevant content to the AI prov
 - Resume JSON or tailored resume content
 - Notes or instructions you enter to generate drafts or patch revisions
 - Company research prompts and related source content
+- Interview notes, interview history, and related company or role context when you generate interview prep or saved interview brief snapshots
 
 These requests are sent directly to the provider you configured, such as OpenAI, Anthropic, or Google Gemini. Their handling of that data is governed by their own terms and privacy policies.
 

@@ -203,6 +203,28 @@ struct InterviewPrepView: View {
                     }
                 }
 
+                if !result.questionsToAsk.isEmpty {
+                    sectionView(
+                        title: "Questions to Ask",
+                        icon: "quote.bubble.fill",
+                        color: .teal
+                    ) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(Array(result.questionsToAsk.enumerated()), id: \.offset) { _, question in
+                                HStack(alignment: .top, spacing: 10) {
+                                    Image(systemName: "arrow.up.right.circle.fill")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.teal)
+                                        .padding(.top, 2)
+                                    Text(question)
+                                        .font(.subheadline)
+                                        .textSelection(.enabled)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Company Research
                 if !result.companyResearchSummary.isEmpty {
                     sectionView(

@@ -70,6 +70,22 @@ struct ManualEntryFormView: View {
 
             LabeledTextField(label: "Location *", placeholder: "San Francisco, CA (Remote)", text: $viewModel.location)
 
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Seniority")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                Picker("Seniority", selection: $viewModel.seniorityOverride) {
+                    Text("Auto").tag(nil as SeniorityBand?)
+                    ForEach(SeniorityBand.allCases) { band in
+                        Text(band.title).tag(band as SeniorityBand?)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .appInput()
+            }
+
             if !cycleOptions.isEmpty {
                 LabeledOptionalPicker(label: "Search Cycle", selection: $viewModel.selectedCycleID) {
                     Text("No Cycle").tag(nil as UUID?)
@@ -284,9 +300,35 @@ struct ManualEntryFormView: View {
                             .textFieldStyle(.plain)
                             .appInput()
 
-                        TextField("Offer equity", text: $viewModel.offerEquityString)
+                        TextField("Equity (4yr est.)", text: $viewModel.offerEquityString)
                             .textFieldStyle(.plain)
                             .appInput()
+                    }
+
+                    HStack(spacing: 10) {
+                        TextField("PTO", text: $viewModel.offerPTOText)
+                            .textFieldStyle(.plain)
+                            .appInput()
+
+                        scoreField(label: "PTO Score", rating: scoreBinding($viewModel.offerPTOScoreString))
+
+                        TextField("Remote policy", text: $viewModel.offerRemotePolicyText)
+                            .textFieldStyle(.plain)
+                            .appInput()
+
+                        scoreField(label: "Remote Score", rating: scoreBinding($viewModel.offerRemotePolicyScoreString))
+                    }
+
+                    HStack(spacing: 18) {
+                        qualitativeScoreRow(
+                            title: "Growth",
+                            rating: scoreBinding($viewModel.offerGrowthScoreString)
+                        )
+
+                        qualitativeScoreRow(
+                            title: "Team/Culture",
+                            rating: scoreBinding($viewModel.offerTeamCultureFitScoreString)
+                        )
                     }
                 }
             }
@@ -401,6 +443,13 @@ struct ManualEntryFormView: View {
                 TextField("Role / Position *", text: $viewModel.role)
 
                 TextField("Location *", text: $viewModel.location)
+
+                Picker("Seniority", selection: $viewModel.seniorityOverride) {
+                    Text("Auto").tag(nil as SeniorityBand?)
+                    ForEach(SeniorityBand.allCases) { band in
+                        Text(band.title).tag(band as SeniorityBand?)
+                    }
+                }
 
                 TextField("Job URL", text: $viewModel.jobURL)
                     .onChange(of: viewModel.jobURL) { _, _ in
@@ -546,10 +595,38 @@ struct ManualEntryFormView: View {
                             .keyboardType(.numberPad)
                             #endif
 
-                        TextField("Offer Equity", text: $viewModel.offerEquityString)
+                        TextField("Equity (4yr est.)", text: $viewModel.offerEquityString)
                             #if os(iOS)
                             .keyboardType(.numberPad)
                             #endif
+                    }
+
+                    TextField("PTO", text: $viewModel.offerPTOText)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("PTO Score")
+                            .foregroundColor(.secondary)
+                        StarRating(rating: scoreBinding($viewModel.offerPTOScoreString), minRating: 0, size: 18)
+                    }
+
+                    TextField("Remote Policy", text: $viewModel.offerRemotePolicyText)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Remote Policy Score")
+                            .foregroundColor(.secondary)
+                        StarRating(rating: scoreBinding($viewModel.offerRemotePolicyScoreString), minRating: 0, size: 18)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Growth Score")
+                            .foregroundColor(.secondary)
+                        StarRating(rating: scoreBinding($viewModel.offerGrowthScoreString), minRating: 0, size: 18)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Team/Culture Fit")
+                            .foregroundColor(.secondary)
+                        StarRating(rating: scoreBinding($viewModel.offerTeamCultureFitScoreString), minRating: 0, size: 18)
                     }
                 }
             }
@@ -581,6 +658,35 @@ struct ManualEntryFormView: View {
                         displayedComponents: .date
                     )
                 }
+
+                Toggle("Posted Date", isOn: $viewModel.hasPostedAt)
+
+                if viewModel.hasPostedAt {
+                    DatePicker(
+                        "Posted On",
+                        selection: Binding(
+                            get: { viewModel.postedAt ?? Date() },
+                            set: { viewModel.postedAt = $0 }
+                        ),
+                        displayedComponents: .date
+                    )
+                }
+
+                Toggle("Application Deadline", isOn: $viewModel.hasApplicationDeadline)
+
+                if viewModel.hasApplicationDeadline {
+                    DatePicker(
+                        "Deadline",
+                        selection: Binding(
+                            get: { viewModel.applicationDeadline ?? Date().addingTimeInterval(86400 * 7) },
+                            set: { viewModel.applicationDeadline = $0 }
+                        ),
+                        displayedComponents: .date
+                    )
+                }
+
+                Toggle("Add to Apply Queue", isOn: $viewModel.isInApplyQueue)
+                    .disabled(viewModel.status != .saved)
             }
 
             // Description Section
@@ -671,6 +777,38 @@ struct ManualEntryFormView: View {
             return "\(cycle.name) (Active)"
         }
         return cycle.name
+    }
+
+    private func scoreBinding(_ stringBinding: Binding<String>) -> Binding<Int> {
+        Binding<Int>(
+            get: {
+                guard let value = Int(stringBinding.wrappedValue), value > 0 else { return 0 }
+                return min(max(value, 1), 5)
+            },
+            set: { stringBinding.wrappedValue = $0 <= 0 ? "" : String(min(max($0, 1), 5)) }
+        )
+    }
+
+    @ViewBuilder
+    private func scoreField(label: String, rating: Binding<Int>) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            StarRating(rating: rating, minRating: 0, size: 16)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func qualitativeScoreRow(title: String, rating: Binding<Int>) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            StarRating(rating: rating, minRating: 0, size: 18)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

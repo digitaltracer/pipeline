@@ -17,9 +17,20 @@ struct DashboardView: View {
     @State private var showingGoalManager = false
 
     let settingsViewModel: SettingsViewModel
+    var onboardingProgress: OnboardingProgress? = nil
+    var onOnboardingAction: ((OnboardingAction) -> Void)? = nil
+    var onHideOnboardingGuidance: (() -> Void)? = nil
 
-    init(settingsViewModel: SettingsViewModel = SettingsViewModel()) {
+    init(
+        settingsViewModel: SettingsViewModel = SettingsViewModel(),
+        onboardingProgress: OnboardingProgress? = nil,
+        onOnboardingAction: ((OnboardingAction) -> Void)? = nil,
+        onHideOnboardingGuidance: (() -> Void)? = nil
+    ) {
         self.settingsViewModel = settingsViewModel
+        self.onboardingProgress = onboardingProgress
+        self.onOnboardingAction = onOnboardingAction
+        self.onHideOnboardingGuidance = onHideOnboardingGuidance
     }
 
     private var refreshToken: String {
@@ -1243,6 +1254,15 @@ struct DashboardView: View {
 
     private var emptyStateCard: some View {
         VStack(alignment: .leading, spacing: 16) {
+            if let onboardingProgress, onboardingProgress.shouldShowSetupGuidance, let onOnboardingAction {
+                OnboardingChecklistCard(
+                    title: "Finish Core Setup",
+                    progress: onboardingProgress,
+                    onAction: onOnboardingAction,
+                    onMute: onHideOnboardingGuidance
+                )
+            }
+
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -1256,13 +1276,23 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("No analytics yet")
                         .font(.title3.weight(.semibold))
-                    Text("Add a few applications or create a search cycle to populate the dashboard.")
+                    Text("Add applications or create a search cycle to populate the dashboard with real momentum, goals, and conversion data.")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
             }
 
             HStack(spacing: 10) {
+                if let onOnboardingAction {
+                    dashboardToolbarButton(
+                        title: "Add Application",
+                        systemImage: "plus.circle.fill",
+                        accent: true
+                    ) {
+                        onOnboardingAction(.addApplication)
+                    }
+                }
+
                 dashboardToolbarButton(
                     title: "Manage Cycles",
                     systemImage: "arrow.triangle.branch",
@@ -1783,6 +1813,7 @@ private struct GoalManagementSheet: View {
                 InterviewLearningSnapshot.self,
                 RejectionLearningSnapshot.self,
                 ApplicationTask.self,
+                FollowUpStep.self,
                 ApplicationChecklistSuggestion.self,
                 ApplicationAttachment.self,
                 CoverLetterDraft.self,

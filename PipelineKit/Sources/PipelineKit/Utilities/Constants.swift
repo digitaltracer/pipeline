@@ -58,9 +58,14 @@ public enum Constants {
         public static let weeklyDigestWeekday = "weeklyDigestWeekday"
         public static let weeklyDigestHour = "weeklyDigestHour"
         public static let weeklyDigestMinute = "weeklyDigestMinute"
+        public static let applyQueueDailyTarget = "applyQueueDailyTarget"
+        public static let applyQueueNotificationHour = "applyQueueNotificationHour"
+        public static let applyQueueNotificationMinute = "applyQueueNotificationMinute"
         public static let analyticsBaseCurrency = "analyticsBaseCurrency"
         public static let lastSyncDate = "lastSyncDate"
         public static let hasCompletedOnboarding = "hasCompletedOnboarding"
+        public static let onboardingGuidanceMuted = "onboardingGuidanceMuted"
+        public static let onboardingLastSeenVersion = "onboardingLastSeenVersion"
     }
 
     // MARK: - Notification Identifiers

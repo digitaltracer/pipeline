@@ -40,7 +40,7 @@ func writeMessage(_ message: [String: Any]) {
     lengthBytes[3] = UInt8((length >> 24) & 0xFF)
 
     fwrite(lengthBytes, 1, 4, stdout)
-    data.withUnsafeBytes { buffer in
+    _ = data.withUnsafeBytes { buffer in
         fwrite(buffer.baseAddress, 1, data.count, stdout)
     }
     fflush(stdout)

@@ -39,7 +39,7 @@ function withTimeout(promise, timeoutMs, message) {
 
 runtime.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "saveJobToPipeline") {
-    handleSave(request.data)
+    handleSave(request.data, Boolean(request.saveForLater))
       .then((result) => sendResponse(result))
       .catch((err) => sendResponse({ success: false, error: err.message }));
     return true; // async
@@ -93,7 +93,7 @@ async function sendNativeMessage(command, payload) {
 // Command handlers
 // ---------------------------------------------------------------------------
 
-async function handleSave(jobData) {
+async function handleSave(jobData, saveForLater = false) {
   try {
     const response = await sendNativeMessage("parse", {
       url: jobData.url,
@@ -102,6 +102,9 @@ async function handleSave(jobData) {
       location: jobData.location,
       description: jobData.description,
       platform: jobData.platform,
+      postedAt: jobData.postedAt,
+      applicationDeadline: jobData.applicationDeadline,
+      saveForLater,
     });
     return response;
   } catch (err) {

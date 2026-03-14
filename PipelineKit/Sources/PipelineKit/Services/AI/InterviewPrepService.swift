@@ -5,17 +5,20 @@ import Foundation
 public struct InterviewPrepResult: Sendable {
     public let likelyQuestions: [String]
     public let talkingPoints: [String]
+    public let questionsToAsk: [String]
     public let companyResearchSummary: String
     public let usage: AIUsageMetrics?
 
     public init(
         likelyQuestions: [String],
         talkingPoints: [String],
+        questionsToAsk: [String] = [],
         companyResearchSummary: String,
         usage: AIUsageMetrics? = nil
     ) {
         self.likelyQuestions = likelyQuestions
         self.talkingPoints = talkingPoints
+        self.questionsToAsk = questionsToAsk
         self.companyResearchSummary = companyResearchSummary
         self.usage = usage
     }
@@ -44,12 +47,14 @@ public enum InterviewPrepService {
         {
           "likelyQuestions": [string],
           "talkingPoints": [string],
+          "questionsToAsk": [string],
           "companyResearchSummary": string
         }
 
         Rules:
         - likelyQuestions: 8-12 specific interview questions the candidate is likely to face, tailored to the role, company, and interview stage. Include a mix of behavioral, technical, and role-specific questions.
         - talkingPoints: 5-8 concise talking points the candidate should prepare, based on the job description and their notes. Each should be actionable and specific.
+        - questionsToAsk: 4-6 smart questions the candidate should ask the interviewer, tailored to the team, role, and interview stage.
         - companyResearchSummary: A 150-250 word summary of key company information the candidate should know, including recent news, culture, products, and competitive position. If you don't have specific company data, provide guidance on what to research.
         - Tailor the content to the interview stage (e.g., phone screen vs. final round).
         - Output raw JSON only. No markdown fences. No prose outside the JSON.
@@ -136,6 +141,11 @@ public enum InterviewPrepService {
             ?? (json["points"] as? [String])
             ?? []
 
+        let questionsToAsk = (json["questionsToAsk"] as? [String])
+            ?? (json["questions_to_ask"] as? [String])
+            ?? (json["askQuestions"] as? [String])
+            ?? []
+
         let summary = (json["companyResearchSummary"] as? String)
             ?? (json["company_research_summary"] as? String)
             ?? (json["companySummary"] as? String)
@@ -145,6 +155,7 @@ public enum InterviewPrepService {
         return InterviewPrepResult(
             likelyQuestions: questions,
             talkingPoints: talkingPoints,
+            questionsToAsk: questionsToAsk,
             companyResearchSummary: summary,
             usage: usage
         )

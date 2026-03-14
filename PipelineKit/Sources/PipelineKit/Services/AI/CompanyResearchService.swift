@@ -73,6 +73,7 @@ public struct CompanyResearchSalaryFinding: Sendable, Equatable {
     public let notes: String?
     public let confidenceNotes: String?
     public let currency: Currency
+    public let seniority: SeniorityBand?
     public let minBaseCompensation: Int?
     public let maxBaseCompensation: Int?
     public let minTotalCompensation: Int?
@@ -86,6 +87,7 @@ public struct CompanyResearchSalaryFinding: Sendable, Equatable {
         notes: String? = nil,
         confidenceNotes: String? = nil,
         currency: Currency,
+        seniority: SeniorityBand? = nil,
         minBaseCompensation: Int? = nil,
         maxBaseCompensation: Int? = nil,
         minTotalCompensation: Int? = nil,
@@ -98,6 +100,7 @@ public struct CompanyResearchSalaryFinding: Sendable, Equatable {
         self.notes = notes
         self.confidenceNotes = confidenceNotes
         self.currency = currency
+        self.seniority = seniority
         self.minBaseCompensation = minBaseCompensation
         self.maxBaseCompensation = maxBaseCompensation
         self.minTotalCompensation = minTotalCompensation
@@ -393,6 +396,7 @@ public enum CompanyResearchService {
                     notes: finding.notes,
                     confidenceNotes: finding.confidenceNotes,
                     currency: finding.currency,
+                    seniority: finding.seniority,
                     minBaseCompensation: finding.minBaseCompensation,
                     maxBaseCompensation: finding.maxBaseCompensation,
                     minTotalCompensation: finding.minTotalCompensation,
@@ -410,6 +414,7 @@ public enum CompanyResearchService {
                     notes: finding.notes,
                     confidenceNotes: finding.confidenceNotes,
                     currency: finding.currency,
+                    seniority: finding.seniority,
                     minBaseCompensation: finding.minBaseCompensation,
                     maxBaseCompensation: finding.maxBaseCompensation,
                     minTotalCompensation: finding.minTotalCompensation,
@@ -483,13 +488,13 @@ public enum CompanyResearchService {
             ),
             SearchIntent(
                 title: "Glassdoor Search",
-                query: query("glassdoor reviews compensation"),
+                query: query("glassdoor salary compensation total pay"),
                 domains: ["glassdoor.com"],
                 sourceKind: .glassdoor
             ),
             SearchIntent(
                 title: "Levels.fyi Search",
-                query: query("levels.fyi compensation"),
+                query: query("levels.fyi salary compensation total compensation"),
                 domains: ["levels.fyi"],
                 sourceKind: .levelsFYI
             ),
@@ -500,8 +505,8 @@ public enum CompanyResearchService {
                 sourceKind: .teamBlind
             ),
             SearchIntent(
-                title: "LinkedIn Search",
-                query: query("linkedin company hiring"),
+                title: "LinkedIn Salary Search",
+                query: query("linkedin salary compensation pay insights"),
                 domains: ["linkedin.com"],
                 sourceKind: .linkedIn
             )
@@ -751,7 +756,7 @@ public enum CompanyResearchService {
         return lines.joined(separator: "\n\n")
     }
 
-    private static func parseResponse(
+    static func parseResponse(
         _ rawText: String,
         usage: AIUsageMetrics?,
         sourcePayloads: [CompanyResearchSourcePayload]
@@ -792,6 +797,12 @@ public enum CompanyResearchService {
                     notes: item["notes"] as? String,
                     confidenceNotes: item["confidenceNotes"] as? String ?? item["confidence_notes"] as? String,
                     currency: currency,
+                    seniority: (item["seniority"] as? String)
+                        .flatMap { SeniorityBand(rawValue: $0.lowercased()) }
+                        ?? (item["seniorityBand"] as? String)
+                        .flatMap { SeniorityBand(rawValue: $0.lowercased()) }
+                        ?? (item["seniority_band"] as? String)
+                        .flatMap { SeniorityBand(rawValue: $0.lowercased()) },
                     minBaseCompensation: intValue(item["minBaseCompensation"] ?? item["min_base_compensation"]),
                     maxBaseCompensation: intValue(item["maxBaseCompensation"] ?? item["max_base_compensation"]),
                     minTotalCompensation: intValue(item["minTotalCompensation"] ?? item["min_total_compensation"]),
@@ -1250,6 +1261,7 @@ public enum CompanyResearchService {
           "sourceName": string,
           "sourceURL": string | null,
           "currency": string,
+          "seniority": "intern" | "junior" | "mid" | "senior" | "staff" | "leadership" | null,
           "minBaseCompensation": number | null,
           "maxBaseCompensation": number | null,
           "minTotalCompensation": number | null,
@@ -1265,6 +1277,7 @@ public enum CompanyResearchService {
     - Every summary claim must be supported by the supplied evidence.
     - Summary should be 120-220 words and explicitly mention uncertainty when the evidence is thin.
     - Salary findings should only be included when the evidence clearly supports the range.
+    - Include seniority when the evidence clearly implies it; otherwise return null.
     - Preserve source URLs exactly when present in the evidence.
     - Do not invent Glassdoor, Levels.fyi, TeamBlind, or LinkedIn URLs unless they are clearly present in the evidence.
     - Output raw JSON only.

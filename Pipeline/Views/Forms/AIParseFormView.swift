@@ -3,9 +3,8 @@ import PipelineKit
 
 struct AIParseFormView: View {
     @Bindable var aiViewModel: AIParsingViewModel
-    @Bindable var formViewModel: AddEditApplicationViewModel
-    let onApplyParsedData: () -> Void
     let onOpenSettings: (() -> Void)?
+    var onReplayOnboarding: (() -> Void)? = nil
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -17,40 +16,133 @@ struct AIParseFormView: View {
             }
         }
         .onAppear { aiViewModel.refreshConfiguration() }
+        .animation(.easeInOut(duration: 0.18), value: aiViewModel.isLoading)
+        .animation(.easeInOut(duration: 0.18), value: aiViewModel.parsedData != nil)
+    }
+
+    private var configuredState: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    DesignSystem.Colors.accent,
+                                    DesignSystem.Colors.accent.opacity(0.70)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+                .frame(width: 40, height: 40)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Smart Parse")
+                        .font(.headline)
+
+                    Text("Paste a job URL and let AI extract the details")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 8) {
+                Image(systemName: aiViewModel.parseProvider.icon)
+                    .foregroundColor(DesignSystem.Colors.accent)
+
+                Text(providerSummary)
+                    .font(.caption.weight(.medium))
+                    .foregroundColor(.secondary)
+            }
+
+            HStack(spacing: 10) {
+                Image(systemName: "link")
+                    .foregroundColor(.secondary)
+
+                TextField("https://linkedin.com/jobs/view/123456...", text: $aiViewModel.jobURL)
+                    .textFieldStyle(.plain)
+                    .onSubmit {
+                        triggerParse()
+                    }
+            }
+            .appInput()
+
+            Button(action: triggerParse) {
+                HStack(spacing: 8) {
+                    if aiViewModel.isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "sparkles")
+                    }
+
+                    Text(aiViewModel.isLoading ? "Parsing Job URL" : "Parse Job URL")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(DesignSystem.Colors.accent)
+            .controlSize(.large)
+            .disabled(cannotParse)
+
+            if let error = aiViewModel.error {
+                errorBanner(error)
+            }
+
+            if aiViewModel.isLoading {
+                loadingRow
+            } else if let data = aiViewModel.parsedData {
+                parsedPreview(data)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .appCard(cornerRadius: 18, elevated: true, shadow: false)
     }
 
     private var notConfiguredState: some View {
-        VStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.orange.opacity(colorScheme == .dark ? 0.18 : 0.12))
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundColor(.orange)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.orange.opacity(colorScheme == .dark ? 0.18 : 0.12))
+
+                    Image(systemName: "key.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.orange)
+                }
+                .frame(width: 40, height: 40)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("AI Parse needs setup")
+                        .font(.headline)
+
+                    Text("Add a provider API key in Settings before parsing a job URL.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
             }
-            .frame(width: 54, height: 54)
-
-            Text("AI Not Configured")
-                .font(.headline)
-
-            Text("Add at least one provider API key in settings to use AI-powered job parsing.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 360)
 
             #if os(macOS)
             if let onOpenSettings {
-                Button("Go to Settings") {
+                Button("Open AI Settings") {
                     onOpenSettings()
                 }
-                .frame(width: 160)
                 .buttonStyle(.borderedProminent)
                 .tint(DesignSystem.Colors.accent)
             } else {
                 SettingsLink {
-                    Text("Go to Settings")
-                        .frame(width: 160)
+                    Text("Open AI Settings")
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(DesignSystem.Colors.accent)
@@ -60,112 +152,60 @@ struct AIParseFormView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
             #endif
+
+            VStack(alignment: .leading, spacing: 6) {
+                Label("Add a provider key", systemImage: "key.fill")
+                Label("Return here to parse job links", systemImage: "wand.and.stars")
+                Label("Review the draft before saving", systemImage: "checkmark.shield")
+            }
+            .font(.caption)
+            .foregroundColor(.secondary)
+
+            if let onReplayOnboarding {
+                Button("See Guided Tour Again", action: onReplayOnboarding)
+                    .buttonStyle(.bordered)
+            }
+
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(24)
-        .appCard(cornerRadius: 16, elevated: true, shadow: false)
-        .padding(.horizontal, 24)
-        .padding(.top, 24)
+        .padding(22)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .appCard(cornerRadius: 18, elevated: true, shadow: false)
     }
 
-    private var configuredState: some View {
-        VStack(spacing: 16) {
-            VStack(spacing: 8) {
-                Image(systemName: "wand.and.stars")
-                    .font(.system(size: 34))
-                    .foregroundStyle(DesignSystem.Colors.accent.gradient)
+    private var loadingRow: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+                .tint(DesignSystem.Colors.accent)
 
-                Text("AI-Powered Job Parsing")
-                    .font(.headline)
+            Text("Fetching the page and extracting fields...")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 2)
+    }
 
-                Text("Paste a job posting URL and let AI extract the details for you.")
-                    .font(.subheadline)
+    private func parsedPreview(_ data: ParsedJobData) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Parsed Preview")
+                    .font(.subheadline.weight(.semibold))
+
+                Spacer()
+
+                Text("\(extractedFieldCount(from: data)) fields found")
+                    .font(.caption)
                     .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
             }
-            .padding(.top, 8)
-
-            providerSelectionSection
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("Job URL")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-
-                HStack(spacing: 10) {
-                    TextField("https://linkedin.com/jobs/...", text: $aiViewModel.jobURL)
-                        .textFieldStyle(.plain)
-                        .appInput()
-
-                    Button {
-                        Task { await aiViewModel.parseJobURL() }
-                    } label: {
-                        if aiViewModel.isLoading {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Text("Parse")
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(DesignSystem.Colors.accent)
-                    .disabled(aiViewModel.jobURL.isEmpty || aiViewModel.isLoading)
-                }
-            }
-
-            if let error = aiViewModel.error {
-                HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.red)
-                    Text(error)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                    Spacer()
-                }
-                .padding(12)
-                .background(Color.red.opacity(colorScheme == .dark ? 0.14 : 0.10))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-
-            if let data = aiViewModel.parsedData {
-                parsedDataPreview(data)
-            }
-
-            Spacer()
-
-            if aiViewModel.parsedData != nil {
-                Button {
-                    aiViewModel.applyToViewModel(formViewModel)
-                    onApplyParsedData()
-                } label: {
-                    Label("Apply & Continue to Form", systemImage: "arrow.right.circle.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(DesignSystem.Colors.accent)
-                .controlSize(.large)
-            }
-        }
-        .padding(24)
-    }
-
-    @ViewBuilder
-    private func parsedDataPreview(_ data: ParsedJobData) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Extracted Information")
-                .font(.headline)
-
-            VStack(alignment: .leading, spacing: 8) {
                 ParsedFieldRow(label: "Company", value: data.companyName)
                 ParsedFieldRow(label: "Role", value: data.role)
                 ParsedFieldRow(label: "Location", value: data.location)
 
-                if let min = data.salaryMin, let max = data.salaryMax {
-                    ParsedFieldRow(
-                        label: "Salary",
-                        value: data.currency.formatRange(min: min, max: max) ?? ""
-                    )
-                } else if let min = data.salaryMin {
-                    ParsedFieldRow(label: "Salary", value: "\(data.currency.format(min))+")
+                if let salary = parsedSalaryText(from: data) {
+                    ParsedFieldRow(label: "Salary", value: salary)
                 }
 
                 if !data.jobDescription.isEmpty {
@@ -173,88 +213,113 @@ struct AIParseFormView: View {
                         Text("Description")
                             .font(.caption)
                             .foregroundColor(.secondary)
+
                         Text(data.jobDescription)
                             .font(.caption)
-                            .lineLimit(4)
+                            .foregroundColor(.secondary)
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
-            .padding(14)
-            .appCard(cornerRadius: 14, elevated: true, shadow: false)
+
+            Text("Use Apply & Continue below to move this into Manual Entry before saving.")
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
         .padding(16)
-        .appCard(cornerRadius: 16, elevated: true, shadow: false)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(DesignSystem.Colors.surface(colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+        )
     }
 
-    @ViewBuilder
-    private var providerSelectionSection: some View {
-        if aiViewModel.configuredProviders.count > 1 {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("AI Provider")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+    private func errorBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.red)
 
-                HStack(spacing: 10) {
-                    Image(systemName: aiViewModel.parseProvider.icon)
-                        .foregroundColor(DesignSystem.Colors.accent)
+            Text(message)
+                .font(.caption)
+                .foregroundColor(.red)
+                .fixedSize(horizontal: false, vertical: true)
 
-                    Picker("AI Provider", selection: $aiViewModel.parseProvider) {
-                        ForEach(aiViewModel.configuredProviders) { provider in
-                            Text(provider.rawValue).tag(provider)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .appInput()
-
-                if !aiViewModel.parseModel.isEmpty {
-                    Text("Using model \(aiViewModel.parseModel)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-        } else if let provider = aiViewModel.configuredProviders.first {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("AI Provider")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-
-                HStack(spacing: 8) {
-                    Image(systemName: provider.icon)
-                        .foregroundColor(DesignSystem.Colors.accent)
-                    Text(provider.rawValue)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                    Spacer()
-                }
-                .appInput()
-
-                if !aiViewModel.parseModel.isEmpty {
-                    Text("Using model \(aiViewModel.parseModel)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
+            Spacer()
         }
+        .padding(12)
+        .background(Color.red.opacity(colorScheme == .dark ? 0.14 : 0.08))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.red.opacity(colorScheme == .dark ? 0.24 : 0.14), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var providerSummary: String {
+        if aiViewModel.parseModel.isEmpty {
+            return aiViewModel.parseProvider.rawValue
+        }
+
+        return "\(aiViewModel.parseProvider.rawValue) • \(aiViewModel.parseModel)"
+    }
+
+    private var cannotParse: Bool {
+        aiViewModel.jobURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || aiViewModel.isLoading
+    }
+
+    private func triggerParse() {
+        guard !cannotParse else { return }
+
+        Task {
+            await aiViewModel.parseJobURL()
+        }
+    }
+
+    private func parsedSalaryText(from data: ParsedJobData) -> String? {
+        if let min = data.salaryMin, let max = data.salaryMax {
+            return data.currency.formatRange(min: min, max: max)
+        }
+
+        if let min = data.salaryMin {
+            return "\(data.currency.format(min))+"
+        }
+
+        return nil
+    }
+
+    private func extractedFieldCount(from data: ParsedJobData) -> Int {
+        var count = 0
+
+        if !data.companyName.isEmpty { count += 1 }
+        if !data.role.isEmpty { count += 1 }
+        if !data.location.isEmpty { count += 1 }
+        if data.salaryMin != nil || data.salaryMax != nil { count += 1 }
+        if !data.jobDescription.isEmpty { count += 1 }
+
+        return count
     }
 }
 
-struct ParsedFieldRow: View {
+private struct ParsedFieldRow: View {
     let label: String
     let value: String
 
     var body: some View {
-        HStack {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(label)
                 .font(.caption)
                 .foregroundColor(.secondary)
-                .frame(width: 80, alignment: .leading)
+                .frame(width: 70, alignment: .leading)
 
             Text(value.isEmpty ? "Not found" : value)
                 .font(.subheadline)
                 .foregroundColor(value.isEmpty ? .secondary : .primary)
+
+            Spacer(minLength: 0)
         }
     }
 }
@@ -262,8 +327,7 @@ struct ParsedFieldRow: View {
 #Preview {
     AIParseFormView(
         aiViewModel: AIParsingViewModel(),
-        formViewModel: AddEditApplicationViewModel(),
-        onApplyParsedData: {},
-        onOpenSettings: nil
+        onOpenSettings: nil,
+        onReplayOnboarding: nil
     )
 }

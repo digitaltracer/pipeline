@@ -39,6 +39,7 @@ private struct IntegrationsHubView: View {
     @Query(sort: \GoogleCalendarAccount.updatedAt, order: .reverse) private var accounts: [GoogleCalendarAccount]
     @Query(sort: \GoogleCalendarSubscription.title) private var subscriptions: [GoogleCalendarSubscription]
     @Query(sort: \GoogleCalendarImportRecord.startDate) private var importRecords: [GoogleCalendarImportRecord]
+    @Query(sort: \GoogleCalendarInterviewLink.updatedAt, order: .reverse) private var interviewLinks: [GoogleCalendarInterviewLink]
     @Query(sort: \NetworkImportBatch.importedAt, order: .reverse) private var networkImportBatches: [NetworkImportBatch]
     @Query(sort: \ImportedNetworkConnection.updatedAt, order: .reverse) private var importedConnections: [ImportedNetworkConnection]
     @Query(sort: \CompanyAlias.updatedAt, order: .reverse) private var companyAliases: [CompanyAlias]
@@ -70,6 +71,14 @@ private struct IntegrationsHubView: View {
 
     private var selectedSubscriptions: [GoogleCalendarSubscription] {
         subscriptions.filter(\.isSelected)
+    }
+
+    private var writeTargetSubscription: GoogleCalendarSubscription? {
+        subscriptions.first(where: \.isWriteTarget)
+    }
+
+    private var activeInterviewLinks: [GoogleCalendarInterviewLink] {
+        interviewLinks.filter { $0.syncStatus == .active }
     }
 
     private var pendingReviewCount: Int {
@@ -138,13 +147,14 @@ private struct IntegrationsHubView: View {
 
         if let connectedAccount {
             if reviewItems.isEmpty {
-                return "Google Calendar is connected for \(connectedAccount.email). Pipeline is monitoring \(selectedSubscriptions.count) selected calendar\(selectedSubscriptions.count == 1 ? "" : "s") with no events waiting for review."
+                let writeSummary = writeTargetSubscription?.title ?? "No write target selected"
+                return "Google Calendar is connected for \(connectedAccount.email). Pipeline is monitoring \(selectedSubscriptions.count) read calendar\(selectedSubscriptions.count == 1 ? "" : "s"), writing interviews to \(writeSummary), and tracking \(activeInterviewLinks.count) linked interview\(activeInterviewLinks.count == 1 ? "" : "s")."
             }
 
             return "Google Calendar is connected for \(connectedAccount.email). \(reviewItems.count) event\(reviewItems.count == 1 ? "" : "s") need review before Pipeline creates or updates interview activities."
         }
 
-        return "Connect Google Calendar to import interview events in read-only mode, choose exactly which calendars Pipeline can read, and keep every import behind a manual review queue."
+        return "Connect Google Calendar to import interview events, choose exactly which calendars Pipeline can read, assign one writable calendar for synced interview events, and keep external events behind a manual review queue."
     }
 
     private var lastSyncValue: String {
@@ -186,25 +196,26 @@ private struct IntegrationsHubView: View {
             id: .googleCalendar,
             title: "Google Calendar",
             category: "Calendar Sync",
-            description: "Import interview events in read-only mode, scope access to selected calendars, and review every change before it lands in the application timeline.",
+            description: "Read selected calendars, write Pipeline-managed interview events to one calendar, and keep external changes visible through review and sync state.",
             status: status,
             accountLabel: connectedAccount?.email ?? "No account connected",
             sourceSummary: subscriptions.isEmpty
                 ? "No calendars loaded"
-                : "\(selectedSubscriptions.count) of \(subscriptions.count) calendars selected",
+                : "\(selectedSubscriptions.count) read • \(writeTargetSubscription?.title ?? "no write target")",
             queueSummary: reviewItems.isEmpty ? "Queue clear" : "\(reviewItems.count) events waiting",
             pendingReviewCount: reviewItems.count,
             enabledSourceCount: selectedSubscriptions.count,
             totalSourceCount: subscriptions.count,
             capabilities: [
-                "Read-only permissions",
+                "Interview event sync",
                 "Source-level controls",
-                "Review queue"
+                "Review queue",
+                "Linked interview tracking"
             ],
             note: !GoogleOAuthService.shared.isClientConfigured
                 ? "Finish the OAuth callback configuration before enabling this provider."
-                : connectedAccount != nil
-                    ? "Manage authentication, calendar coverage, and pending event decisions for this provider."
+                    : connectedAccount != nil
+                    ? "Manage authentication, read coverage, outbound write target, and interview sync decisions for this provider."
                     : "This provider is ready to connect and can be managed without redesigning the rest of the page."
         )
     }
@@ -498,6 +509,7 @@ private struct IntegrationsHubView: View {
             googleAccountSection
             googleCalendarCoverageSection
             googleReviewQueueSection
+            googleLinkedInterviewsSection
         case .linkedInCSV:
             linkedInImportSection
             linkedInAliasSection
@@ -570,7 +582,7 @@ private struct IntegrationsHubView: View {
                             }
                         }
 
-                        Text("Pipeline only requests read-only Google Calendar scopes. Imported events still require manual review before they become application activities.")
+                        Text("Pipeline reads selected calendars, writes Pipeline-managed interview events to one chosen calendar, and still holds unmatched external events in a review queue.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -597,7 +609,7 @@ private struct IntegrationsHubView: View {
                     title: "Calendar Coverage",
                     subtitle: "Choose which Google calendars Pipeline can scan for interview activity. Only selected calendars participate in sync.",
                     systemImage: "calendar",
-                    badge: subscriptions.isEmpty ? "Not Loaded" : "\(selectedSubscriptions.count) Selected",
+                    badge: subscriptions.isEmpty ? "Not Loaded" : "\(selectedSubscriptions.count) Read • \(writeTargetSubscription == nil ? "No Write Target" : "Write Ready")",
                     badgeTint: subscriptions.isEmpty ? .secondary : .blue
                 )
 
@@ -611,7 +623,7 @@ private struct IntegrationsHubView: View {
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
-                            Text("\(selectedSubscriptions.count) of \(subscriptions.count) calendars selected")
+                            Text("\(selectedSubscriptions.count) read calendar\(selectedSubscriptions.count == 1 ? "" : "s") selected")
                                 .font(.subheadline.weight(.medium))
                             Spacer()
                             Text(calendarRefreshDetail)
@@ -634,9 +646,70 @@ private struct IntegrationsHubView: View {
                                     } catch {
                                         errorMessage = error.localizedDescription
                                     }
+                                },
+                                onSetWriteTarget: {
+                                    do {
+                                        try GoogleCalendarImportCoordinator.shared.setWriteTarget(
+                                            subscription,
+                                            in: modelContext
+                                        )
+                                    } catch {
+                                        errorMessage = error.localizedDescription
+                                    }
                                 }
                             )
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    private var googleLinkedInterviewsSection: some View {
+        IntegrationSurfaceCard {
+            VStack(alignment: .leading, spacing: 18) {
+                sectionHeader(
+                    title: "Linked Interviews",
+                    subtitle: "Track Pipeline-managed interview links separately from the external review queue so drift, deletions, and permission issues are visible.",
+                    systemImage: "link",
+                    badge: interviewLinks.isEmpty ? "None" : "\(interviewLinks.count) Linked",
+                    badgeTint: interviewLinks.isEmpty ? .secondary : .blue
+                )
+
+                if interviewLinks.isEmpty {
+                    IntegrationEmptyState(
+                        title: "No managed interview links yet",
+                        message: "Once Pipeline creates or accepts synced interview events, their link health will appear here.",
+                        systemImage: "link.badge.plus",
+                        tint: .secondary
+                    )
+                } else {
+                    ForEach(interviewLinks.prefix(8)) { link in
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: link.syncStatus.icon)
+                                .foregroundStyle(link.syncStatus == .active ? .green : .orange)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(link.remoteCalendarName)
+                                    .font(.subheadline.weight(.semibold))
+                                Text(link.ownership.displayName)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
+                            IntegrationPill(
+                                text: link.syncStatus.displayName,
+                                systemImage: link.syncStatus.icon,
+                                tint: link.syncStatus == .active ? .green : .orange
+                            )
+                        }
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.secondary.opacity(0.07))
+                        )
                     }
                 }
             }
@@ -680,10 +753,12 @@ private struct IntegrationsHubView: View {
                                 record: record,
                                 applications: applications,
                                 onAccept: { application in
-                                    do {
-                                        try GoogleCalendarImportCoordinator.shared.acceptImport(record, into: application, in: modelContext)
-                                    } catch {
-                                        errorMessage = error.localizedDescription
+                                    runTask("Importing interview event…") {
+                                        try await GoogleCalendarImportCoordinator.shared.acceptImport(
+                                            record,
+                                            into: application,
+                                            in: modelContext
+                                        )
                                     }
                                 },
                                 onIgnore: {
@@ -1303,6 +1378,7 @@ private struct GoogleCalendarSubscriptionRow: View {
     let isConnected: Bool
     let isBusy: Bool
     let onSelectionChange: (Bool) -> Void
+    let onSetWriteTarget: () -> Void
 
     private var tint: Color {
         if let colorHex = subscription.colorHex, let parsed = Color(googleCalendarHex: colorHex) {
@@ -1328,7 +1404,10 @@ private struct GoogleCalendarSubscriptionRow: View {
                 }
 
                 HStack(spacing: 12) {
-                    Text(subscription.isSelected ? "Import enabled" : "Not imported")
+                    Text(subscription.isSelected ? "Read enabled" : "Read disabled")
+                    if subscription.isWriteTarget {
+                        Text("Write target")
+                    }
                     if let lastSyncedAt = subscription.lastSyncedAt {
                         Text("Last synced \(lastSyncedAt.integrationRelativeDescription)")
                     }
@@ -1339,12 +1418,28 @@ private struct GoogleCalendarSubscriptionRow: View {
 
             Spacer()
 
-            Toggle("", isOn: Binding(
-                get: { subscription.isSelected },
-                set: onSelectionChange
-            ))
-            .labelsHidden()
-            .disabled(!isConnected || isBusy)
+            HStack(spacing: 10) {
+                if subscription.isWriteTarget {
+                    Button("Write Target") {
+                        onSetWriteTarget()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!isConnected || isBusy)
+                } else {
+                    Button("Use for Writes") {
+                        onSetWriteTarget()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!isConnected || isBusy)
+                }
+
+                Toggle("", isOn: Binding(
+                    get: { subscription.isSelected },
+                    set: onSelectionChange
+                ))
+                .labelsHidden()
+                .disabled(!isConnected || isBusy)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)

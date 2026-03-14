@@ -9,7 +9,9 @@ import AppKit
 public struct NotificationOpenRequest: Equatable, Sendable {
     public enum Kind: String, Sendable {
         case interviewDebrief
+        case interviewPrepBrief
         case weeklyDigest
+        case applyQueue
     }
 
     public let kind: Kind
@@ -43,11 +45,14 @@ public final class NotificationService: NSObject {
         static let followUp = "FOLLOWUP_REMINDER"
         static let task = "TASK_REMINDER"
         static let interviewDebrief = "INTERVIEW_DEBRIEF"
+        static let interviewPrepBrief = "INTERVIEW_PREP_BRIEF"
         static let weeklyDigest = "WEEKLY_DIGEST"
+        static let applyQueue = "APPLY_QUEUE"
     }
 
     private enum NotificationIdentifier {
         static let weeklyDigestReminder = "weekly-digest-reminder"
+        static let applyQueueReminder = "apply-queue-reminder"
     }
 
     private enum NotificationUserInfoKey {
@@ -261,6 +266,52 @@ public final class NotificationService: NSObject {
         }
     }
 
+    public func scheduleInterviewPrepBriefReminder(
+        for activityID: UUID,
+        applicationID: UUID,
+        companyName: String,
+        role: String,
+        interviewDate: Date,
+        snapshot: InterviewBriefSnapshot?
+    ) async {
+        await removeInterviewPrepBriefNotifications(for: activityID, applicationID: applicationID)
+
+        var dateComponents = Calendar.current.dateComponents([.year, .month, .day], from: interviewDate)
+        dateComponents.hour = 9
+        dateComponents.minute = 0
+
+        guard let fireDate = Calendar.current.date(from: dateComponents),
+              fireDate > Date() else {
+            return
+        }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Interview brief: \(companyName)"
+        content.body = snapshot?.notificationSummary ?? "Interview today for \(role). Open Pipeline for your prep brief, talking points, and questions."
+        content.sound = .default
+        content.categoryIdentifier = NotificationCategory.interviewPrepBrief
+        content.userInfo = [
+            NotificationUserInfoKey.applicationID: applicationID.uuidString,
+            NotificationUserInfoKey.interviewActivityID: activityID.uuidString,
+            NotificationUserInfoKey.openKind: NotificationOpenRequest.Kind.interviewPrepBrief.rawValue
+        ]
+
+        let request = UNNotificationRequest(
+            identifier: interviewPrepBriefNotificationIdentifier(
+                applicationID: applicationID,
+                activityID: activityID
+            ),
+            content: content,
+            trigger: UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: false)
+        )
+
+        do {
+            try await notificationCenter.add(request)
+        } catch {
+            print("Failed to schedule interview prep brief reminder: \(error)")
+        }
+    }
+
     public func scheduleWeeklyDigestNotification(for snapshot: WeeklyDigestSnapshot) async -> Bool {
         let content = UNMutableNotificationContent()
         content.title = "Your Week in Review"
@@ -285,6 +336,31 @@ public final class NotificationService: NSObject {
             print("Failed to schedule weekly digest notification: \(error)")
             return false
         }
+    }
+
+    @MainActor
+    public func syncApplyQueueReminder(
+        applications: [JobApplication],
+        notificationsEnabled: Bool,
+        dailyTarget: Int,
+        hour: Int,
+        minute: Int,
+        currentResumeRevisionID: UUID?,
+        matchPreferences: JobMatchPreferences
+    ) async {
+        let permissionStatus = await checkPermissionStatus()
+        let effectiveNotificationsEnabled = notificationsEnabled &&
+            Self.isPermissionGrantedStatus(permissionStatus)
+
+        await updateApplyQueueReminder(
+            applications: applications,
+            notificationsEnabled: effectiveNotificationsEnabled,
+            dailyTarget: dailyTarget,
+            hour: hour,
+            minute: minute,
+            currentResumeRevisionID: currentResumeRevisionID,
+            matchPreferences: matchPreferences
+        )
     }
 
     @MainActor
@@ -386,6 +462,11 @@ public final class NotificationService: NSObject {
                 for: activity,
                 notificationsEnabled: notificationsEnabled
             )
+            await syncInterviewPrepBriefReminder(
+                for: activity,
+                application: application,
+                notificationsEnabled: notificationsEnabled
+            )
         }
     }
 
@@ -471,6 +552,29 @@ public final class NotificationService: NSObject {
         )
     }
 
+    private func syncInterviewPrepBriefReminder(
+        for activity: ApplicationActivity,
+        application: JobApplication,
+        notificationsEnabled: Bool
+    ) async {
+        guard notificationsEnabled,
+              application.status != .archived,
+              activity.kind == .interview,
+              activity.occurredAt > Date() else {
+            await removeInterviewPrepBriefNotifications(for: activity.id, applicationID: application.id)
+            return
+        }
+
+        await scheduleInterviewPrepBriefReminder(
+            for: activity.id,
+            applicationID: application.id,
+            companyName: application.companyName,
+            role: application.role,
+            interviewDate: activity.occurredAt,
+            snapshot: nil
+        )
+    }
+
     private func scheduleDayBeforeNotification(
         identifier: String,
         title: String,
@@ -544,13 +648,15 @@ public final class NotificationService: NSObject {
         let followUpPrefix = "followup-\(applicationID.uuidString)"
         let taskPrefix = "task-\(applicationID.uuidString)-"
         let interviewPrefix = "interview-debrief-\(applicationID.uuidString)-"
+        let briefPrefix = "interview-prep-\(applicationID.uuidString)-"
 
         let pendingRequests = await notificationCenter.pendingNotificationRequests()
         let identifiersToRemove = pendingRequests
             .filter {
                 $0.identifier.hasPrefix(followUpPrefix) ||
                 $0.identifier.hasPrefix(taskPrefix) ||
-                $0.identifier.hasPrefix(interviewPrefix)
+                $0.identifier.hasPrefix(interviewPrefix) ||
+                $0.identifier.hasPrefix(briefPrefix)
             }
             .map { $0.identifier }
 
@@ -581,6 +687,20 @@ public final class NotificationService: NSObject {
 
     public func removeInterviewDebriefNotifications(for activityID: UUID, applicationID: UUID) async {
         let identifierPrefix = interviewDebriefNotificationIdentifier(
+            applicationID: applicationID,
+            activityID: activityID
+        )
+
+        let pendingRequests = await notificationCenter.pendingNotificationRequests()
+        let identifiersToRemove = pendingRequests
+            .filter { $0.identifier.hasPrefix(identifierPrefix) }
+            .map { $0.identifier }
+
+        notificationCenter.removePendingNotificationRequests(withIdentifiers: identifiersToRemove)
+    }
+
+    public func removeInterviewPrepBriefNotifications(for activityID: UUID, applicationID: UUID) async {
+        let identifierPrefix = interviewPrepBriefNotificationIdentifier(
             applicationID: applicationID,
             activityID: activityID
         )
@@ -629,6 +749,12 @@ public final class NotificationService: NSObject {
             intentIdentifiers: [],
             options: []
         )
+        let interviewPrepBriefCategory = UNNotificationCategory(
+            identifier: NotificationCategory.interviewPrepBrief,
+            actions: [],
+            intentIdentifiers: [],
+            options: []
+        )
         let weeklyDigestCategory = UNNotificationCategory(
             identifier: NotificationCategory.weeklyDigest,
             actions: [],
@@ -640,6 +766,7 @@ public final class NotificationService: NSObject {
             followUpCategory,
             taskCategory,
             interviewDebriefCategory,
+            interviewPrepBriefCategory,
             weeklyDigestCategory
         ])
     }
@@ -706,8 +833,76 @@ public final class NotificationService: NSObject {
         }
     }
 
+    private func updateApplyQueueReminder(
+        applications: [JobApplication],
+        notificationsEnabled: Bool,
+        dailyTarget: Int,
+        hour: Int,
+        minute: Int,
+        currentResumeRevisionID: UUID?,
+        matchPreferences: JobMatchPreferences
+    ) async {
+        removeApplyQueueNotifications()
+
+        guard notificationsEnabled else {
+            return
+        }
+
+        let queueService = ApplyQueueService()
+        let snapshot = queueService.snapshot(
+            from: applications,
+            dailyTarget: dailyTarget,
+            currentResumeRevisionID: currentResumeRevisionID,
+            matchPreferences: matchPreferences
+        )
+
+        guard !snapshot.todayQueue.isEmpty,
+              let fireDate = queueService.nextNotificationDate(
+                hour: hour,
+                minute: minute
+              ) else {
+            return
+        }
+
+        let readyCount = snapshot.todayQueue.filter(\.preparationStatus.isReadyToApply).count
+
+        let content = UNMutableNotificationContent()
+        content.title = "Today's apply queue: \(snapshot.todayQueue.count) job\(snapshot.todayQueue.count == 1 ? "" : "s")"
+        content.body = applyQueueNotificationBody(
+            queueCount: snapshot.todayQueue.count,
+            readyCount: readyCount,
+            estimatedMinutes: snapshot.totalEstimatedMinutes
+        )
+        content.sound = .default
+        content.categoryIdentifier = NotificationCategory.applyQueue
+        content.userInfo = [
+            NotificationUserInfoKey.openKind: NotificationOpenRequest.Kind.applyQueue.rawValue
+        ]
+
+        let components = Calendar.current.dateComponents(
+            [.year, .month, .day, .hour, .minute],
+            from: fireDate
+        )
+
+        let request = UNNotificationRequest(
+            identifier: NotificationIdentifier.applyQueueReminder,
+            content: content,
+            trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+        )
+
+        do {
+            try await notificationCenter.add(request)
+        } catch {
+            print("Failed to sync apply queue reminder: \(error)")
+        }
+    }
+
     private func interviewDebriefNotificationIdentifier(applicationID: UUID, activityID: UUID) -> String {
         "interview-debrief-\(applicationID.uuidString)-\(activityID.uuidString)"
+    }
+
+    private func interviewPrepBriefNotificationIdentifier(applicationID: UUID, activityID: UUID) -> String {
+        "interview-prep-\(applicationID.uuidString)-\(activityID.uuidString)"
     }
 
     private func weeklyDigestNotificationIdentifier(snapshotID: UUID) -> String {
@@ -729,6 +924,36 @@ public final class NotificationService: NSObject {
         }
 
         return fragments.joined(separator: " • ")
+    }
+
+    private func applyQueueNotificationBody(
+        queueCount: Int,
+        readyCount: Int,
+        estimatedMinutes: Int
+    ) -> String {
+        let estimateText: String
+        if estimatedMinutes >= 60 {
+            let hours = estimatedMinutes / 60
+            let minutes = estimatedMinutes % 60
+            estimateText = minutes == 0 ? "\(hours)h" : "\(hours)h \(minutes)m"
+        } else {
+            estimateText = "\(estimatedMinutes)m"
+        }
+
+        if readyCount == queueCount {
+            return "\(queueCount) ready to submit. Estimated time: \(estimateText)."
+        }
+
+        return "\(readyCount) ready, \(queueCount - readyCount) still need prep. Estimated time: \(estimateText)."
+    }
+
+    private func removeApplyQueueNotifications() {
+        notificationCenter.removePendingNotificationRequests(
+            withIdentifiers: [NotificationIdentifier.applyQueueReminder]
+        )
+        notificationCenter.removeDeliveredNotifications(
+            withIdentifiers: [NotificationIdentifier.applyQueueReminder]
+        )
     }
 
     private static func isPermissionGrantedStatus(_ status: UNAuthorizationStatus) -> Bool {
@@ -801,5 +1026,15 @@ extension NotificationService: UNUserNotificationCenterDelegate {
             interviewActivityID: activityID,
             weeklyDigestSnapshotID: snapshotID
         )
+    }
+
+    @MainActor
+    public func handleDeepLinkURL(_ url: URL) {
+        guard let request = PipelineDeepLinkService.openRequest(from: url) else { return }
+        if let openRequestHandler {
+            openRequestHandler(request)
+        } else {
+            pendingOpenRequest = request
+        }
     }
 }

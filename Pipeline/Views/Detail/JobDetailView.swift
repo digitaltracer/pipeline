@@ -13,6 +13,7 @@ private enum CompanyWorkspaceTab: String, CaseIterable, Identifiable {
 struct JobDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var allApplications: [JobApplication]
+    @Query private var allSalarySnapshots: [CompanySalarySnapshot]
     @Query(sort: \ImportedNetworkConnection.updatedAt, order: .reverse)
     private var importedConnections: [ImportedNetworkConnection]
     @Query(sort: \CompanyAlias.updatedAt, order: .reverse)
@@ -40,6 +41,7 @@ struct JobDetailView: View {
     @State private var showingInterviewLearnings = false
     @State private var selectedRejectionActivityForLog: ApplicationActivity?
     @State private var showingFollowUpDrafter = false
+    @State private var draftingFollowUpStep: FollowUpStep?
     @State private var showingCoverLetterEditor = false
     @State private var selectedReferralConnection: ImportedNetworkConnection?
     @State private var showingTailorResume = false
@@ -50,6 +52,7 @@ struct JobDetailView: View {
     @State private var actionErrorMessage: String?
     @State private var descriptionDenoiseViewModel: JobDescriptionDenoiseViewModel
     @State private var checklistSuggestionsViewModel: ChecklistSuggestionsViewModel
+    @State private var marketDataViewModel: ApplicationMarketDataViewModel
     @State private var selectedInterviewActivityForDebrief: ApplicationActivity?
     @State private var rejectionLearningsViewModel: RejectionLearningsViewModel?
     @Environment(\.colorScheme) private var colorScheme
@@ -78,6 +81,11 @@ struct JobDetailView: View {
                 settingsViewModel: SettingsViewModel()
             )
         )
+        _marketDataViewModel = State(
+            initialValue: ApplicationMarketDataViewModel(
+                settingsViewModel: SettingsViewModel()
+            )
+        )
     }
 
     private var referralSuggestions: [NetworkReferralSuggestion] {
@@ -90,6 +98,24 @@ struct JobDetailView: View {
 
     private var referralSectionShouldShow: Bool {
         !referralSuggestions.isEmpty || !application.sortedReferralAttempts.isEmpty
+    }
+
+    private var marketDataBaseCurrency: Currency {
+        SettingsViewModel().analyticsBaseCurrency
+    }
+
+    private var marketDataRefreshKey: String {
+        let applicationMaxUpdated = allApplications.map(\.updatedAt).max()?.timeIntervalSinceReferenceDate ?? 0
+        let snapshotMaxUpdated = allSalarySnapshots.map(\.updatedAt).max()?.timeIntervalSinceReferenceDate ?? 0
+        return [
+            application.id.uuidString,
+            String(application.updatedAt.timeIntervalSinceReferenceDate),
+            String(allApplications.count),
+            String(applicationMaxUpdated),
+            String(allSalarySnapshots.count),
+            String(snapshotMaxUpdated),
+            marketDataBaseCurrency.rawValue
+        ].joined(separator: "|")
     }
 
     var body: some View {
@@ -114,6 +140,13 @@ struct JobDetailView: View {
                     } catch {
                         actionErrorMessage = error.localizedDescription
                     }
+                },
+                onQueueMembershipChange: { isQueued in
+                    do {
+                        try viewModel.setApplyQueueMembership(isQueued, for: application, context: modelContext)
+                    } catch {
+                        actionErrorMessage = error.localizedDescription
+                    }
                 }
             )
             .padding(.horizontal, 16)
@@ -123,6 +156,27 @@ struct JobDetailView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
                     JobDetailFieldsView(application: application)
+
+                    ApplicationMarketDataSection(
+                        application: application,
+                        viewModel: marketDataViewModel,
+                        onSeniorityChange: { seniority in
+                            do {
+                                try viewModel.updateSeniorityOverride(seniority, for: application, context: modelContext)
+                            } catch {
+                                actionErrorMessage = error.localizedDescription
+                            }
+                        },
+                        onGenerateNegotiation: {
+                            Task {
+                                await marketDataViewModel.generateNegotiation(for: application)
+                                if let error = marketDataViewModel.error {
+                                    actionErrorMessage = error
+                                    marketDataViewModel.error = nil
+                                }
+                            }
+                        }
+                    )
 
                     ApplicationCompanySection(
                         application: application,
@@ -288,6 +342,18 @@ struct JobDetailView: View {
                         viewModel: checklistSuggestionsViewModel
                     )
 
+                    SmartFollowUpSection(
+                        application: application,
+                        viewModel: viewModel,
+                        onGenerate: { step in
+                            draftingFollowUpStep = step
+                            showingFollowUpDrafter = true
+                        },
+                        onError: { message in
+                            actionErrorMessage = message
+                        }
+                    )
+
                     ApplicationTasksSection(
                         application: application,
                         viewModel: viewModel,
@@ -398,12 +464,15 @@ struct JobDetailView: View {
                 )
             )
         }
-        .sheet(isPresented: $showingFollowUpDrafter) {
+        .sheet(isPresented: $showingFollowUpDrafter, onDismiss: {
+            draftingFollowUpStep = nil
+        }) {
             FollowUpDrafterView(
                 viewModel: FollowUpDrafterViewModel(
                     application: application,
                     settingsViewModel: SettingsViewModel(),
-                    modelContext: modelContext
+                    modelContext: modelContext,
+                    followUpStep: draftingFollowUpStep
                 )
             )
         }
@@ -521,6 +590,18 @@ struct JobDetailView: View {
                 actionErrorMessage = error.localizedDescription
             }
             handlePendingOpenRequestIfNeeded()
+        }
+        .task(id: marketDataRefreshKey) {
+            await marketDataViewModel.refresh(
+                for: application,
+                applications: allApplications,
+                salarySnapshots: allSalarySnapshots,
+                baseCurrency: marketDataBaseCurrency
+            )
+            if let error = marketDataViewModel.error {
+                actionErrorMessage = error
+                marketDataViewModel.error = nil
+            }
         }
         .onChange(of: pendingNotificationOpenRequest) { _, _ in
             handlePendingOpenRequestIfNeeded()
@@ -693,16 +774,26 @@ struct JobDetailView: View {
 
     private func handlePendingOpenRequestIfNeeded() {
         guard let pendingNotificationOpenRequest,
-              pendingNotificationOpenRequest.applicationID == application.id,
-              pendingNotificationOpenRequest.kind == .interviewDebrief else {
+              pendingNotificationOpenRequest.applicationID == application.id else {
             return
         }
 
-        if let activityID = pendingNotificationOpenRequest.interviewActivityID,
-           let activity = application.sortedInterviewActivities.first(where: { $0.id == activityID }) {
-            selectedInterviewActivityForDebrief = activity
-        } else if let latestInterviewNeedingDebrief {
-            selectedInterviewActivityForDebrief = latestInterviewNeedingDebrief
+        switch pendingNotificationOpenRequest.kind {
+        case .interviewDebrief:
+            if let activityID = pendingNotificationOpenRequest.interviewActivityID,
+               let activity = application.sortedInterviewActivities.first(where: { $0.id == activityID }) {
+                selectedInterviewActivityForDebrief = activity
+            } else if let latestInterviewNeedingDebrief {
+                selectedInterviewActivityForDebrief = latestInterviewNeedingDebrief
+            }
+        case .interviewPrepBrief:
+            if pendingNotificationOpenRequest.interviewActivityID != nil {
+                showingInterviewPrep = true
+            }
+        case .weeklyDigest:
+            break
+        case .applyQueue:
+            break
         }
 
         onHandledNotificationOpenRequest?()
@@ -760,6 +851,7 @@ struct JobDetailView: View {
                 }
 
                 Button {
+                    draftingFollowUpStep = nil
                     showingFollowUpDrafter = true
                 } label: {
                     Label("Follow Up", systemImage: "envelope.badge")
@@ -999,6 +1091,245 @@ private struct CompanyProfileDraft {
 
     var userRating: Int? {
         hasRating ? rating : nil
+    }
+}
+
+private struct ApplicationMarketDataSection: View {
+    @Environment(\.openURL) private var openURL
+    @Environment(\.colorScheme) private var colorScheme
+
+    let application: JobApplication
+    let viewModel: ApplicationMarketDataViewModel
+    let onSeniorityChange: (SeniorityBand?) -> Void
+    let onGenerateNegotiation: () -> Void
+
+    private var lastRefreshText: String? {
+        if let refreshedAt = viewModel.benchmark?.lastRefreshedAt {
+            return refreshedAt.formatted(date: .abbreviated, time: .shortened)
+        }
+        if let refreshedAt = application.company?.lastSalaryResearchAt {
+            return refreshedAt.formatted(date: .abbreviated, time: .shortened)
+        }
+        return nil
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("Market Data", systemImage: "chart.line.uptrend.xyaxis")
+                        .font(.headline)
+                    Text("Benchmark this application against internal history and public salary research.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                if let lastRefreshText {
+                    Label(lastRefreshText, systemImage: "clock")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Seniority")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Picker("Seniority", selection: Binding(
+                    get: { application.seniorityOverride },
+                    set: onSeniorityChange
+                )) {
+                    Text("Auto (\(application.inferredSeniority?.title ?? "Unknown"))").tag(nil as SeniorityBand?)
+                    ForEach(SeniorityBand.allCases) { band in
+                        Text(band.title).tag(band as SeniorityBand?)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+
+            if let effectiveSeniority = application.effectiveSeniority {
+                statusRow(title: "Effective Seniority", value: effectiveSeniority.title)
+            } else {
+                Text("Pipeline could not infer seniority from this title yet. Choose a seniority level to unlock market benchmarking.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+
+            if viewModel.isLoading {
+                ProgressView("Refreshing market data…")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if let benchmark = viewModel.benchmark {
+                benchmarkSection(benchmark)
+            } else {
+                Text("Not enough matched data yet. Pipeline needs at least 5 comparable datapoints for this role, location fallback tier, and seniority.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+
+            if let personalAnalytics = viewModel.personalAnalytics {
+                personalAnalyticsSection(personalAnalytics)
+            }
+
+            if application.status == .offered, let benchmark = viewModel.benchmark {
+                negotiationSection(benchmark)
+            }
+        }
+        .padding(16)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+    }
+
+    private func benchmarkSection(_ benchmark: MarketSalaryBenchmarkResult) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                statCard(title: "25th", value: benchmark.baseCurrency.format(benchmark.percentile25))
+                statCard(title: "Median", value: benchmark.baseCurrency.format(benchmark.percentile50))
+                statCard(title: "75th", value: benchmark.baseCurrency.format(benchmark.percentile75))
+            }
+
+            statusRow(title: "Comparison", value: benchmark.comparisonText)
+            statusRow(title: "Basis", value: benchmark.comparisonBasis.title)
+            statusRow(title: "Match", value: benchmark.matchTier.title)
+            statusRow(title: "Confidence", value: benchmark.confidence.title)
+            statusRow(
+                title: "Sources",
+                value: sourceBreakdownText(benchmark)
+            )
+
+            if benchmark.missingConversionCount > 0 {
+                Text("\(benchmark.missingConversionCount) datapoint(s) could not be converted into \(benchmark.baseCurrency.rawValue).")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func personalAnalyticsSection(_ analytics: PersonalSalaryAnalyticsResult) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider()
+
+            Label("Personal Salary Analytics", systemImage: "person.crop.circle.badge.chart.bar")
+                .font(.subheadline.weight(.semibold))
+
+            if let summaryText = analytics.summaryText {
+                Text(summaryText)
+                    .font(.subheadline)
+            }
+
+            if let min = analytics.expectedClusterMin, let max = analytics.expectedClusterMax {
+                statusRow(
+                    title: "Expected Cluster",
+                    value: "\(analytics.baseCurrency.format(min))-\(analytics.baseCurrency.format(max))"
+                )
+            }
+
+            if let averageDeltaPercent = analytics.averageOfferDeltaPercent,
+               let averageDeltaAmount = analytics.averageOfferDeltaAmount {
+                statusRow(
+                    title: "Ask vs Offer",
+                    value: "\(Int(averageDeltaPercent.rounded()))% (\(analytics.baseCurrency.format(averageDeltaAmount)))"
+                )
+            }
+
+            if analytics.isStale {
+                Text("Most compensation evidence in your history is older than 180 days, so treat these signals as directional.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func negotiationSection(_ benchmark: MarketSalaryBenchmarkResult) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider()
+
+            HStack {
+                Label("Negotiation", systemImage: "bubble.left.and.text.bubble.right")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button(viewModel.isGeneratingNegotiation ? "Generating…" : "Generate Negotiation Script") {
+                    onGenerateNegotiation()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DesignSystem.Colors.accent)
+                .disabled(viewModel.isGeneratingNegotiation || !viewModel.aiReady)
+            }
+
+            if !viewModel.aiReady {
+                Text("Configure an AI model with grounded web search in Settings to generate a negotiation script. Numeric market guidance is still available above.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            if let guidance = viewModel.negotiationGuidance {
+                if let min = guidance.suggestedCounterMin, let max = guidance.suggestedCounterMax {
+                    statusRow(
+                        title: "Suggested Counter",
+                        value: "\(benchmark.baseCurrency.format(min))-\(benchmark.baseCurrency.format(max))"
+                    )
+                }
+
+                Text(guidance.text)
+                    .font(.subheadline)
+
+                if !guidance.citations.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Citations")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.secondary)
+
+                        ForEach(Array(guidance.citations.enumerated()), id: \.offset) { _, citation in
+                            Button {
+                                if let url = URL(string: citation.urlString) {
+                                    openURL(url)
+                                }
+                            } label: {
+                                Label(citation.title, systemImage: "arrow.up.right.square")
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .buttonStyle(.plain)
+                            .font(.caption)
+                            .foregroundColor(DesignSystem.Colors.accent)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func sourceBreakdownText(_ benchmark: MarketSalaryBenchmarkResult) -> String {
+        let detail = benchmark.sourceCounts
+            .map { "\($0.sourceName) \($0.count)" }
+            .joined(separator: " · ")
+        return "\(benchmark.cohortCount) datapoints · \(detail)"
+    }
+
+    private func statCard(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Text(value)
+                .font(.title3.weight(.semibold))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+        )
+    }
+
+    private func statusRow(title: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.secondary)
+                .frame(width: 110, alignment: .leading)
+            Text(value)
+                .font(.subheadline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 
@@ -1602,9 +1933,19 @@ private struct CompanyWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\(snapshot.roleTitle) · \(snapshot.location)")
                         .font(.subheadline.weight(.semibold))
-                    Text(snapshot.sourceName)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 6) {
+                        Text(snapshot.sourceName)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        if let seniority = snapshot.effectiveSeniority {
+                            Text(seniority.title)
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.secondary.opacity(0.12))
+                                .clipShape(Capsule())
+                        }
+                    }
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 8) {
@@ -1727,6 +2068,7 @@ private struct CompanySalarySnapshotEditorView: View {
     @State private var notes: String
     @State private var confidenceNotes: String
     @State private var currency: Currency
+    @State private var seniority: SeniorityBand?
     @State private var minBaseCompensation: String
     @State private var maxBaseCompensation: String
     @State private var minTotalCompensation: String
@@ -1748,6 +2090,7 @@ private struct CompanySalarySnapshotEditorView: View {
         _notes = State(initialValue: snapshot?.notes ?? "")
         _confidenceNotes = State(initialValue: snapshot?.confidenceNotes ?? "")
         _currency = State(initialValue: snapshot?.currency ?? .usd)
+        _seniority = State(initialValue: snapshot?.seniority)
         _minBaseCompensation = State(initialValue: snapshot?.minBaseCompensation.map(String.init) ?? "")
         _maxBaseCompensation = State(initialValue: snapshot?.maxBaseCompensation.map(String.init) ?? "")
         _minTotalCompensation = State(initialValue: snapshot?.minTotalCompensation.map(String.init) ?? "")
@@ -1768,6 +2111,12 @@ private struct CompanySalarySnapshotEditorView: View {
                     Picker("Currency", selection: $currency) {
                         ForEach(Currency.allCases) { currency in
                             Text(currency.rawValue).tag(currency)
+                        }
+                    }
+                    Picker("Seniority", selection: $seniority) {
+                        Text("Auto").tag(nil as SeniorityBand?)
+                        ForEach(SeniorityBand.allCases) { band in
+                            Text(band.title).tag(band as SeniorityBand?)
                         }
                     }
                 }
@@ -1825,6 +2174,7 @@ private struct CompanySalarySnapshotEditorView: View {
                 notes: normalized(notes),
                 confidenceNotes: normalized(confidenceNotes),
                 currency: currency,
+                seniority: seniority,
                 minBaseCompensation: parseInteger(minBaseCompensation),
                 maxBaseCompensation: parseInteger(maxBaseCompensation),
                 minTotalCompensation: parseInteger(minTotalCompensation),
@@ -2319,6 +2669,281 @@ private struct ApplicationTasksSection: View {
         } catch {
             onError(error.localizedDescription)
         }
+    }
+}
+
+private struct SmartFollowUpSection: View {
+    @Environment(\.modelContext) private var modelContext
+    @Bindable var application: JobApplication
+    let viewModel: ApplicationDetailViewModel
+    let onGenerate: (FollowUpStep) -> Void
+    let onError: (String) -> Void
+
+    @State private var showingHistory = false
+
+    private var activeSteps: [FollowUpStep] {
+        application.activeFollowUpSteps
+    }
+
+    private var inactiveSteps: [FollowUpStep] {
+        application.sortedFollowUpSteps.filter { !$0.isActive }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Smart Follow-Ups", systemImage: "calendar.badge.clock")
+                    .font(.headline)
+
+                Spacer()
+
+                if !activeSteps.isEmpty {
+                    Text("\(activeSteps.count) active")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            if application.sortedFollowUpSteps.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("No smart follow-ups yet")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    Text("When this application reaches Applied, Pipeline can build a staged follow-up cadence here.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .appCard(cornerRadius: 14, elevated: true, shadow: false)
+            } else {
+                ForEach(activeSteps) { step in
+                    FollowUpStepRow(
+                        step: step,
+                        application: application,
+                        onGenerate: step.kind.supportsDraftGeneration ? { onGenerate(step) } : nil,
+                        onSnooze: {
+                            snooze(step)
+                        },
+                        onMarkDone: {
+                            markDone(step)
+                        },
+                        onArchive: step.kind == .archiveSuggestion ? {
+                            archiveApplication()
+                        } : nil,
+                        onDismiss: step.kind == .archiveSuggestion ? {
+                            dismiss(step)
+                        } : nil
+                    )
+                }
+            }
+
+            if !inactiveSteps.isEmpty {
+                DisclosureGroup(
+                    isExpanded: $showingHistory,
+                    content: {
+                        VStack(spacing: 12) {
+                            ForEach(inactiveSteps) { step in
+                                FollowUpStepRow(
+                                    step: step,
+                                    application: application,
+                                    onGenerate: nil,
+                                    onSnooze: nil,
+                                    onMarkDone: nil,
+                                    onArchive: nil,
+                                    onDismiss: nil
+                                )
+                            }
+                        }
+                        .padding(.top, 12)
+                    },
+                    label: {
+                        Text("History (\(inactiveSteps.count))")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                )
+                .padding(14)
+                .appCard(cornerRadius: 14, elevated: true, shadow: false)
+            }
+        }
+    }
+
+    private func snooze(_ step: FollowUpStep) {
+        do {
+            try viewModel.snoozeFollowUpStep(
+                step,
+                by: step.kind == .archiveSuggestion ? 7 : 3,
+                for: application,
+                context: modelContext
+            )
+        } catch {
+            onError(error.localizedDescription)
+        }
+    }
+
+    private func markDone(_ step: FollowUpStep) {
+        do {
+            try viewModel.markFollowUpStepDone(step, for: application, context: modelContext)
+        } catch {
+            onError(error.localizedDescription)
+        }
+    }
+
+    private func dismiss(_ step: FollowUpStep) {
+        do {
+            try viewModel.dismissFollowUpStep(step, for: application, context: modelContext)
+        } catch {
+            onError(error.localizedDescription)
+        }
+    }
+
+    private func archiveApplication() {
+        do {
+            try viewModel.archive(application, context: modelContext)
+        } catch {
+            onError(error.localizedDescription)
+        }
+    }
+}
+
+private struct FollowUpStepRow: View {
+    let step: FollowUpStep
+    let application: JobApplication
+    var onGenerate: (() -> Void)?
+    var onSnooze: (() -> Void)?
+    var onMarkDone: (() -> Void)?
+    var onArchive: (() -> Void)?
+    var onDismiss: (() -> Void)?
+
+    private var stateLabel: String {
+        switch step.state {
+        case .pending:
+            return "Pending"
+        case .snoozed:
+            return "Snoozed"
+        case .completed:
+            return "Done"
+        case .dismissed:
+            return "Dismissed"
+        }
+    }
+
+    private var stateColor: Color {
+        switch step.state {
+        case .pending:
+            return .orange
+        case .snoozed:
+            return .blue
+        case .completed:
+            return .green
+        case .dismissed:
+            return .secondary
+        }
+    }
+
+    private var dueLabel: String {
+        switch step.state {
+        case .completed:
+            return step.completedAt?.formatted(date: .abbreviated, time: .omitted) ?? "Completed"
+        case .dismissed:
+            return "Dismissed"
+        case .pending, .snoozed:
+            return step.dueDate.formatted(date: .abbreviated, time: .omitted)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "calendar.badge.clock")
+                    .foregroundColor(stateColor)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text(step.kind.displayName)
+                            .font(.subheadline.weight(.semibold))
+                        Text(stateLabel)
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(stateColor)
+                    }
+
+                    Text("\(application.companyName) • \(application.role)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Text(step.kind.rationaleText)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    if let subject = step.lastGeneratedSubject, !subject.isEmpty {
+                        Text("Saved draft: \(subject)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer()
+
+                Text(dueLabel)
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(stateColor)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(stateColor.opacity(0.12))
+                    .clipShape(Capsule())
+            }
+
+            if onGenerate != nil || onSnooze != nil || onMarkDone != nil || onArchive != nil || onDismiss != nil {
+                HStack(spacing: 12) {
+                    if let onGenerate {
+                        Button("Generate") {
+                            onGenerate()
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(DesignSystem.Colors.accent)
+                    }
+
+                    if let onSnooze {
+                        Button("Snooze \(step.kind == .archiveSuggestion ? 7 : 3) Days") {
+                            onSnooze()
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.secondary)
+                    }
+
+                    if let onMarkDone {
+                        Button("Mark Done") {
+                            onMarkDone()
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.green)
+                    }
+
+                    if let onArchive {
+                        Button("Archive") {
+                            onArchive()
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.orange)
+                    }
+
+                    if let onDismiss {
+                        Button("Dismiss") {
+                            onDismiss()
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+                }
+                .font(.caption)
+            }
+        }
+        .padding(14)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
     }
 }
 
@@ -3705,6 +4330,7 @@ private struct ReferralAttemptRow: View {
             InterviewLearningSnapshot.self,
             RejectionLearningSnapshot.self,
             ApplicationTask.self,
+            FollowUpStep.self,
             ApplicationChecklistSuggestion.self,
             ApplicationAttachment.self,
             CoverLetterDraft.self,

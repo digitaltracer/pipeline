@@ -68,20 +68,17 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         let location = message["location"] as? String ?? ""
         let description = message["description"] as? String ?? ""
         let platform = message["platform"] as? String ?? ""
+        let saveForLater = message["saveForLater"] as? Bool ?? false
+        let postedAt = JobCaptureDateParser.parse(message["postedAt"] as? String)
+        let applicationDeadline = JobCaptureDateParser.parse(message["applicationDeadline"] as? String)
 
         // Check for duplicates first
         do {
-            let container = try SharedContainer.makeModelContainer()
-            let context = ModelContext(container)
-
-            let dupResult = await MainActor.run {
-                DuplicateDetectionService.checkForDuplicate(
-                    url: url,
-                    company: company,
-                    role: title,
-                    context: context
-                )
-            }
+            let dupResult = try await duplicateCheck(
+                url: url,
+                company: company,
+                role: title
+            )
 
             if dupResult.isDuplicate {
                 return [
@@ -92,22 +89,19 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             }
 
             // Create the application directly from extracted data
-            let application = JobApplication(
-                companyName: company.isEmpty ? "Unknown Company" : company,
-                role: title.isEmpty ? "Unknown Role" : title,
+            let application = try await saveParsedApplication(
+                url: url,
+                title: title,
+                company: company,
                 location: location,
-                jobURL: url.isEmpty ? nil : url,
-                jobDescription: description.isEmpty ? nil : description,
-                status: .saved,
-                platform: resolvePlatform(rawPlatform: platform, url: url)
+                description: description,
+                platform: platform,
+                saveForLater: saveForLater,
+                postedAt: postedAt,
+                applicationDeadline: applicationDeadline
             )
 
-            await MainActor.run {
-                context.insert(application)
-                try? ApplicationChecklistService().sync(for: application, trigger: .applicationCreated, in: context)
-            }
-
-            Self.logger.info("Saved application: \(company) — \(title)")
+            Self.logger.info("Saved application: \(company) — \(title), queued: \(saveForLater)")
             return ["success": true, "company": application.companyName, "role": application.role]
 
         } catch {
@@ -124,17 +118,11 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         let role = message["role"] as? String
 
         do {
-            let container = try SharedContainer.makeModelContainer()
-            let context = ModelContext(container)
-
-            let result = await MainActor.run {
-                DuplicateDetectionService.checkForDuplicate(
-                    url: url,
-                    company: company,
-                    role: role,
-                    context: context
-                )
-            }
+            let result = try await duplicateCheck(
+                url: url,
+                company: company,
+                role: role
+            )
 
             return [
                 "isDuplicate": result.isDuplicate,
@@ -151,5 +139,88 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         let response = NSExtensionItem()
         response.userInfo = [SFExtensionMessageKey: message]
         context.completeRequest(returningItems: [response])
+    }
+
+    @MainActor
+    private func duplicateCheck(
+        url: String?,
+        company: String?,
+        role: String?
+    ) throws -> DuplicateDetectionService.DuplicateCheckResult {
+        let container = try SharedContainer.makeModelContainer()
+        let context = ModelContext(container)
+        return DuplicateDetectionService.checkForDuplicate(
+            url: url,
+            company: company,
+            role: role,
+            context: context
+        )
+    }
+
+    @MainActor
+    private func saveParsedApplication(
+        url: String,
+        title: String,
+        company: String,
+        location: String,
+        description: String,
+        platform: String,
+        saveForLater: Bool,
+        postedAt: Date?,
+        applicationDeadline: Date?
+    ) async throws -> JobApplication {
+        let container = try SharedContainer.makeModelContainer()
+        let context = ModelContext(container)
+
+        let application = JobApplication(
+            companyName: company.isEmpty ? "Unknown Company" : company,
+            role: title.isEmpty ? "Unknown Role" : title,
+            location: location,
+            jobURL: url.isEmpty ? nil : url,
+            jobDescription: description.isEmpty ? nil : description,
+            status: .saved,
+            platform: resolvePlatform(rawPlatform: platform, url: url),
+            isInApplyQueue: saveForLater,
+            queuedAt: saveForLater ? Date() : nil,
+            postedAt: postedAt,
+            applicationDeadline: applicationDeadline
+        )
+
+        context.insert(application)
+        try? ApplicationChecklistService().sync(for: application, trigger: .applicationCreated, in: context)
+        await syncApplyQueueReminderIfNeeded(afterSavingQueuedApplication: saveForLater, context: context)
+        return application
+    }
+
+    @MainActor
+    private func syncApplyQueueReminderIfNeeded(
+        afterSavingQueuedApplication saveForLater: Bool,
+        context: ModelContext
+    ) async {
+        guard saveForLater,
+              let sharedDefaults = UserDefaults(suiteName: SharedContainer.appGroupID) else {
+            return
+        }
+
+        let notificationsEnabled = sharedDefaults.bool(forKey: Constants.UserDefaultsKeys.notificationsEnabled)
+        let storedDailyTarget = sharedDefaults.integer(forKey: Constants.UserDefaultsKeys.applyQueueDailyTarget)
+        let dailyTarget = (1...12).contains(storedDailyTarget) ? storedDailyTarget : ApplyQueueService.defaultDailyTarget
+        let storedHour = sharedDefaults.integer(forKey: Constants.UserDefaultsKeys.applyQueueNotificationHour)
+        let hour = (0...23).contains(storedHour) ? storedHour : 9
+        let storedMinute = sharedDefaults.integer(forKey: Constants.UserDefaultsKeys.applyQueueNotificationMinute)
+        let minute = (0...59).contains(storedMinute) ? storedMinute : 0
+
+        let applications = (try? context.fetch(FetchDescriptor<JobApplication>())) ?? []
+        let currentResumeRevisionID = try? ResumeStoreService.currentMasterRevision(in: context)?.id
+
+        await NotificationService.shared.syncApplyQueueReminder(
+            applications: applications,
+            notificationsEnabled: notificationsEnabled,
+            dailyTarget: dailyTarget,
+            hour: hour,
+            minute: minute,
+            currentResumeRevisionID: currentResumeRevisionID,
+            matchPreferences: JobMatchPreferences()
+        )
     }
 }

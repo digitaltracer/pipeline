@@ -4,6 +4,7 @@ import PipelineKit
 struct StarRating: View {
     @Binding var rating: Int
     var maxRating: Int = 5
+    var minRating: Int = 1
     var size: CGFloat = 20
     var spacing: CGFloat = 4
     var isEditable: Bool = true
@@ -23,9 +24,8 @@ struct StarRating: View {
                                 } else {
                                     rating = index
                                 }
-                                // Ensure minimum of 1
-                                if rating < 1 {
-                                    rating = 1
+                                if rating < minRating {
+                                    rating = minRating
                                 }
                             }
                         }

@@ -492,6 +492,7 @@ private func makeContactsContainer() throws -> ModelContainer {
         InterviewLearningSnapshot.self,
         RejectionLearningSnapshot.self,
         ApplicationTask.self,
+        FollowUpStep.self,
         ApplicationChecklistSuggestion.self,
         ATSCompatibilityAssessment.self,
         ATSCompatibilityScanRun.self,

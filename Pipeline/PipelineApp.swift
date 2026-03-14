@@ -12,6 +12,7 @@ struct PipelineApp: App {
     let modelContainer: ModelContainer
     @State private var settingsViewModel: SettingsViewModel
     @State private var appLockCoordinator: AppLockCoordinator
+    @State private var onboardingStore = OnboardingStore()
 
     init() {
         // Migrate legacy store to App Group container before opening
@@ -75,11 +76,18 @@ struct PipelineApp: App {
     var body: some Scene {
         WindowGroup {
             AppLockRootView {
-                ContentView(settingsViewModel: settingsViewModel)
+                ContentView(
+                    settingsViewModel: settingsViewModel,
+                    onboardingStore: onboardingStore
+                )
             }
             .environment(appLockCoordinator)
             .onOpenURL { url in
-                _ = GoogleCalendarConfiguration.handleSignInURL(url)
+                if !GoogleCalendarConfiguration.handleSignInURL(url) {
+                    Task { @MainActor in
+                        NotificationService.shared.handleDeepLinkURL(url)
+                    }
+                }
             }
         }
         .modelContainer(modelContainer)
@@ -91,7 +99,17 @@ struct PipelineApp: App {
         #if os(macOS)
         Settings {
             AppLockRootView {
-                SettingsView(viewModel: settingsViewModel)
+                SettingsView(
+                    viewModel: settingsViewModel,
+                    entryPoint: .root,
+                    onReplayOnboarding: {
+                        onboardingStore.presentIntro(force: true)
+                    },
+                    onboardingGuidanceMuted: Binding(
+                        get: { onboardingStore.guidanceMuted },
+                        set: { onboardingStore.guidanceMuted = $0 }
+                    )
+                )
                     .modelContainer(modelContainer)
             }
             .environment(appLockCoordinator)

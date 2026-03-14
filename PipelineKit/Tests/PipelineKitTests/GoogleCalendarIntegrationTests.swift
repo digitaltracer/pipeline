@@ -41,7 +41,7 @@ import Testing
 }
 
 @MainActor
-@Test func acceptingGoogleCalendarImportCreatesInterviewActivityAndPromotesStatus() throws {
+@Test func acceptingGoogleCalendarImportCreatesInterviewActivityAndPromotesStatus() async throws {
     let container = try makeGoogleCalendarContainer()
     let context = ModelContext(container)
 
@@ -68,7 +68,7 @@ import Testing
     context.insert(record)
     try context.save()
 
-    try GoogleCalendarImportCoordinator.shared.acceptImport(record, into: application, in: context)
+    try await GoogleCalendarImportCoordinator.shared.acceptImport(record, into: application, in: context)
 
     #expect(record.state == .imported)
     #expect(record.importedActivity?.kind == .interview)
@@ -80,7 +80,7 @@ import Testing
 }
 
 @MainActor
-@Test func acceptingUpdateReusesExistingImportedActivity() throws {
+@Test func acceptingUpdateReusesExistingImportedActivity() async throws {
     let container = try makeGoogleCalendarContainer()
     let context = ModelContext(container)
 
@@ -119,7 +119,7 @@ import Testing
     application.addActivity(activity)
     try context.save()
 
-    try GoogleCalendarImportCoordinator.shared.acceptImport(record, into: application, in: context)
+    try await GoogleCalendarImportCoordinator.shared.acceptImport(record, into: application, in: context)
 
     #expect(record.state == .imported)
     #expect(record.importedActivity?.id == activity.id)
@@ -147,6 +147,7 @@ private func makeGoogleCalendarContainer() throws -> ModelContainer {
         InterviewLearningSnapshot.self,
         RejectionLearningSnapshot.self,
         ApplicationTask.self,
+        FollowUpStep.self,
         ApplicationChecklistSuggestion.self,
         ApplicationAttachment.self,
         CoverLetterDraft.self,
@@ -162,7 +163,8 @@ private func makeGoogleCalendarContainer() throws -> ModelContainer {
         WeeklyDigestActionItem.self,
         GoogleCalendarAccount.self,
         GoogleCalendarSubscription.self,
-        GoogleCalendarImportRecord.self
+        GoogleCalendarImportRecord.self,
+        GoogleCalendarInterviewLink.self
     ])
     let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
     return try ModelContainer(for: schema, configurations: [configuration])

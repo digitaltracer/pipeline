@@ -38,6 +38,7 @@ final class AddEditApplicationViewModel {
     var platform: Platform = .other
     var interviewStage: InterviewStage?
     var currency: Currency = .usd
+    var seniorityOverride: SeniorityBand?
     var salaryMinString: String = ""
     var salaryMaxString: String = ""
     var postedBonusString: String = ""
@@ -49,6 +50,12 @@ final class AddEditApplicationViewModel {
     var offerBaseString: String = ""
     var offerBonusString: String = ""
     var offerEquityString: String = ""
+    var offerPTOText: String = ""
+    var offerPTOScoreString: String = ""
+    var offerRemotePolicyText: String = ""
+    var offerRemotePolicyScoreString: String = ""
+    var offerGrowthScoreString: String = ""
+    var offerTeamCultureFitScoreString: String = ""
     var selectedCycleID: UUID?
     var showExpectedCompensation = false
     var showOfferCompensation = false
@@ -56,6 +63,11 @@ final class AddEditApplicationViewModel {
     var hasAppliedDate: Bool = false
     var nextFollowUpDate: Date?
     var hasFollowUpDate: Bool = false
+    var isInApplyQueue: Bool = false
+    var postedAt: Date?
+    var hasPostedAt: Bool = false
+    var applicationDeadline: Date?
+    var hasApplicationDeadline: Bool = false
 
     // State
     var isEditing: Bool = false
@@ -83,6 +95,7 @@ final class AddEditApplicationViewModel {
         platform = app.platform
         interviewStage = app.interviewStage
         currency = app.currency
+        seniorityOverride = app.seniorityOverride
         salaryMinString = app.salaryMin.map { String($0) } ?? ""
         salaryMaxString = app.salaryMax.map { String($0) } ?? ""
         postedBonusString = app.postedBonusCompensation.map { String($0) } ?? ""
@@ -94,6 +107,12 @@ final class AddEditApplicationViewModel {
         offerBaseString = app.offerBaseCompensation.map { String($0) } ?? ""
         offerBonusString = app.offerBonusCompensation.map { String($0) } ?? ""
         offerEquityString = app.offerEquityCompensation.map { String($0) } ?? ""
+        offerPTOText = app.offerPTOText ?? ""
+        offerPTOScoreString = app.offerPTOScore.map { String($0) } ?? ""
+        offerRemotePolicyText = app.offerRemotePolicyText ?? ""
+        offerRemotePolicyScoreString = app.offerRemotePolicyScore.map { String($0) } ?? ""
+        offerGrowthScoreString = app.offerGrowthScore.map { String($0) } ?? ""
+        offerTeamCultureFitScoreString = app.offerTeamCultureFitScore.map { String($0) } ?? ""
         selectedCycleID = app.cycle?.id
         showExpectedCompensation = app.hasExpectedCompensation
         showOfferCompensation = app.hasOfferCompensation
@@ -101,6 +120,11 @@ final class AddEditApplicationViewModel {
         hasAppliedDate = app.appliedDate != nil
         nextFollowUpDate = app.nextFollowUpDate
         hasFollowUpDate = app.nextFollowUpDate != nil
+        isInApplyQueue = app.isQueuedForApplyLater
+        postedAt = app.postedAt
+        hasPostedAt = app.postedAt != nil
+        applicationDeadline = app.applicationDeadline
+        hasApplicationDeadline = app.applicationDeadline != nil
     }
 
     // MARK: - Validation
@@ -189,6 +213,22 @@ final class AddEditApplicationViewModel {
         parseInteger(from: offerEquityString)
     }
 
+    var offerPTOScore: Int? {
+        parseScore(from: offerPTOScoreString)
+    }
+
+    var offerRemotePolicyScore: Int? {
+        parseScore(from: offerRemotePolicyScoreString)
+    }
+
+    var offerGrowthScore: Int? {
+        parseScore(from: offerGrowthScoreString)
+    }
+
+    var offerTeamCultureFitScore: Int? {
+        parseScore(from: offerTeamCultureFitScoreString)
+    }
+
     var title: String {
         isEditing ? "Edit Application" : "Add Application"
     }
@@ -212,11 +252,13 @@ final class AddEditApplicationViewModel {
         var rejectionStatusActivityID: UUID?
         let saveTimestamp = Date()
         let checklistService = ApplicationChecklistService()
+        let desiredFollowUpDate = hasFollowUpDate ? nextFollowUpDate : nil
 
         do {
             if isEditing, let app = editingApplication {
                 let previousStatus = app.status
                 let previousFollowUpDate = app.nextFollowUpDate
+                let hadExistingFollowUpSteps = !(app.followUpSteps?.isEmpty ?? true)
 
                 try updateApplication(app, context: context)
                 _ = try CompanyLinkingService.ensureCompanyLinked(for: app, in: context)
@@ -233,14 +275,6 @@ final class AddEditApplicationViewModel {
                     transitionResult = StatusTransitionResult(didChange: false)
                 }
 
-                ApplicationTimelineRecorderService.recordFollowUpChange(
-                    for: app,
-                    from: previousFollowUpDate,
-                    to: app.nextFollowUpDate,
-                    occurredAt: saveTimestamp,
-                    in: context
-                )
-
                 if !transitionResult.didChange {
                     try checklistService.sync(for: app, trigger: .statusChanged, in: context)
                 } else if context.hasChanges {
@@ -250,17 +284,43 @@ final class AddEditApplicationViewModel {
                 if transitionResult.needsRejectionLogPrompt {
                     rejectionStatusActivityID = transitionResult.statusActivityID
                 }
+
+                try syncSmartFollowUps(
+                    for: app,
+                    previousFollowUpDate: previousFollowUpDate,
+                    desiredFollowUpDate: desiredFollowUpDate,
+                    hadExistingFollowUpSteps: hadExistingFollowUpSteps,
+                    shouldEnsureAppliedCadence: previousStatus != .applied && status == .applied,
+                    context: context
+                )
+                try checklistService.sync(for: app, trigger: .statusChanged, in: context)
+                ApplicationTimelineRecorderService.recordFollowUpChange(
+                    for: app,
+                    from: previousFollowUpDate,
+                    to: app.nextFollowUpDate,
+                    occurredAt: saveTimestamp,
+                    in: context
+                )
                 savedApplication = app
             } else {
                 let app = try createApplication(context: context)
                 context.insert(app)
                 _ = try CompanyLinkingService.ensureCompanyLinked(for: app, in: context)
+                try checklistService.sync(for: app, trigger: .applicationCreated, in: context)
+                try syncSmartFollowUps(
+                    for: app,
+                    previousFollowUpDate: nil,
+                    desiredFollowUpDate: desiredFollowUpDate,
+                    hadExistingFollowUpSteps: false,
+                    shouldEnsureAppliedCadence: status == .applied,
+                    context: context
+                )
+                try checklistService.sync(for: app, trigger: .applicationCreated, in: context)
                 ApplicationTimelineRecorderService.seedInitialHistory(
                     for: app,
                     occurredAt: saveTimestamp,
                     in: context
                 )
-                try checklistService.sync(for: app, trigger: .applicationCreated, in: context)
                 rejectionStatusActivityID = app.status == .rejected ? app.latestRejectionActivity?.id : nil
                 savedApplication = app
             }
@@ -294,6 +354,7 @@ final class AddEditApplicationViewModel {
             platform: platform,
             interviewStage: interviewStage,
             currency: currency,
+            seniorityOverride: seniorityOverride,
             salaryMin: salaryMin,
             salaryMax: salaryMax,
             postedBonusCompensation: postedBonus,
@@ -305,8 +366,18 @@ final class AddEditApplicationViewModel {
             offerBaseCompensation: showOfferCompensation ? offerBase : nil,
             offerBonusCompensation: showOfferCompensation ? offerBonus : nil,
             offerEquityCompensation: showOfferCompensation ? offerEquity : nil,
+            offerPTOText: showOfferCompensation ? normalizedOfferText(offerPTOText) : nil,
+            offerPTOScore: showOfferCompensation ? offerPTOScore : nil,
+            offerRemotePolicyText: showOfferCompensation ? normalizedOfferText(offerRemotePolicyText) : nil,
+            offerRemotePolicyScore: showOfferCompensation ? offerRemotePolicyScore : nil,
+            offerGrowthScore: showOfferCompensation ? offerGrowthScore : nil,
+            offerTeamCultureFitScore: showOfferCompensation ? offerTeamCultureFitScore : nil,
             appliedDate: hasAppliedDate ? appliedDate : nil,
             nextFollowUpDate: hasFollowUpDate ? nextFollowUpDate : nil,
+            isInApplyQueue: isInApplyQueue,
+            queuedAt: isInApplyQueue ? Date() : nil,
+            postedAt: hasPostedAt ? postedAt : nil,
+            applicationDeadline: hasApplicationDeadline ? applicationDeadline : nil,
             cycle: cycle
         )
 
@@ -329,6 +400,7 @@ final class AddEditApplicationViewModel {
         app.platform = platform
         app.interviewStage = interviewStage
         app.currency = currency
+        app.setSeniorityOverride(seniorityOverride)
         app.setSalaryRange(min: salaryMin, max: salaryMax)
         app.setPostedAdditionalCompensation(bonus: postedBonus, equity: postedEquity)
         app.setExpectedSalaryRange(
@@ -344,8 +416,21 @@ final class AddEditApplicationViewModel {
             bonus: showOfferCompensation ? offerBonus : nil,
             equity: showOfferCompensation ? offerEquity : nil
         )
+        app.setOfferPTO(
+            text: showOfferCompensation ? normalizedOfferText(offerPTOText) : nil,
+            score: showOfferCompensation ? offerPTOScore : nil
+        )
+        app.setOfferRemotePolicy(
+            text: showOfferCompensation ? normalizedOfferText(offerRemotePolicyText) : nil,
+            score: showOfferCompensation ? offerRemotePolicyScore : nil
+        )
+        app.setOfferGrowthScore(showOfferCompensation ? offerGrowthScore : nil)
+        app.setOfferTeamCultureFitScore(showOfferCompensation ? offerTeamCultureFitScore : nil)
         app.appliedDate = hasAppliedDate ? appliedDate : nil
         app.nextFollowUpDate = hasFollowUpDate ? nextFollowUpDate : nil
+        app.setApplyQueue(isInApplyQueue)
+        app.setPostedAt(hasPostedAt ? postedAt : nil)
+        app.setApplicationDeadline(hasApplicationDeadline ? applicationDeadline : nil)
         app.assignCycle(try resolvedCycle(context: context, shouldCreateDefault: false))
         app.updateTimestamp()
 
@@ -386,6 +471,7 @@ final class AddEditApplicationViewModel {
         platform = .other
         interviewStage = nil
         currency = .usd
+        seniorityOverride = nil
         salaryMinString = ""
         salaryMaxString = ""
         postedBonusString = ""
@@ -397,6 +483,12 @@ final class AddEditApplicationViewModel {
         offerBaseString = ""
         offerBonusString = ""
         offerEquityString = ""
+        offerPTOText = ""
+        offerPTOScoreString = ""
+        offerRemotePolicyText = ""
+        offerRemotePolicyScoreString = ""
+        offerGrowthScoreString = ""
+        offerTeamCultureFitScoreString = ""
         selectedCycleID = nil
         showExpectedCompensation = false
         showOfferCompensation = false
@@ -404,6 +496,11 @@ final class AddEditApplicationViewModel {
         hasAppliedDate = false
         nextFollowUpDate = nil
         hasFollowUpDate = false
+        isInApplyQueue = false
+        postedAt = nil
+        hasPostedAt = false
+        applicationDeadline = nil
+        hasApplicationDeadline = false
         isEditing = false
         editingApplication = nil
     }
@@ -416,6 +513,16 @@ final class AddEditApplicationViewModel {
         )
     }
 
+    private func parseScore(from string: String) -> Int? {
+        guard let value = parseInteger(from: string) else { return nil }
+        return min(max(value, 1), 5)
+    }
+
+    private func normalizedOfferText(_ string: String) -> String? {
+        let normalized = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
+    }
+
     private func resolvedCycle(context: ModelContext, shouldCreateDefault: Bool) throws -> JobSearchCycle? {
         if let selectedCycleID {
             return try JobSearchCycleMigrationService.cycle(withID: selectedCycleID, in: context)
@@ -423,5 +530,38 @@ final class AddEditApplicationViewModel {
 
         guard shouldCreateDefault else { return nil }
         return try JobSearchCycleMigrationService.ensureActiveCycle(in: context)
+    }
+
+    @MainActor
+    private func syncSmartFollowUps(
+        for application: JobApplication,
+        previousFollowUpDate: Date?,
+        desiredFollowUpDate: Date?,
+        hadExistingFollowUpSteps: Bool,
+        shouldEnsureAppliedCadence: Bool,
+        context: ModelContext
+    ) throws {
+        if shouldEnsureAppliedCadence {
+            try SmartFollowUpService.shared.ensureAppliedCadence(for: application, in: context)
+        } else {
+            _ = try SmartFollowUpService.shared.refresh(application, in: context)
+            if context.hasChanges {
+                try context.save()
+            }
+        }
+
+        if let desiredFollowUpDate {
+            try SmartFollowUpService.shared.applyManualFollowUpDate(
+                desiredFollowUpDate,
+                for: application,
+                in: context
+            )
+        } else if hadExistingFollowUpSteps && previousFollowUpDate != nil {
+            try SmartFollowUpService.shared.applyManualFollowUpDate(
+                nil,
+                for: application,
+                in: context
+            )
+        }
     }
 }

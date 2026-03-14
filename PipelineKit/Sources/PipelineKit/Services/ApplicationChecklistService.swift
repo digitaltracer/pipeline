@@ -64,7 +64,7 @@ public struct ApplicationChecklistService {
             let templateID = template.id.rawValue
 
             if let existingTask = existingChecklistTasks[templateID] {
-                didChange = syncCompletion(for: existingTask, template: template) || didChange
+                didChange = syncExistingTask(existingTask, template: template) || didChange
                 continue
             }
 
@@ -98,16 +98,27 @@ public struct ApplicationChecklistService {
         }
     }
 
-    private func syncCompletion(for task: ApplicationTask, template: ChecklistTemplate) -> Bool {
-        guard !task.isCompleted,
-              let application = task.application,
-              template.autoCompletion(application) else {
-            return false
+    private func syncExistingTask(_ task: ApplicationTask, template: ChecklistTemplate) -> Bool {
+        guard let application = task.application else { return false }
+
+        var didChange = false
+        let resolvedDueDate = template.dueDateResolver(application, calendar)
+        if task.dueDate != resolvedDueDate {
+            task.dueDate = resolvedDueDate
+            task.updateTimestamp()
+            didChange = true
         }
 
-        task.setCompleted(true)
-        application.updateTimestamp()
-        return true
+        if !task.isCompleted, template.autoCompletion(application) {
+            task.setCompleted(true)
+            didChange = true
+        }
+
+        if didChange {
+            application.updateTimestamp()
+        }
+
+        return didChange
     }
 
     private func eligibleTemplates(for application: JobApplication) -> [ChecklistTemplate] {
@@ -159,7 +170,7 @@ public struct ApplicationChecklistService {
                 actionKind: .resumeTailoring,
                 dueDateResolver: { _, _ in nil },
                 autoCompletion: { application in
-                    !application.sortedResumeSnapshots.isEmpty || application.submittedResumeAttachment != nil
+                    SavedApplicationPreparationService.status(for: application).hasTailoredResume
                 }
             ),
             ChecklistTemplate(
@@ -169,7 +180,7 @@ public struct ApplicationChecklistService {
                 actionKind: .coverLetter,
                 dueDateResolver: { _, _ in nil },
                 autoCompletion: { application in
-                    application.coverLetterDraft?.hasContent == true
+                    SavedApplicationPreparationService.status(for: application).hasCoverLetter
                 }
             ),
             ChecklistTemplate(
@@ -179,7 +190,7 @@ public struct ApplicationChecklistService {
                 actionKind: .companyResearch,
                 dueDateResolver: { _, _ in nil },
                 autoCompletion: { application in
-                    !(application.company?.sortedResearchSnapshots.isEmpty ?? true)
+                    SavedApplicationPreparationService.status(for: application).hasCompanyResearch
                 }
             ),
             ChecklistTemplate(

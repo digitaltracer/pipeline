@@ -14,6 +14,7 @@
   const previewEl = document.getElementById("preview");
   const emptyEl = document.getElementById("empty");
   const saveBtn = document.getElementById("save-btn");
+  const saveForLaterBtn = document.getElementById("save-for-later-btn");
   const copyJsonBtn = document.getElementById("copy-json-btn");
   const debugBtn = document.getElementById("debug-btn");
 
@@ -57,9 +58,11 @@
     emptyReason.classList.remove("hidden");
   }
 
-  function resetSaveButton() {
+  function resetSaveButtons() {
     saveBtn.disabled = false;
     saveBtn.innerHTML = '<span class="btn-icon">+</span> Save to Pipeline';
+    saveForLaterBtn.disabled = false;
+    saveForLaterBtn.textContent = "Save for Later";
   }
 
   function resetCopyJsonButton() {
@@ -74,9 +77,11 @@
     return `${normalized.substring(0, maxLength).trimEnd()}...`;
   }
 
-  function setSavingState() {
+  function setSavingState(mode) {
     saveBtn.disabled = true;
-    saveBtn.textContent = "Saving...";
+    saveForLaterBtn.disabled = true;
+    saveBtn.textContent = mode === "save" ? "Saving..." : "Save to Pipeline";
+    saveForLaterBtn.textContent = mode === "queue" ? "Queuing..." : "Save for Later";
   }
 
   async function ensureContentScript(tabId) {
@@ -199,7 +204,7 @@
       }
 
       extractedData = response.data;
-      resetSaveButton();
+      resetSaveButtons();
       resetCopyJsonButton();
 
       // Populate preview
@@ -224,42 +229,47 @@
   // Save
   // ---------------------------------------------------------------------------
 
-  async function saveJob() {
+  async function saveJob(saveForLater = false) {
     if (!extractedData) return;
 
-    setSavingState();
+    setSavingState(saveForLater ? "queue" : "save");
     hideStatus();
 
     try {
-      await doSave();
+      await doSave(saveForLater);
     } catch (err) {
       showStatus("error", `Error: ${err.message}`);
-      resetSaveButton();
+      resetSaveButtons();
     }
   }
 
-  async function doSave() {
+  async function doSave(saveForLater) {
     try {
       const result = await runtime.runtime.sendMessage({
         action: "saveJobToPipeline",
         data: extractedData,
+        saveForLater,
       });
 
       if (result?.success) {
-        showStatus("success", "Saved to Pipeline!");
+        showStatus("success", saveForLater ? "Saved for later in Pipeline!" : "Saved to Pipeline!");
         saveBtn.textContent = "Saved";
+        saveForLaterBtn.textContent = saveForLater ? "Queued" : "Save for Later";
         saveBtn.disabled = true;
+        saveForLaterBtn.disabled = true;
       } else if (result?.isDuplicate) {
         showStatus("warning", result?.error || "This job is already saved in Pipeline.");
         saveBtn.textContent = "Already Saved";
+        saveForLaterBtn.textContent = "Already Saved";
         saveBtn.disabled = true;
+        saveForLaterBtn.disabled = true;
       } else {
         showStatus("error", result?.error || "Failed to save. Please try again.");
-        resetSaveButton();
+        resetSaveButtons();
       }
     } catch (err) {
       showStatus("error", `Error: ${err.message}`);
-      resetSaveButton();
+      resetSaveButtons();
     }
   }
 
@@ -267,7 +277,8 @@
   // Init
   // ---------------------------------------------------------------------------
 
-  saveBtn.addEventListener("click", saveJob);
+  saveBtn.addEventListener("click", () => saveJob(false));
+  saveForLaterBtn.addEventListener("click", () => saveJob(true));
   copyJsonBtn.addEventListener("click", copyParsedJson);
   debugBtn.addEventListener("click", copyDebugPacket);
   extractFromPage();

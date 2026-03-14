@@ -491,6 +491,7 @@ private func makeATSContainer() throws -> ModelContainer {
         InterviewLearningSnapshot.self,
         RejectionLearningSnapshot.self,
         ApplicationTask.self,
+        FollowUpStep.self,
         ApplicationChecklistSuggestion.self,
         ApplicationAttachment.self,
         CoverLetterDraft.self,

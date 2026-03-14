@@ -14,6 +14,9 @@ struct ApplicationListView: View {
     @Binding var searchText: String
     let currentResumeRevisionID: UUID?
     let matchPreferences: JobMatchPreferences
+    var onboardingProgress: OnboardingProgress? = nil
+    var onOnboardingAction: ((OnboardingAction) -> Void)? = nil
+    var onHideOnboardingGuidance: (() -> Void)? = nil
     @State private var actionErrorMessage: String?
     @State private var rejectionPromptActivity: ApplicationActivity?
     private let detailViewModel = ApplicationDetailViewModel()
@@ -94,10 +97,38 @@ struct ApplicationListView: View {
     @ViewBuilder
     private var emptyState: some View {
         if searchText.isEmpty {
-            ContentUnavailableView {
-                Label("No Applications", systemImage: "briefcase")
-            } description: {
-                Text("Add your first job application to get started")
+            if let onboardingProgress, onboardingProgress.shouldShowSetupGuidance, let onOnboardingAction {
+                VStack(alignment: .leading, spacing: 18) {
+                    OnboardingChecklistCard(
+                        title: "Build Your Pipeline",
+                        progress: onboardingProgress,
+                        onAction: onOnboardingAction,
+                        onMute: onHideOnboardingGuidance
+                    )
+
+                    OnboardingFeatureCalloutCard(
+                        title: "Start with one real application",
+                        message: "As soon as you add one job, Pipeline can power the grid, details panel, reminders, match scoring, and downstream analytics from the same record.",
+                        icon: "briefcase",
+                        actions: [
+                            OnboardingCardAction(
+                                id: "add-application",
+                                title: "Add Application",
+                                systemImage: "plus.circle.fill",
+                                action: .addApplication,
+                                isProminent: true
+                            )
+                        ],
+                        onAction: onOnboardingAction
+                    )
+                }
+                .padding(20)
+            } else {
+                ContentUnavailableView {
+                    Label("No Applications", systemImage: "briefcase")
+                } description: {
+                    Text("Add your first job application to get started")
+                }
             }
         } else {
             ContentUnavailableView.search(text: searchText)
@@ -135,6 +166,25 @@ struct ApplicationListView: View {
         }
 
         Divider()
+
+        if application.status == .saved {
+            Button {
+                do {
+                    try detailViewModel.setApplyQueueMembership(
+                        !application.isQueuedForApplyLater,
+                        for: application,
+                        context: modelContext
+                    )
+                } catch {
+                    actionErrorMessage = error.localizedDescription
+                }
+            } label: {
+                Label(
+                    application.isQueuedForApplyLater ? "Remove from Apply Queue" : "Add to Apply Queue",
+                    systemImage: application.isQueuedForApplyLater ? "bookmark.slash" : "bookmark"
+                )
+            }
+        }
 
         if application.status != .archived {
             Button {
@@ -239,6 +289,7 @@ private extension View {
             InterviewLearningSnapshot.self,
             RejectionLearningSnapshot.self,
             ApplicationTask.self,
+            FollowUpStep.self,
             ApplicationChecklistSuggestion.self,
             ApplicationAttachment.self,
             CoverLetterDraft.self,

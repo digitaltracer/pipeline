@@ -85,6 +85,7 @@ import Testing
                 notes: "Estimated band",
                 confidenceNotes: "Best-effort estimate",
                 currency: .usd,
+                seniority: .staff,
                 minBaseCompensation: 220_000,
                 maxBaseCompensation: 260_000,
                 minTotalCompensation: 260_000,
@@ -115,6 +116,7 @@ import Testing
     #expect(company.sortedResearchSources.count == 2)
     #expect(company.sortedSalarySnapshots.count == 1)
     #expect(company.sortedSalarySnapshots.first?.sourceName == "Levels.fyi")
+    #expect(company.sortedSalarySnapshots.first?.seniority == .staff)
 }
 
 @Test func companyResearchValidationRejectsSearchInterstitialPages() {
@@ -286,6 +288,7 @@ private func makeCompanyContainer() throws -> ModelContainer {
         InterviewLearningSnapshot.self,
         RejectionLearningSnapshot.self,
         ApplicationTask.self,
+        FollowUpStep.self,
         ApplicationChecklistSuggestion.self,
         ApplicationAttachment.self,
         CoverLetterDraft.self,

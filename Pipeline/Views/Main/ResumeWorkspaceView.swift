@@ -131,14 +131,22 @@ struct ResumeWorkspaceView: View {
     @State private var validationErrorMessage: String?
     @State private var actionError: String?
     @State private var masterJSONMode: MasterResumeJSONMode = .editor
+    @State private var hasStartedDraft = false
 
     @State private var isExportingFile = false
     @State private var exportFormat: ResumeExportFormat = .json
     @State private var jsonDocument = ResumeJSONFileDocument(text: "{}")
     @State private var pdfDocument = ResumePDFFileDocument(data: Data())
+    var onboardingProgress: OnboardingProgress? = nil
+    var onOnboardingAction: ((OnboardingAction) -> Void)? = nil
+    var onHideOnboardingGuidance: (() -> Void)? = nil
 
     private var currentRevision: ResumeMasterRevision? {
         revisions.first(where: { $0.isCurrent }) ?? revisions.first
+    }
+
+    private var shouldShowResumeSetupCard: Bool {
+        currentRevision == nil && !hasStartedDraft
     }
 
     var body: some View {
@@ -193,51 +201,55 @@ struct ResumeWorkspaceView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Master Resume JSON")
-                        .font(.headline)
+                if shouldShowResumeSetupCard {
+                    resumeSetupCard
+                } else {
+                    HStack {
+                        Text("Master Resume JSON")
+                            .font(.headline)
 
-                    Spacer()
+                        Spacer()
 
-                    masterJSONModeSwitcher
-                }
-
-                Group {
-                    if masterJSONMode == .editor {
-                        JSONCodeEditor(text: $editorJSON)
-                    } else {
-                        masterJSONPreview
+                        masterJSONModeSwitcher
                     }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.secondary.opacity(0.08))
-                )
 
-                if let validationErrorMessage {
-                    Label(validationErrorMessage, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundColor(.red)
-                        .textSelection(.enabled)
-                }
-
-                if let revision = currentRevision,
-                   !revision.unknownFieldPaths.isEmpty {
-                    Label("Preserved in JSON, not rendered in PDF.", systemImage: "info.circle")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-
-                HStack {
-                    Button("Save as New Master Revision") {
-                        saveCurrentEditorAsRevision()
+                    Group {
+                        if masterJSONMode == .editor {
+                            JSONCodeEditor(text: $editorJSON)
+                        } else {
+                            masterJSONPreview
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(DesignSystem.Colors.accent)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.secondary.opacity(0.08))
+                    )
 
-                    Spacer()
+                    if let validationErrorMessage {
+                        Label(validationErrorMessage, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                            .textSelection(.enabled)
+                    }
+
+                    if let revision = currentRevision,
+                       !revision.unknownFieldPaths.isEmpty {
+                        Label("Preserved in JSON, not rendered in PDF.", systemImage: "info.circle")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    HStack {
+                        Button("Save as New Master Revision") {
+                            saveCurrentEditorAsRevision()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(DesignSystem.Colors.accent)
+
+                        Spacer()
+                    }
                 }
             }
             .padding(20)
@@ -245,6 +257,7 @@ struct ResumeWorkspaceView: View {
         .onAppear {
             loadMasterRevisions()
             editorJSON = currentRevision?.rawJSON ?? defaultResumePlaceholder
+            hasStartedDraft = currentRevision != nil
         }
         .fileImporter(
             isPresented: $showingImporter,
@@ -300,6 +313,79 @@ struct ResumeWorkspaceView: View {
         } message: {
             Text(actionError ?? "Unknown error")
         }
+    }
+
+    private var resumeSetupCard: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            OnboardingFeatureCalloutCard(
+                title: "Start with one master resume",
+                message: "Pipeline tailors from a saved JSON-based master resume. Import your current source of truth or start from the template, then save the first revision when it looks right.",
+                icon: "doc.badge.plus",
+                actions: [
+                    OnboardingCardAction(
+                        id: "resume-template",
+                        title: "Start With Template",
+                        systemImage: "square.and.pencil",
+                        action: .openResumeWorkspace,
+                        isProminent: true
+                    ),
+                    OnboardingCardAction(
+                        id: "resume-ai-settings",
+                        title: "Open AI Settings",
+                        systemImage: "brain.head.profile",
+                        action: .openAISettings
+                    )
+                ],
+                onAction: { action in
+                    switch action {
+                    case .openResumeWorkspace:
+                        beginDraftingResume()
+                    default:
+                        onOnboardingAction?(action)
+                    }
+                },
+                onMute: onboardingProgress?.shouldShowSetupGuidance == true ? onHideOnboardingGuidance : nil
+            )
+
+            if let onboardingProgress, onboardingProgress.shouldShowSetupGuidance, let onOnboardingAction {
+                OnboardingChecklistCard(
+                    title: "Complete Resume Setup",
+                    progress: onboardingProgress,
+                    onAction: { action in
+                        switch action {
+                        case .openResumeWorkspace:
+                            beginDraftingResume()
+                        default:
+                            onOnboardingAction(action)
+                        }
+                    },
+                    onMute: onHideOnboardingGuidance
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("What happens next")
+                    .font(.subheadline.weight(.semibold))
+
+                Text("1. Import JSON or start from the built-in template.")
+                Text("2. Save a master revision once the structure is correct.")
+                Text("3. Open any application detail to run tailoring and ATS checks later.")
+            }
+            .font(.caption)
+            .foregroundColor(.secondary)
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+            )
+        }
+    }
+
+    private func beginDraftingResume() {
+        hasStartedDraft = true
+        masterJSONMode = .editor
+        editorJSON = defaultResumePlaceholder
     }
 
     private var masterJSONModeSwitcher: some View {

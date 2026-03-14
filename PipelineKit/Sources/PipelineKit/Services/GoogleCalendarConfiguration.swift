@@ -7,10 +7,10 @@ public enum GoogleCalendarConfiguration {
     public static let bundleURLTypesInfoKey = "CFBundleURLTypes"
     public static let bundleURLSchemesInfoKey = "CFBundleURLSchemes"
     public static let calendarListReadonlyScope = "https://www.googleapis.com/auth/calendar.calendarlist.readonly"
-    public static let calendarEventsReadonlyScope = "https://www.googleapis.com/auth/calendar.events.readonly"
+    public static let calendarEventsScope = "https://www.googleapis.com/auth/calendar.events"
 
     public static var requiredScopes: [String] {
-        [calendarListReadonlyScope, calendarEventsReadonlyScope]
+        [calendarListReadonlyScope, calendarEventsScope]
     }
 
     public static var isConfigured: Bool {

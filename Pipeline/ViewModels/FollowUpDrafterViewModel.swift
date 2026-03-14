@@ -15,17 +15,27 @@ final class FollowUpDrafterViewModel {
     var editableBody: String = ""
 
     private let application: JobApplication
+    private let followUpStep: FollowUpStep?
     private let settingsViewModel: SettingsViewModel
     private let modelContext: ModelContext?
 
     init(
         application: JobApplication,
         settingsViewModel: SettingsViewModel,
-        modelContext: ModelContext? = nil
+        modelContext: ModelContext? = nil,
+        followUpStep: FollowUpStep? = nil
     ) {
         self.application = application
+        self.followUpStep = followUpStep
         self.settingsViewModel = settingsViewModel
         self.modelContext = modelContext
+        if let followUpStep,
+           let subject = followUpStep.lastGeneratedSubject,
+           let body = followUpStep.lastGeneratedBody {
+            self.editableSubject = subject
+            self.editableBody = body
+            self.result = FollowUpEmailResult(subject: subject, body: body)
+        }
     }
 
     var hasResult: Bool { result != nil }
@@ -100,6 +110,7 @@ final class FollowUpDrafterViewModel {
             result = emailResult
             editableSubject = emailResult.subject
             editableBody = emailResult.body
+            try persistDraftIfNeeded(subject: emailResult.subject, body: emailResult.body)
             recordUsage(
                 feature: .followUpDraft,
                 provider: provider,
@@ -226,6 +237,18 @@ final class FollowUpDrafterViewModel {
             startedAt: startedAt,
             finishedAt: Date(),
             errorMessage: errorMessage,
+            in: modelContext
+        )
+    }
+
+    @MainActor
+    private func persistDraftIfNeeded(subject: String, body: String) throws {
+        guard let followUpStep, let modelContext else { return }
+        try SmartFollowUpService.shared.recordGeneratedDraft(
+            subject: subject,
+            body: body,
+            for: followUpStep,
+            application: application,
             in: modelContext
         )
     }

@@ -7,6 +7,7 @@ struct JobDetailHeaderView: View {
     var onDelete: (() -> Void)? = nil
     let onStatusChange: (ApplicationStatus) -> Void
     let onPriorityChange: (Priority) -> Void
+    var onQueueMembershipChange: ((Bool) -> Void)? = nil
     @Environment(\.colorScheme) private var colorScheme
 
     private var statusMenuOptions: [ApplicationStatus] {
@@ -82,6 +83,21 @@ struct JobDetailHeaderView: View {
             Spacer()
 
             HStack(spacing: 8) {
+                if let onQueueMembershipChange, application.status == .saved {
+                    Button {
+                        onQueueMembershipChange(!application.isQueuedForApplyLater)
+                    } label: {
+                        Image(systemName: application.isQueuedForApplyLater ? "bookmark.fill" : "bookmark")
+                            .font(.system(size: 13, weight: .semibold))
+                            .frame(width: 28, height: 28)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(application.isQueuedForApplyLater ? DesignSystem.Colors.accent : .secondary)
+                    .background(DesignSystem.Colors.surfaceElevated(colorScheme))
+                    .clipShape(Circle())
+                    .help(application.isQueuedForApplyLater ? "Remove from apply queue" : "Add to apply queue")
+                }
+
                 if let onDelete {
                     Button(role: .destructive) {
                         onDelete()

@@ -33,6 +33,10 @@ public enum ApplicationStatusTransitionService {
         application.status = status
         application.updateTimestamp()
 
+        if status != .saved {
+            application.setApplyQueue(false, shouldTouch: false)
+        }
+
         if status == .interviewing && application.appliedDate == nil {
             application.appliedDate = occurredAt
         }
@@ -51,6 +55,14 @@ public enum ApplicationStatusTransitionService {
 
         do {
             try ApplicationChecklistService().sync(for: application, trigger: .statusChanged, in: context)
+            if status == .applied {
+                try SmartFollowUpService.shared.ensureAppliedCadence(for: application, in: context)
+            } else {
+                _ = try SmartFollowUpService.shared.refresh(application, in: context)
+                if context.hasChanges {
+                    try context.save()
+                }
+            }
         } catch {
             context.rollback()
             throw error

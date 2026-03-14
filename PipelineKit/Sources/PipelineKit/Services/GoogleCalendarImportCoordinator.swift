@@ -7,6 +7,7 @@ public final class GoogleCalendarImportCoordinator {
 
     private let oauthService = GoogleOAuthService.shared
     private let calendarService = GoogleCalendarService.shared
+    private let interviewSyncCoordinator = GoogleCalendarInterviewSyncCoordinator.shared
 
     private init() {}
 
@@ -70,7 +71,7 @@ public final class GoogleCalendarImportCoordinator {
                     syncToken: subscription.syncToken,
                     referenceDate: referenceDate
                 )
-                try apply(
+                try await apply(
                     response.events,
                     to: subscription,
                     applications: applications,
@@ -86,7 +87,7 @@ public final class GoogleCalendarImportCoordinator {
                     syncToken: nil,
                     referenceDate: referenceDate
                 )
-                try apply(
+                try await apply(
                     response.events,
                     to: subscription,
                     applications: applications,
@@ -117,15 +118,45 @@ public final class GoogleCalendarImportCoordinator {
         try context.save()
     }
 
+    public func setWriteTarget(
+        _ subscription: GoogleCalendarSubscription,
+        in context: ModelContext
+    ) throws {
+        for candidate in fetchSubscriptions(in: context) {
+            candidate.isWriteTarget = candidate.id == subscription.id
+            candidate.updateTimestamp()
+        }
+        try context.save()
+    }
+
     public func acceptImport(
         _ record: GoogleCalendarImportRecord,
         into application: JobApplication,
         in context: ModelContext
-    ) throws {
+    ) async throws {
         let activity: ApplicationActivity
+        let eventPayload = GoogleCalendarEventPayload(
+            calendarID: record.remoteCalendarID,
+            calendarName: record.remoteCalendarName,
+            eventID: record.remoteEventID,
+            etag: record.remoteETag,
+            status: record.remoteStatus,
+            htmlLink: record.htmlLink,
+            summary: record.summary,
+            location: record.location,
+            details: record.details,
+            organizerEmail: record.organizerEmail,
+            startDate: record.startDate,
+            endDate: record.endDate,
+            isAllDay: record.isAllDay,
+            privateMetadata: [:]
+        )
 
         if let importedActivity = record.importedActivity {
             activity = importedActivity
+        } else if let existingNearby = dedupeCandidate(for: application, event: eventPayload) {
+            activity = existingNearby
+            record.importedActivity = existingNearby
         } else {
             activity = ApplicationActivity(kind: .interview, application: application)
             context.insert(activity)
@@ -136,23 +167,7 @@ public final class GoogleCalendarImportCoordinator {
         activity.kind = .interview
         activity.occurredAt = record.startDate
         activity.scheduledDurationMinutes = scheduledDurationMinutes(start: record.startDate, end: record.endDate)
-        activity.interviewStage = GoogleCalendarMatchingService.inferInterviewStage(
-            for: GoogleCalendarEventPayload(
-                calendarID: record.remoteCalendarID,
-                calendarName: record.remoteCalendarName,
-                eventID: record.remoteEventID,
-                etag: record.remoteETag,
-                status: record.remoteStatus,
-                htmlLink: record.htmlLink,
-                summary: record.summary,
-                location: record.location,
-                details: record.details,
-                organizerEmail: record.organizerEmail,
-                startDate: record.startDate,
-                endDate: record.endDate,
-                isAllDay: record.isAllDay
-            )
-        )
+        activity.interviewStage = GoogleCalendarMatchingService.inferInterviewStage(for: eventPayload)
         activity.notes = composedActivityNotes(for: record)
         activity.emailSubject = nil
         activity.emailBodySnapshot = nil
@@ -165,7 +180,12 @@ public final class GoogleCalendarImportCoordinator {
         syncInterviewState(for: application, context: context)
 
         try context.save()
-
+        try await interviewSyncCoordinator.syncImportedInterview(
+            activity,
+            application: application,
+            remoteEvent: eventPayload,
+            in: context
+        )
     }
 
     public func ignoreImport(_ record: GoogleCalendarImportRecord, in context: ModelContext) throws {
@@ -204,6 +224,7 @@ public final class GoogleCalendarImportCoordinator {
         let existing = fetchSubscriptions(in: context)
         let existingByID = Dictionary(uniqueKeysWithValues: existing.map { ($0.calendarID, $0) })
         let hasSelection = existing.contains(where: \.isSelected)
+        let hasWriteTarget = existing.contains(where: \.isWriteTarget)
 
         for entry in calendars {
             let subscription = existingByID[entry.id] ?? GoogleCalendarSubscription(
@@ -218,6 +239,9 @@ public final class GoogleCalendarImportCoordinator {
             subscription.isPrimary = entry.isPrimary
             if !hasSelection {
                 subscription.isSelected = entry.isPrimary
+            }
+            if !hasWriteTarget {
+                subscription.isWriteTarget = entry.isPrimary
             }
             subscription.updateTimestamp()
         }
@@ -240,16 +264,30 @@ public final class GoogleCalendarImportCoordinator {
         to subscription: GoogleCalendarSubscription,
         applications: [JobApplication],
         in context: ModelContext
-    ) throws {
+    ) async throws {
         let existingRecords = fetchImportRecords(for: subscription.calendarID, in: context)
         let recordsByID = Dictionary(uniqueKeysWithValues: existingRecords.map { ($0.remoteEventID, $0) })
+        let aliases = fetchCompanyAliases(in: context)
 
         for event in events {
+            if let link = interviewSyncCoordinator.fetchLink(forRemoteEventID: event.eventID, in: context) {
+                await interviewSyncCoordinator.applyRemoteEvent(event, to: link, in: context)
+                continue
+            }
+
+            if event.privateMetadata["pipelineEventKind"] == "prep" {
+                continue
+            }
+
             if event.status.lowercased() == "cancelled", recordsByID[event.eventID] == nil {
                 continue
             }
 
-            let suggestion = GoogleCalendarMatchingService.bestMatch(for: event, among: applications)?.application
+            let suggestion = GoogleCalendarMatchingService.bestMatch(
+                for: event,
+                among: applications,
+                aliases: aliases
+            )?.application
             let record = recordsByID[event.eventID] ?? GoogleCalendarImportRecord(
                 remoteCalendarID: subscription.calendarID,
                 remoteCalendarName: subscription.title,
@@ -358,7 +396,7 @@ public final class GoogleCalendarImportCoordinator {
     }
 
     private func fetchSelectedSubscriptions(in context: ModelContext) -> [GoogleCalendarSubscription] {
-        fetchSubscriptions(in: context).filter(\.isSelected)
+        fetchSubscriptions(in: context).filter { $0.isSelected || $0.isWriteTarget }
     }
 
     private func fetchImportRecords(for calendarID: String, in context: ModelContext) -> [GoogleCalendarImportRecord] {
@@ -369,5 +407,20 @@ public final class GoogleCalendarImportCoordinator {
     private func fetchApplications(in context: ModelContext) -> [JobApplication] {
         let descriptor = FetchDescriptor<JobApplication>()
         return (try? context.fetch(descriptor)) ?? []
+    }
+
+    private func fetchCompanyAliases(in context: ModelContext) -> [CompanyAlias] {
+        let descriptor = FetchDescriptor<CompanyAlias>()
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    private func dedupeCandidate(
+        for application: JobApplication,
+        event: GoogleCalendarEventPayload
+    ) -> ApplicationActivity? {
+        application.sortedInterviewActivities.first { activity in
+            let delta = abs(activity.occurredAt.timeIntervalSince(event.startDate))
+            return delta <= 2 * 60 * 60
+        }
     }
 }

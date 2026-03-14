@@ -345,6 +345,108 @@
     return "";
   }
 
+  function toISODateString(date) {
+    return date instanceof Date && !Number.isNaN(date.getTime()) ? date.toISOString() : "";
+  }
+
+  function parseAbsoluteDateValue(rawValue) {
+    const normalized = normalizeText(rawValue);
+    if (!normalized) return "";
+
+    const sanitized = normalized
+      .replace(/\b(apply by|application deadline|deadline|closing date|posted|date posted|valid through)\b[:\s-]*/gi, "")
+      .replace(/\bat\b.+$/i, "")
+      .trim();
+
+    if (!sanitized) return "";
+
+    const parsed = new Date(sanitized);
+    return toISODateString(parsed);
+  }
+
+  function shiftDate(amount, unit) {
+    const date = new Date();
+    switch (unit) {
+      case "hour":
+        date.setHours(date.getHours() - amount);
+        break;
+      case "day":
+        date.setDate(date.getDate() - amount);
+        break;
+      case "week":
+        date.setDate(date.getDate() - amount * 7);
+        break;
+      case "month":
+        date.setMonth(date.getMonth() - amount);
+        break;
+      default:
+        return "";
+    }
+    return toISODateString(date);
+  }
+
+  function extractPostedDateFromText(text) {
+    const normalized = compactMultiline(text || "");
+    if (!normalized) return "";
+
+    if (/\bposted\s+today\b/i.test(normalized) || /\btoday\b[^.\n]*\bposted\b/i.test(normalized)) {
+      return toISODateString(new Date());
+    }
+    if (/\bposted\s+yesterday\b/i.test(normalized) || /\byesterday\b[^.\n]*\bposted\b/i.test(normalized)) {
+      return shiftDate(1, "day");
+    }
+
+    const relativeMatch =
+      normalized.match(/\bposted\b[^.\n]{0,40}?(\d+)\s+(hour|day|week|month)s?\s+ago\b/i) ||
+      normalized.match(/\b(\d+)\s+(hour|day|week|month)s?\s+ago\b[^.\n]{0,40}?\bposted\b/i);
+    if (relativeMatch) {
+      return shiftDate(Number(relativeMatch[1]), relativeMatch[2].toLowerCase());
+    }
+
+    const absoluteMatch =
+      normalized.match(/\bposted\b[^.\n]{0,40}?([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4}|\d{4}-\d{2}-\d{2})\b/i) ||
+      normalized.match(/\bdate posted\b[^.\n]{0,20}?([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4}|\d{4}-\d{2}-\d{2})\b/i);
+    return parseAbsoluteDateValue(absoluteMatch ? absoluteMatch[1] : "");
+  }
+
+  function extractDeadlineDateFromText(text) {
+    const normalized = compactMultiline(text || "");
+    if (!normalized) return "";
+
+    const patterns = [
+      /\bapply by\b[^.\n]{0,30}?([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4}|\d{4}-\d{2}-\d{2})\b/i,
+      /\bapplication deadline\b[^.\n]{0,30}?([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4}|\d{4}-\d{2}-\d{2})\b/i,
+      /\bdeadline\b[^.\n]{0,20}?([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4}|\d{4}-\d{2}-\d{2})\b/i,
+      /\bvalid through\b[^.\n]{0,20}?([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4}|\d{4}-\d{2}-\d{2})\b/i,
+    ];
+
+    for (const pattern of patterns) {
+      const match = normalized.match(pattern);
+      if (!match) continue;
+      const parsed = parseAbsoluteDateValue(match[1]);
+      if (parsed) return parsed;
+    }
+
+    return "";
+  }
+
+  function pickDateValue(selectors, root = document) {
+    for (const selector of selectors) {
+      const elements = Array.from(root.querySelectorAll(selector));
+      for (const element of elements) {
+        const candidate =
+          element.getAttribute?.("datetime") ||
+          element.getAttribute?.("content") ||
+          element.getAttribute?.("dateTime") ||
+          element.textContent ||
+          "";
+        const parsed = parseAbsoluteDateValue(candidate);
+        if (parsed) return parsed;
+      }
+    }
+    return "";
+  }
+
   function isUiNoiseLine(line) {
     if (!line) return true;
     const value = line.toLowerCase();
@@ -474,12 +576,16 @@
           const location = extractLocationFromLd(posting);
           const description = clampDescription(stripHtml(posting.description || ""));
           const salary = extractSalaryFromLd(posting);
+          const postedAt = parseAbsoluteDateValue(posting.datePosted || "");
+          const applicationDeadline = parseAbsoluteDateValue(posting.validThrough || "");
           return {
             title,
             company,
             location,
             description,
             salary,
+            postedAt,
+            applicationDeadline,
             source: "jsonld",
           };
         }
@@ -613,6 +719,16 @@
     const description = clampDescription(
       pickFirstText(['[itemprop="description"]', '[itemprop="responsibilities"]'])
     );
+    const postedAt = pickDateValue([
+      '[itemprop="datePosted"]',
+      'meta[itemprop="datePosted"]',
+      'time[itemprop="datePosted"]'
+    ]);
+    const applicationDeadline = pickDateValue([
+      '[itemprop="validThrough"]',
+      'meta[itemprop="validThrough"]',
+      'time[itemprop="validThrough"]'
+    ]);
 
     if (!title && !description) return null;
 
@@ -622,6 +738,8 @@
       location,
       description,
       salary: "",
+      postedAt,
+      applicationDeadline,
       source: "microdata",
     };
   }
@@ -863,6 +981,25 @@
         ],
         topCard
       ) || extractSalaryFromText(`${topCardText}\n${description}`);
+    const postedAt =
+      pickDateValue(
+        [
+          'time[datetime][aria-label*="posted" i]',
+          '[datetime][data-test-id*="posted" i]',
+          '[datetime][data-testid*="posted" i]'
+        ],
+        root
+      ) || extractPostedDateFromText(`${topCardText}\n${description}`);
+    const applicationDeadline =
+      pickDateValue(
+        [
+          '[itemprop="validThrough"]',
+          'time[datetime][aria-label*="deadline" i]',
+          '[datetime][data-test-id*="deadline" i]',
+          '[datetime][data-testid*="deadline" i]'
+        ],
+        root
+      ) || extractDeadlineDateFromText(`${topCardText}\n${description}`);
 
     if (!title && !description) return null;
 
@@ -872,6 +1009,8 @@
       location,
       description,
       salary,
+      postedAt,
+      applicationDeadline,
       source: "linkedin-panel",
     };
   }
@@ -997,6 +1136,26 @@
     );
 
     const salary = extractSalaryFromText(text);
+    const postedAt =
+      pickDateValue(
+        [
+          '[itemprop="datePosted"]',
+          'time[datetime][aria-label*="posted" i]',
+          '[datetime][data-test-id*="posted" i]',
+          '[datetime][data-testid*="posted" i]'
+        ],
+        best
+      ) || extractPostedDateFromText(rawText);
+    const applicationDeadline =
+      pickDateValue(
+        [
+          '[itemprop="validThrough"]',
+          'time[datetime][aria-label*="deadline" i]',
+          '[datetime][data-test-id*="deadline" i]',
+          '[datetime][data-testid*="deadline" i]'
+        ],
+        best
+      ) || extractDeadlineDateFromText(rawText);
 
     return {
       title,
@@ -1004,6 +1163,8 @@
       location,
       description: text,
       salary,
+      postedAt,
+      applicationDeadline,
       source: "semantic-dom",
     };
   }
@@ -1042,6 +1203,8 @@
       location: "",
       description,
       salary: "",
+      postedAt: "",
+      applicationDeadline: "",
       source: "meta",
     };
   }
@@ -1072,6 +1235,8 @@
       location: cleanLocation(record.location || ""),
       description: cleanDescriptionText(record.description || ""),
       salary: normalizeText(record.salary || ""),
+      postedAt: normalizeText(record.postedAt || ""),
+      applicationDeadline: normalizeText(record.applicationDeadline || ""),
       source: record.source || "unknown",
     };
   }
@@ -1141,6 +1306,44 @@
     return { value: bestValue, source: bestSource, score: Math.max(bestScore, 0) };
   }
 
+  function bestDateField(field, records) {
+    let bestValue = "";
+    let bestSource = "";
+    let bestScore = -1;
+
+    for (const record of records) {
+      const value = record[field] || "";
+      if (!value) continue;
+
+      let score = 0;
+      switch (record.source) {
+        case "jsonld":
+          score = 0.5;
+          break;
+        case "microdata":
+          score = 0.42;
+          break;
+        case "linkedin-panel":
+          score = 0.34;
+          break;
+        case "semantic-dom":
+          score = 0.28;
+          break;
+        default:
+          score = 0.12;
+          break;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestValue = value;
+        bestSource = record.source;
+      }
+    }
+
+    return { value: bestValue, source: bestSource };
+  }
+
   function computeConfidence(fields) {
     const base =
       fields.title.score +
@@ -1186,6 +1389,8 @@
     const jobLocation = fields.location.value;
     const description = fields.description.value;
     const salary = fields.salary.value;
+    const postedAt = bestDateField("postedAt", records);
+    const applicationDeadline = bestDateField("applicationDeadline", records);
     const confidence = computeConfidence(fields);
 
     const payload = {
@@ -1194,6 +1399,8 @@
       location: jobLocation,
       description,
       salary,
+      postedAt: postedAt.value,
+      applicationDeadline: applicationDeadline.value,
       url: window.location.href,
       platform: detectPlatform(),
       extractionQuality: {
@@ -1204,6 +1411,8 @@
           location: fields.location.source || "",
           description: fields.description.source || "",
           salary: fields.salary.source || "",
+          postedAt: postedAt.source || "",
+          applicationDeadline: applicationDeadline.source || "",
         },
       },
     };

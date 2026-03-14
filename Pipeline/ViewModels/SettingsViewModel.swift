@@ -43,6 +43,9 @@ final class SettingsViewModel {
         static let weeklyDigestWeekday = Constants.UserDefaultsKeys.weeklyDigestWeekday
         static let weeklyDigestHour = Constants.UserDefaultsKeys.weeklyDigestHour
         static let weeklyDigestMinute = Constants.UserDefaultsKeys.weeklyDigestMinute
+        static let applyQueueDailyTarget = Constants.UserDefaultsKeys.applyQueueDailyTarget
+        static let applyQueueNotificationHour = Constants.UserDefaultsKeys.applyQueueNotificationHour
+        static let applyQueueNotificationMinute = Constants.UserDefaultsKeys.applyQueueNotificationMinute
         static let analyticsBaseCurrency = Constants.UserDefaultsKeys.analyticsBaseCurrency
         static let jobMatchPreferredCurrency = "jobMatchPreferredCurrency"
         static let jobMatchPreferredSalaryMinText = "jobMatchPreferredSalaryMinText"
@@ -52,6 +55,7 @@ final class SettingsViewModel {
     }
 
     private static let modelCatalogRefreshInterval: TimeInterval = 60 * 60 * 24
+    private let sharedDefaults = UserDefaults(suiteName: SharedContainer.appGroupID)
 
     // MARK: - Appearance
 
@@ -108,6 +112,7 @@ final class SettingsViewModel {
     var notificationsEnabled: Bool {
         didSet {
             UserDefaults.standard.set(notificationsEnabled, forKey: StorageKeys.notificationsEnabled)
+            sharedDefaults?.set(notificationsEnabled, forKey: StorageKeys.notificationsEnabled)
         }
     }
 
@@ -141,6 +146,27 @@ final class SettingsViewModel {
     var weeklyDigestMinute: Int {
         didSet {
             UserDefaults.standard.set(weeklyDigestMinute, forKey: StorageKeys.weeklyDigestMinute)
+        }
+    }
+
+    var applyQueueDailyTarget: Int {
+        didSet {
+            UserDefaults.standard.set(applyQueueDailyTarget, forKey: StorageKeys.applyQueueDailyTarget)
+            sharedDefaults?.set(applyQueueDailyTarget, forKey: StorageKeys.applyQueueDailyTarget)
+        }
+    }
+
+    var applyQueueNotificationHour: Int {
+        didSet {
+            UserDefaults.standard.set(applyQueueNotificationHour, forKey: StorageKeys.applyQueueNotificationHour)
+            sharedDefaults?.set(applyQueueNotificationHour, forKey: StorageKeys.applyQueueNotificationHour)
+        }
+    }
+
+    var applyQueueNotificationMinute: Int {
+        didSet {
+            UserDefaults.standard.set(applyQueueNotificationMinute, forKey: StorageKeys.applyQueueNotificationMinute)
+            sharedDefaults?.set(applyQueueNotificationMinute, forKey: StorageKeys.applyQueueNotificationMinute)
         }
     }
 
@@ -261,6 +287,15 @@ final class SettingsViewModel {
         let storedMinute = UserDefaults.standard.integer(forKey: StorageKeys.weeklyDigestMinute)
         self.weeklyDigestMinute = (0...59).contains(storedMinute) ? storedMinute : WeeklyDigestSchedule.sundayEvening.minute
 
+        let storedDailyTarget = UserDefaults.standard.integer(forKey: StorageKeys.applyQueueDailyTarget)
+        self.applyQueueDailyTarget = (1...12).contains(storedDailyTarget) ? storedDailyTarget : ApplyQueueService.defaultDailyTarget
+
+        let storedQueueHour = UserDefaults.standard.integer(forKey: StorageKeys.applyQueueNotificationHour)
+        self.applyQueueNotificationHour = (0...23).contains(storedQueueHour) ? storedQueueHour : 9
+
+        let storedQueueMinute = UserDefaults.standard.integer(forKey: StorageKeys.applyQueueNotificationMinute)
+        self.applyQueueNotificationMinute = (0...59).contains(storedQueueMinute) ? storedQueueMinute : 0
+
         if let rawValue = UserDefaults.standard.string(forKey: StorageKeys.analyticsBaseCurrency),
            let currency = Currency(rawValue: rawValue) {
             self.analyticsBaseCurrency = currency
@@ -293,6 +328,7 @@ final class SettingsViewModel {
         migrateLegacyCustomModelStorageIfNeeded()
         migrateSelectedAIModelIfNeeded()
         ensureSelectedAIModelIsValid()
+        syncSharedNotificationSettings()
     }
 
     // MARK: - Methods
@@ -305,12 +341,26 @@ final class SettingsViewModel {
         }
     }
 
+    private func syncSharedNotificationSettings() {
+        sharedDefaults?.set(notificationsEnabled, forKey: StorageKeys.notificationsEnabled)
+        sharedDefaults?.set(applyQueueDailyTarget, forKey: StorageKeys.applyQueueDailyTarget)
+        sharedDefaults?.set(applyQueueNotificationHour, forKey: StorageKeys.applyQueueNotificationHour)
+        sharedDefaults?.set(applyQueueNotificationMinute, forKey: StorageKeys.applyQueueNotificationMinute)
+    }
+
     var weeklyDigestSchedule: WeeklyDigestSchedule {
         WeeklyDigestSchedule(
             weekday: weeklyDigestWeekday,
             hour: weeklyDigestHour,
             minute: weeklyDigestMinute
         )
+    }
+
+    var applyQueueNotificationTime: Date {
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        components.hour = applyQueueNotificationHour
+        components.minute = applyQueueNotificationMinute
+        return Calendar.current.date(from: components) ?? Date()
     }
 
     func availableModels(for provider: AIProvider) -> [String] {

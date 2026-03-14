@@ -8,17 +8,19 @@ public struct GoogleCalendarMatchSuggestion: Equatable {
 public enum GoogleCalendarMatchingService {
     public static func bestMatch(
         for event: GoogleCalendarEventPayload,
-        among applications: [JobApplication]
+        among applications: [JobApplication],
+        aliases: [CompanyAlias] = []
     ) -> GoogleCalendarMatchSuggestion? {
-        suggestions(for: event, among: applications).first
+        suggestions(for: event, among: applications, aliases: aliases).first
     }
 
     public static func suggestions(
         for event: GoogleCalendarEventPayload,
-        among applications: [JobApplication]
+        among applications: [JobApplication],
+        aliases: [CompanyAlias] = []
     ) -> [GoogleCalendarMatchSuggestion] {
         applications.compactMap { application in
-            let score = score(for: event, application: application)
+            let score = score(for: event, application: application, aliases: aliases)
             guard score > 0 else { return nil }
             return GoogleCalendarMatchSuggestion(application: application, score: score)
         }
@@ -55,7 +57,11 @@ public enum GoogleCalendarMatchingService {
         return nil
     }
 
-    private static func score(for event: GoogleCalendarEventPayload, application: JobApplication) -> Int {
+    private static func score(
+        for event: GoogleCalendarEventPayload,
+        application: JobApplication,
+        aliases: [CompanyAlias]
+    ) -> Int {
         let haystack = [event.summary, event.location, event.details, event.organizerEmail]
             .compactMap { $0?.lowercased() }
             .joined(separator: " ")
@@ -70,6 +76,12 @@ public enum GoogleCalendarMatchingService {
             if companyTokens.contains(where: haystack.contains) {
                 score += 30
             }
+        }
+
+        let normalizedCompany = CompanyProfile.normalizedName(from: application.companyName)
+        let matchingAliases = aliases.filter { $0.normalizedCanonicalName == normalizedCompany }
+        if matchingAliases.contains(where: { haystack.contains($0.aliasName.lowercased()) || haystack.contains($0.normalizedAliasName) }) {
+            score += 48
         }
 
         let roleTokens = tokenize(application.role.lowercased()).filter { $0.count > 3 }
@@ -90,6 +102,11 @@ public enum GoogleCalendarMatchingService {
            !domain.isEmpty,
            haystack.contains(domain) {
             score += 16
+
+            let companyDomain = normalizedCompany.replacingOccurrences(of: " ", with: "")
+            if domain.contains(companyDomain) {
+                score += 12
+            }
         }
 
         return score

@@ -22,7 +22,7 @@ public struct AICompletionResponse: Sendable, Equatable {
     }
 }
 
-public struct AIWebSearchCitation: Sendable, Equatable {
+public struct AIWebSearchCitation: Codable, Sendable, Equatable {
     public let title: String
     public let urlString: String
     public let snippet: String?

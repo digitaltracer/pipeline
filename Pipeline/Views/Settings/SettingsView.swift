@@ -3,6 +3,13 @@ import SwiftData
 import UserNotifications
 import PipelineKit
 
+enum SettingsEntryPoint: Hashable {
+    case root
+    case aiProvider
+    case integrations
+    case about
+}
+
 #if os(macOS)
 private enum SettingsCategory: String, CaseIterable, Identifiable {
     case appearance
@@ -68,17 +75,52 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         }
     }
 }
+
+private extension SettingsCategory {
+    init(entryPoint: SettingsEntryPoint) {
+        switch entryPoint {
+        case .aiProvider:
+            self = .aiProvider
+        case .integrations:
+            self = .integrations
+        case .about:
+            self = .about
+        case .root:
+            self = .appearance
+        }
+    }
+}
 #endif
 
 struct SettingsView: View {
     @Bindable var viewModel: SettingsViewModel
     var isPresentedInSheet: Bool = false
+    var entryPoint: SettingsEntryPoint = .root
+    var onReplayOnboarding: (() -> Void)? = nil
+    var onboardingGuidanceMuted: Binding<Bool>? = nil
     @Environment(\.dismiss) private var dismiss
 
     #if os(macOS)
-    @State private var selectedCategory: SettingsCategory = .appearance
+    @State private var selectedCategory: SettingsCategory
     @Environment(\.colorScheme) private var colorScheme
     #endif
+
+    init(
+        viewModel: SettingsViewModel,
+        isPresentedInSheet: Bool = false,
+        entryPoint: SettingsEntryPoint = .root,
+        onReplayOnboarding: (() -> Void)? = nil,
+        onboardingGuidanceMuted: Binding<Bool>? = nil
+    ) {
+        self.viewModel = viewModel
+        self.isPresentedInSheet = isPresentedInSheet
+        self.entryPoint = entryPoint
+        self.onReplayOnboarding = onReplayOnboarding
+        self.onboardingGuidanceMuted = onboardingGuidanceMuted
+        #if os(macOS)
+        _selectedCategory = State(initialValue: SettingsCategory(entryPoint: entryPoint))
+        #endif
+    }
 
     var body: some View {
         #if os(macOS)
@@ -94,77 +136,14 @@ struct SettingsView: View {
         .appWindowBackground()
         #else
         NavigationStack {
-            List {
-                Section {
-                    NavigationLink {
-                        AppearanceSettingsView(viewModel: viewModel)
-                    } label: {
-                        Label("Appearance", systemImage: "paintbrush")
-                    }
-
-                    NavigationLink {
-                        AIProviderSettingsView(viewModel: viewModel)
-                    } label: {
-                        Label("AI Provider", systemImage: "brain")
-                    }
-
-                    NavigationLink {
-                        AllApplicationsSettingsView(viewModel: viewModel)
-                    } label: {
-                        Label("All Applications", systemImage: "line.3.horizontal.decrease.circle")
-                    }
-
-                    NavigationLink {
-                        AnalyticsSettingsView(viewModel: viewModel)
-                    } label: {
-                        Label("Analytics", systemImage: "chart.xyaxis.line")
-                    }
-
-                    NavigationLink {
-                        NotificationSettingsView(viewModel: viewModel)
-                    } label: {
-                        Label("Notifications", systemImage: "bell")
-                    }
-
-                    NavigationLink {
-                        IntegrationsSettingsContentView()
-                            .navigationTitle("Integrations")
-                    } label: {
-                        Label("Integrations", systemImage: "puzzlepiece.extension")
-                    }
-
-                    NavigationLink {
-                        SecuritySettingsView(viewModel: viewModel)
-                    } label: {
-                        Label("Security", systemImage: "lock.shield")
-                    }
-
-                    NavigationLink {
-                        SyncSettingsView(viewModel: viewModel)
-                    } label: {
-                        Label("iCloud Sync", systemImage: "icloud")
-                    }
-                }
-
-                Section {
-                    if let supportURL = URL(string: Constants.URLs.support) {
-                        Link(destination: supportURL) {
-                            Label("Report an Issue", systemImage: "exclamationmark.bubble")
-                        }
-                    }
-
-                }
-
-                Section {
-                    HStack {
-                        Text("Version")
-                        Spacer()
-                        Text(Constants.App.version)
-                            .foregroundColor(.secondary)
-                    }
+            Group {
+                if entryPoint == .root {
+                    iOSRootList
+                } else {
+                    directEntryPointContent
                 }
             }
-            .navigationTitle("Settings")
+            .navigationTitle(iOSNavigationTitle)
             .toolbar {
                 if isPresentedInSheet {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -321,11 +300,148 @@ struct SettingsView: View {
         case .sync:
             SyncSettingsContent(viewModel: viewModel)
         case .about:
-            AboutSettingsContent()
+            AboutSettingsContent(
+                onReplayOnboarding: onReplayOnboarding,
+                onboardingGuidanceMuted: onboardingGuidanceMuted
+            )
         }
     }
     #endif
 }
+
+#if !os(macOS)
+private extension SettingsView {
+    var iOSNavigationTitle: String {
+        switch entryPoint {
+        case .root:
+            return "Settings"
+        case .aiProvider:
+            return "AI Provider"
+        case .integrations:
+            return "Integrations"
+        case .about:
+            return "About"
+        }
+    }
+
+    var iOSRootList: some View {
+        List {
+            Section {
+                NavigationLink {
+                    AppearanceSettingsView(viewModel: viewModel)
+                } label: {
+                    Label("Appearance", systemImage: "paintbrush")
+                }
+
+                NavigationLink {
+                    AIProviderSettingsView(viewModel: viewModel)
+                } label: {
+                    Label("AI Provider", systemImage: "brain")
+                }
+
+                NavigationLink {
+                    AllApplicationsSettingsView(viewModel: viewModel)
+                } label: {
+                    Label("All Applications", systemImage: "line.3.horizontal.decrease.circle")
+                }
+
+                NavigationLink {
+                    AnalyticsSettingsView(viewModel: viewModel)
+                } label: {
+                    Label("Analytics", systemImage: "chart.xyaxis.line")
+                }
+
+                NavigationLink {
+                    NotificationSettingsView(viewModel: viewModel)
+                } label: {
+                    Label("Notifications", systemImage: "bell")
+                }
+
+                NavigationLink {
+                    IntegrationsSettingsContentView()
+                        .navigationTitle("Integrations")
+                } label: {
+                    Label("Integrations", systemImage: "puzzlepiece.extension")
+                }
+
+                NavigationLink {
+                    SecuritySettingsView(viewModel: viewModel)
+                } label: {
+                    Label("Security", systemImage: "lock.shield")
+                }
+
+                NavigationLink {
+                    SyncSettingsView(viewModel: viewModel)
+                } label: {
+                    Label("iCloud Sync", systemImage: "icloud")
+                }
+            }
+
+            onboardingSection
+
+            Section {
+                if let supportURL = URL(string: Constants.URLs.support) {
+                    Link(destination: supportURL) {
+                        Label("Report an Issue", systemImage: "exclamationmark.bubble")
+                    }
+                }
+            }
+
+            Section {
+                HStack {
+                    Text("Version")
+                    Spacer()
+                    Text(Constants.App.version)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    var directEntryPointContent: some View {
+        switch entryPoint {
+        case .root:
+            iOSRootList
+        case .aiProvider:
+            AIProviderSettingsView(viewModel: viewModel)
+        case .integrations:
+            IntegrationsSettingsContentView()
+        case .about:
+            List {
+                onboardingSection
+                Section {
+                    if let supportURL = URL(string: Constants.URLs.support) {
+                        Link(destination: supportURL) {
+                            Label("Report an Issue", systemImage: "exclamationmark.bubble")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    var onboardingSection: some View {
+        if onReplayOnboarding != nil || onboardingGuidanceMuted != nil {
+            Section("Getting Started") {
+                if let onReplayOnboarding {
+                    Button {
+                        onReplayOnboarding()
+                        dismiss()
+                    } label: {
+                        Label("Replay Guided Tour", systemImage: "play.rectangle")
+                    }
+                }
+
+                if let onboardingGuidanceMuted {
+                    Toggle("Hide setup guidance", isOn: onboardingGuidanceMuted)
+                }
+            }
+        }
+    }
+}
+#endif
 
 #if os(macOS)
 private struct SettingsCategoryRow: View {
@@ -484,8 +600,37 @@ struct SettingsFormSectionCard<Content: View>: View {
 }
 
 struct AboutSettingsContent: View {
+    var onReplayOnboarding: (() -> Void)? = nil
+    var onboardingGuidanceMuted: Binding<Bool>? = nil
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if let onReplayOnboarding {
+                Button(action: onReplayOnboarding) {
+                    SettingsLinkRow(
+                        title: "Replay Guided Tour",
+                        subtitle: "Reopen the onboarding walkthrough and demo screens.",
+                        icon: "play.rectangle"
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+
+            if let onboardingGuidanceMuted {
+                Toggle(isOn: onboardingGuidanceMuted) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Hide setup guidance")
+                        Text("Mute contextual onboarding cards until you turn them back on.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                if onReplayOnboarding != nil {
+                    Divider()
+                }
+            }
+
             if let supportURL = URL(string: Constants.URLs.support) {
                 Link(destination: supportURL) {
                     SettingsLinkRow(
@@ -824,6 +969,7 @@ struct NotificationSettingsView: View {
 
             if viewModel.notificationsEnabled {
                 reminderTimingSection
+                applyQueueSection
                 permissionSection
             }
         }
@@ -845,6 +991,24 @@ struct NotificationSettingsView: View {
                 }
             }
             .pickerStyle(.inline)
+        }
+    }
+
+    private var applyQueueSection: some View {
+        Section {
+            Stepper(value: $viewModel.applyQueueDailyTarget, in: 1...12) {
+                Text("Daily target: \(viewModel.applyQueueDailyTarget) jobs")
+            }
+
+            DatePicker(
+                "Morning Queue Time",
+                selection: applyQueueTimeBindingCompact,
+                displayedComponents: .hourAndMinute
+            )
+        } header: {
+            Text("Apply Queue")
+        } footer: {
+            Text("Pipeline recommends 3-5 applications per day. These settings control your morning apply-queue reminder.")
         }
     }
 
@@ -923,6 +1087,21 @@ struct NotificationSettingsView: View {
         @unknown default:
             return "Check your system settings if reminders are not arriving."
         }
+    }
+
+    private var applyQueueTimeBindingCompact: Binding<Date> {
+        Binding(
+            get: {
+                var components = DateComponents()
+                components.hour = viewModel.applyQueueNotificationHour
+                components.minute = viewModel.applyQueueNotificationMinute
+                return Calendar.current.date(from: components) ?? Date()
+            },
+            set: { newValue in
+                viewModel.applyQueueNotificationHour = Calendar.current.component(.hour, from: newValue)
+                viewModel.applyQueueNotificationMinute = Calendar.current.component(.minute, from: newValue)
+            }
+        )
     }
 
     @MainActor
@@ -1161,6 +1340,7 @@ struct NotificationSettingsContent: View {
             if viewModel.notificationsEnabled {
                 reminderTimingContent
                 weeklyDigestContent
+                applyQueueContent
             } else {
                 inactiveStateContent
             }
@@ -1292,6 +1472,12 @@ struct NotificationSettingsContent: View {
             title: viewModel.weeklyDigestNotificationsEnabled ? weeklyDigestCompactSummary : "Digest off",
             tint: viewModel.weeklyDigestNotificationsEnabled ? DesignSystem.Colors.accent : .secondary
         )
+
+        NotificationStatusChip(
+            icon: "bookmark.circle",
+            title: "Queue at \(formattedTime(hour: viewModel.applyQueueNotificationHour, minute: viewModel.applyQueueNotificationMinute))",
+            tint: DesignSystem.Colors.accent
+        )
     }
 
     private var reminderTimingContent: some View {
@@ -1370,6 +1556,38 @@ struct NotificationSettingsContent: View {
                     Label(weeklyDigestScheduleText, systemImage: "calendar.badge.clock")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    private var applyQueueContent: some View {
+        NotificationSettingsSectionCard(
+            title: "Apply Queue",
+            subtitle: "Choose how many jobs Pipeline should line up each day and when to send the morning queue summary."
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                Stepper(value: $viewModel.applyQueueDailyTarget, in: 1...12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Daily target: \(viewModel.applyQueueDailyTarget) jobs")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Recommended range: 3-5 jobs per day.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                NotificationField(label: "Morning Reminder") {
+                    DatePicker(
+                        "Morning Reminder",
+                        selection: applyQueueTimeBinding,
+                        displayedComponents: .hourAndMinute
+                    )
+                    #if os(macOS)
+                    .datePickerStyle(.field)
+                    #endif
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
@@ -1536,6 +1754,21 @@ struct NotificationSettingsContent: View {
             set: { newValue in
                 viewModel.weeklyDigestHour = Calendar.current.component(.hour, from: newValue)
                 viewModel.weeklyDigestMinute = Calendar.current.component(.minute, from: newValue)
+            }
+        )
+    }
+
+    private var applyQueueTimeBinding: Binding<Date> {
+        Binding(
+            get: {
+                var components = DateComponents()
+                components.hour = viewModel.applyQueueNotificationHour
+                components.minute = viewModel.applyQueueNotificationMinute
+                return Calendar.current.date(from: components) ?? Date()
+            },
+            set: { newValue in
+                viewModel.applyQueueNotificationHour = Calendar.current.component(.hour, from: newValue)
+                viewModel.applyQueueNotificationMinute = Calendar.current.component(.minute, from: newValue)
             }
         )
     }

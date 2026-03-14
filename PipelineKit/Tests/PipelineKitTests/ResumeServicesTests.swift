@@ -307,6 +307,7 @@ import Testing
         InterviewLearningSnapshot.self,
         RejectionLearningSnapshot.self,
         ApplicationTask.self,
+        FollowUpStep.self,
         ApplicationChecklistSuggestion.self,
         CoverLetterDraft.self,
         ATSCompatibilityAssessment.self,
