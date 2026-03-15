@@ -28,6 +28,10 @@ struct OnboardingFlowView: View {
                     focusStep
                 case .ai:
                     aiStep
+                case .googleCalendar:
+                    googleCalendarStep
+                case .linkedInImport:
+                    linkedInImportStep
                 case .launch:
                     launchStep
                 }
@@ -408,6 +412,198 @@ struct OnboardingFlowView: View {
         .padding(28)
     }
 
+    private var googleCalendarStep: some View {
+        HStack(alignment: .top, spacing: 22) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Google Calendar helps when interviews start living outside Pipeline.")
+                    .font(.title.weight(.bold))
+
+                Text("On macOS, you can connect one Google account, choose exactly which calendars Pipeline reads, and pick one calendar for Pipeline-managed interview events. External changes still stop in a review queue before they affect your timeline.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                VStack(spacing: 12) {
+                    ForEach(OnboardingDemoData.googleCalendarSources) { source in
+                        HStack(alignment: .center, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 8) {
+                                    Text(source.title)
+                                        .font(.subheadline.weight(.semibold))
+
+                                    if source.isWriteTarget {
+                                        integrationTag("Write target", tint: .green)
+                                    } else if source.isSelected {
+                                        integrationTag("Read", tint: DesignSystem.Colors.accent)
+                                    }
+                                }
+
+                                Text(source.detail)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Spacer()
+
+                            Image(systemName: source.isSelected ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(source.isSelected ? DesignSystem.Colors.accent : .secondary)
+                        }
+                        .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(DesignSystem.Colors.surface(colorScheme))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+                        )
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 14) {
+                demoPanelTitle("What it unlocks")
+
+                bullet("Interview holds from selected calendars can show up as reviewable Pipeline activity instead of getting lost in your inbox.")
+                bullet("One writable calendar keeps Pipeline-managed interviews and prep events visible wherever you already plan your week.")
+                bullet("The review queue gives you a manual checkpoint before new, changed, or cancelled events touch your application timeline.")
+
+                demoPanelTitle("Sample review queue")
+                    .padding(.top, 6)
+
+                VStack(spacing: 10) {
+                    ForEach(OnboardingDemoData.googleCalendarReviewItems) { item in
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: item.status == "Needs review" ? "tray.and.arrow.down.fill" : "arrow.triangle.2.circlepath")
+                                .foregroundColor(item.status == "Needs review" ? .orange : DesignSystem.Colors.accent)
+                                .frame(width: 18)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("\(item.company) • \(item.title)")
+                                    .font(.subheadline.weight(.semibold))
+                                Text(item.timing)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Spacer()
+
+                            integrationTag(item.status, tint: item.status == "Needs review" ? .orange : DesignSystem.Colors.accent)
+                        }
+                        .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(DesignSystem.Colors.surface(colorScheme))
+                        )
+                    }
+                }
+
+                Spacer()
+            }
+            .frame(width: 360, alignment: .topLeading)
+        }
+        .padding(28)
+    }
+
+    private var linkedInImportStep: some View {
+        HStack(alignment: .top, spacing: 22) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("LinkedIn Import is for building a usable referral layer, not a giant contact dump.")
+                    .font(.title.weight(.bold))
+
+                Text("Export your first-degree connections from LinkedIn, import the CSV into Pipeline, and let the app match companies against your active applications. The imported network stays separate until you choose which people to promote into saved contacts.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                VStack(spacing: 12) {
+                    ForEach(Array(OnboardingDemoData.linkedInImportSteps.enumerated()), id: \.offset) { index, step in
+                        HStack(alignment: .top, spacing: 12) {
+                            Text("\(index + 1)")
+                                .font(.caption.weight(.bold))
+                                .foregroundColor(DesignSystem.Colors.accent)
+                                .frame(width: 24, height: 24)
+                                .background(
+                                    Circle()
+                                        .fill(DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.24 : 0.12))
+                                )
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(step.title)
+                                    .font(.subheadline.weight(.semibold))
+                                Text(step.detail)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Spacer()
+                        }
+                        .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(DesignSystem.Colors.surface(colorScheme))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+                        )
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 14) {
+                demoPanelTitle("Example network matches")
+
+                VStack(spacing: 10) {
+                    ForEach(OnboardingDemoData.linkedInConnections) { connection in
+                        HStack(alignment: .top, spacing: 12) {
+                            ZStack {
+                                Circle()
+                                    .fill(DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.24 : 0.12))
+                                Text(String(connection.name.prefix(1)))
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundColor(DesignSystem.Colors.accent)
+                            }
+                            .frame(width: 34, height: 34)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(connection.name)
+                                    .font(.subheadline.weight(.semibold))
+                                Text("\(connection.title) at \(connection.company)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Spacer()
+
+                            integrationTag(connection.relationship, tint: .green)
+                        }
+                        .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(DesignSystem.Colors.surface(colorScheme))
+                        )
+                    }
+                }
+
+                demoPanelTitle("What it is for")
+                    .padding(.top, 6)
+
+                ForEach(OnboardingDemoData.linkedInImportHighlights) { item in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.title)
+                            .font(.subheadline.weight(.semibold))
+                        Text(item.detail)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Spacer()
+            }
+            .frame(width: 360, alignment: .topLeading)
+        }
+        .padding(28)
+    }
+
     private func introMetric(title: String, subtitle: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
@@ -525,6 +721,18 @@ struct OnboardingFlowView: View {
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }
+    }
+
+    private func integrationTag(_ value: String, tint: Color) -> some View {
+        Text(value)
+            .font(.caption2.weight(.semibold))
+            .foregroundColor(tint)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(tint.opacity(colorScheme == .dark ? 0.18 : 0.10))
+            )
     }
 
     private func move(_ delta: Int) {

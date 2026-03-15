@@ -16,6 +16,8 @@ enum OnboardingStep: String, CaseIterable, Identifiable {
     case pipeline
     case focus
     case ai
+    case googleCalendar
+    case linkedInImport
     case launch
 
     var id: String { rawValue }
@@ -30,6 +32,10 @@ enum OnboardingStep: String, CaseIterable, Identifiable {
             return "See Momentum"
         case .ai:
             return "Use AI Deliberately"
+        case .googleCalendar:
+            return "Sync Interview Timing"
+        case .linkedInImport:
+            return "Unlock Referrals"
         case .launch:
             return "Launch Your Workspace"
         }
@@ -45,6 +51,10 @@ enum OnboardingStep: String, CaseIterable, Identifiable {
             return "Move between dashboard, kanban, and follow-up views without losing context."
         case .ai:
             return "Parse jobs, tailor resumes, and compare offers after configuring a provider."
+        case .googleCalendar:
+            return "On macOS, connect Google Calendar when you want interview events and review flows in one place."
+        case .linkedInImport:
+            return "Import your LinkedIn connections export to surface referral opportunities without cluttering contacts."
         case .launch:
             return "Set up the few things that unlock the rest of the app."
         }
@@ -60,6 +70,10 @@ enum OnboardingStep: String, CaseIterable, Identifiable {
             return "chart.xyaxis.line"
         case .ai:
             return "wand.and.stars"
+        case .googleCalendar:
+            return "calendar.badge.clock"
+        case .linkedInImport:
+            return "person.3.sequence.fill"
         case .launch:
             return "checklist"
         }

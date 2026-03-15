@@ -231,6 +231,18 @@ extension View {
 final class CursorCoordinator {
     static let shared = CursorCoordinator()
 
+    private static let interactiveAccessibilityRoles: Set<NSAccessibility.Role> = [
+        .button,
+        .link,
+        .menuButton,
+        .disclosureTriangle,
+        .popUpButton,
+        .radioButton,
+        .checkBox,
+        .tabGroup,
+        .menuItem
+    ]
+
     private var monitor: Any?
     private var lastCursorKind: CursorKind = .arrow
 
@@ -365,6 +377,10 @@ final class CursorCoordinator {
                 return true
             }
 
+            if hasInteractiveAccessibilityRole(candidate) {
+                return true
+            }
+
             let className = NSStringFromClass(type(of: candidate))
             if className.contains("Button")
                 || className.contains("ToolbarItem")
@@ -383,6 +399,11 @@ final class CursorCoordinator {
         }
 
         return false
+    }
+
+    private func hasInteractiveAccessibilityRole(_ view: NSView) -> Bool {
+        guard let role = view.accessibilityRole() else { return false }
+        return Self.interactiveAccessibilityRoles.contains(role)
     }
 
     private func setCursorIfNeeded(_ kind: CursorKind) {

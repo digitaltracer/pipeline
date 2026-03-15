@@ -30,6 +30,30 @@ enum OnboardingDemoData {
         let detail: String
     }
 
+    struct DemoCalendarSource: Identifiable {
+        let id: String
+        let title: String
+        let detail: String
+        let isSelected: Bool
+        let isWriteTarget: Bool
+    }
+
+    struct DemoCalendarReviewItem: Identifiable {
+        let id: String
+        let company: String
+        let title: String
+        let timing: String
+        let status: String
+    }
+
+    struct DemoConnection: Identifiable {
+        let id: String
+        let name: String
+        let title: String
+        let company: String
+        let relationship: String
+    }
+
     static let applications: [DemoApplication] = [
         DemoApplication(
             id: "demo-openai",
@@ -84,6 +108,104 @@ enum OnboardingDemoData {
             id: "evidence",
             title: "Carry evidence forward",
             detail: "Paste strong bullets once, then reuse them across tailored revisions."
+        )
+    ]
+
+    static let googleCalendarSources: [DemoCalendarSource] = [
+        DemoCalendarSource(
+            id: "primary",
+            title: "Avery Candidate",
+            detail: "Primary interview calendar",
+            isSelected: true,
+            isWriteTarget: true
+        ),
+        DemoCalendarSource(
+            id: "work",
+            title: "Recruiting Prep",
+            detail: "Read for recruiter holds and prep blocks",
+            isSelected: true,
+            isWriteTarget: false
+        ),
+        DemoCalendarSource(
+            id: "personal",
+            title: "Personal",
+            detail: "Ignored by Pipeline",
+            isSelected: false,
+            isWriteTarget: false
+        )
+    ]
+
+    static let googleCalendarReviewItems: [DemoCalendarReviewItem] = [
+        DemoCalendarReviewItem(
+            id: "figma-onsite",
+            company: "Figma",
+            title: "Panel interview",
+            timing: "Tue 10:00 AM",
+            status: "Needs review"
+        ),
+        DemoCalendarReviewItem(
+            id: "openai-recruiter",
+            company: "OpenAI",
+            title: "Recruiter sync",
+            timing: "Wed 1:30 PM",
+            status: "Update"
+        )
+    ]
+
+    static let linkedInImportSteps: [(title: String, detail: String)] = [
+        (
+            "Export first-degree connections",
+            "Download the official LinkedIn connections CSV from LinkedIn Settings."
+        ),
+        (
+            "Import the file into Pipeline",
+            "Pipeline keeps the raw network in a separate layer instead of auto-adding everyone as a contact."
+        ),
+        (
+            "Review matches when companies overlap",
+            "Promote the right people into contacts only when they become useful for a live application."
+        )
+    ]
+
+    static let linkedInConnections: [DemoConnection] = [
+        DemoConnection(
+            id: "maya",
+            name: "Maya Chen",
+            title: "Staff Product Designer",
+            company: "Figma",
+            relationship: "Referral likely"
+        ),
+        DemoConnection(
+            id: "daniel",
+            name: "Daniel Park",
+            title: "Engineering Manager",
+            company: "OpenAI",
+            relationship: "Warm intro"
+        ),
+        DemoConnection(
+            id: "nina",
+            name: "Nina Patel",
+            title: "Recruiting Ops",
+            company: "Stripe",
+            relationship: "Keep in network"
+        )
+    ]
+
+    static let linkedInImportHighlights: [DemoResumeHighlight] = [
+        DemoResumeHighlight(
+            id: "referral-match",
+            title: "Find referral angles per application",
+            detail: "When an imported connection shares a company with a job, Pipeline can surface that match inside Job Details."
+        ),
+        DemoResumeHighlight(
+            id: "contact-promotion",
+            title: "Keep contacts curated",
+            detail: "Useful network rows can be promoted into saved contacts instead of flooding your contact list on import."
+        ),
+        DemoResumeHighlight(
+            id: "outreach-history",
+            title: "Track referral outreach",
+            detail: "Pipeline can draft referral requests, log attempts, and reflect referral wins back in dashboard analytics."
         )
     ]
 
