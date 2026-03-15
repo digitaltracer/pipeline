@@ -601,12 +601,12 @@ public final class JobApplication {
         self.interviewStageRawValue = interviewStage?.rawValue
         self.currencyRawValue = currency.rawValue
         self.seniorityOverrideRawValue = seniorityOverride?.rawValue
-        self.salaryMin = nil
-        self.salaryMax = nil
+        self.salaryMin = salaryMin
+        self.salaryMax = salaryMax
         self.postedBonusCompensation = postedBonusCompensation
         self.postedEquityCompensation = postedEquityCompensation
-        self.expectedSalaryMin = nil
-        self.expectedSalaryMax = nil
+        self.expectedSalaryMin = expectedSalaryMin
+        self.expectedSalaryMax = expectedSalaryMax
         self.expectedBonusCompensation = expectedBonusCompensation
         self.expectedEquityCompensation = expectedEquityCompensation
         self.offerBaseCompensation = offerBaseCompensation

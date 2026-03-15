@@ -19,7 +19,7 @@ final class DashboardViewModel {
     var lastRefreshToken = ""
 
     private let analyticsService: DashboardAnalyticsService
-    private var activeRefreshToken: String?
+    private var activeRefreshTask: Task<Void, Never>?
 
     init(analyticsService: DashboardAnalyticsService = DashboardAnalyticsService()) {
         self.analyticsService = analyticsService
@@ -35,30 +35,37 @@ final class DashboardViewModel {
         currentResumeRevisionID: UUID?,
         matchPreferences: JobMatchPreferences
     ) async {
+        // Cancel any in-flight refresh to prevent race conditions.
+        activeRefreshTask?.cancel()
+
         lastRefreshToken = token
-        activeRefreshToken = token
         isRefreshing = true
 
-        let result = await analyticsService.analyze(
-            applications: applications,
-            cycles: cycles,
-            goals: goals,
-            scope: selectedScope,
-            baseCurrency: baseCurrency,
-            rejectionLearningSnapshot: rejectionLearningSnapshot,
-            currentResumeRevisionID: currentResumeRevisionID,
-            matchPreferences: matchPreferences
-        )
+        let task = Task {
+            let result = await analyticsService.analyze(
+                applications: applications,
+                cycles: cycles,
+                goals: goals,
+                scope: selectedScope,
+                baseCurrency: baseCurrency,
+                rejectionLearningSnapshot: rejectionLearningSnapshot,
+                currentResumeRevisionID: currentResumeRevisionID,
+                matchPreferences: matchPreferences
+            )
 
-        guard activeRefreshToken == token, !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return }
 
-        analytics = result
-        activeRefreshToken = nil
-        isRefreshing = false
+            analytics = result
+            isRefreshing = false
+        }
+        activeRefreshTask = task
+
+        await task.value
     }
 
     func cancelRefresh() {
-        activeRefreshToken = nil
+        activeRefreshTask?.cancel()
+        activeRefreshTask = nil
         isRefreshing = false
     }
 

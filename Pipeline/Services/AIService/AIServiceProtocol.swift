@@ -245,8 +245,10 @@ private final class WebViewTextExtractor: NSObject, WKNavigationDelegate {
         webView?.stopLoading()
         webView = nil
 
-        continuation?.resume(with: result)
+        // Atomically consume the continuation to prevent double-resume crashes.
+        let captured = continuation
         continuation = nil
+        captured?.resume(with: result)
     }
 }
 #endif

@@ -33,21 +33,19 @@ struct ContentView: View {
         }
 
         guard !searchText.isEmpty else { return visibleApplications }
-        let lowercasedSearch = searchText.lowercased()
         return visibleApplications.filter { app in
-            app.companyName.lowercased().contains(lowercasedSearch) ||
-            app.role.lowercased().contains(lowercasedSearch) ||
-            app.location.lowercased().contains(lowercasedSearch)
+            app.companyName.localizedCaseInsensitiveContains(searchText) ||
+            app.role.localizedCaseInsensitiveContains(searchText) ||
+            app.location.localizedCaseInsensitiveContains(searchText)
         }
     }
 
     private var filteredContacts: [Contact] {
         guard !searchText.isEmpty else { return contacts }
-        let lowercasedSearch = searchText.lowercased()
         return contacts.filter { contact in
-            contact.fullName.lowercased().contains(lowercasedSearch) ||
-            (contact.companyName?.lowercased().contains(lowercasedSearch) ?? false) ||
-            (contact.email?.lowercased().contains(lowercasedSearch) ?? false)
+            contact.fullName.localizedCaseInsensitiveContains(searchText) ||
+            (contact.companyName?.localizedCaseInsensitiveContains(searchText) ?? false) ||
+            (contact.email?.localizedCaseInsensitiveContains(searchText) ?? false)
         }
     }
 
@@ -224,7 +222,7 @@ struct ContentView: View {
                         Button("Weekly Digest") { selectedDestination = .weeklyDigest }
                         Button("Upcoming") { selectedDestination = .upcoming }
                         Button("Integrations") { selectedDestination = .integrations }
-                        if applications.filter({ $0.status == .offered }).count >= 2 {
+                        if applications.lazy.filter({ $0.status == .offered }).prefix(2).count >= 2 {
                             Button("Compare Offers") { selectedDestination = .offerComparison }
                         }
                         Divider()

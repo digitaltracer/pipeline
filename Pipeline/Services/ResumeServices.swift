@@ -372,8 +372,20 @@ enum TectonicPDFCompiler {
         process.standardOutput = pipe
         process.standardError = pipe
 
+        // Install the exit handler before launching so fast exits are captured.
+        let timeoutSeconds: Double = 60
+        let completed = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in
+            completed.signal()
+        }
+
         try process.run()
-        process.waitUntilExit()
+
+        let waitResult = completed.wait(timeout: .now() + timeoutSeconds)
+        if waitResult == .timedOut {
+            process.terminate()
+            throw CompileError.compilationFailed("Tectonic process timed out after \(Int(timeoutSeconds))s.")
+        }
 
         let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
         let output = String(data: outputData, encoding: .utf8) ?? ""

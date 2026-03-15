@@ -605,6 +605,22 @@ public enum AICompletionClient {
         body: [String: Any],
         providerName: String
     ) async throws -> Data {
+        try await AIRequestRetry.withRetry {
+            try await sendRequestOnce(
+                url: url,
+                headers: headers,
+                body: body,
+                providerName: providerName
+            )
+        }
+    }
+
+    private static func sendRequestOnce(
+        url: String,
+        headers: [String: String],
+        body: [String: Any],
+        providerName: String
+    ) async throws -> Data {
         guard let requestURL = URL(string: url) else {
             throw AIServiceError.invalidURL
         }
@@ -645,7 +661,8 @@ public enum AICompletionClient {
                 AIParseDebugLogger.error(
                     "AICompletionClient(\(providerName)): API error status=\(httpResponse.statusCode) message=\(message)."
                 )
-                throw AIServiceError.apiError(message)
+                // Prefix with status code so isRetryable can identify 5xx errors.
+                throw AIServiceError.apiError("[\(httpResponse.statusCode)] \(message)")
             }
             AIParseDebugLogger.error(
                 "AICompletionClient(\(providerName)): API error status=\(httpResponse.statusCode) response body redacted bytes=\(data.count)."

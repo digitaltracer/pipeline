@@ -1149,9 +1149,11 @@ final class InterviewLearningsViewModel {
     }
 
     private func latestSnapshot() throws -> InterviewLearningSnapshot? {
-        try modelContext.fetch(FetchDescriptor<InterviewLearningSnapshot>())
-            .sorted { $0.generatedAt > $1.generatedAt }
-            .first
+        var descriptor = FetchDescriptor<InterviewLearningSnapshot>(
+            sortBy: [SortDescriptor(\InterviewLearningSnapshot.generatedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 1
+        return try modelContext.fetch(descriptor).first
     }
 }
 
@@ -1536,9 +1538,11 @@ final class RejectionLearningsViewModel {
     }
 
     private func latestSnapshot() -> RejectionLearningSnapshot? {
-        ((try? modelContext.fetch(FetchDescriptor<RejectionLearningSnapshot>())) ?? [])
-            .sorted { $0.generatedAt > $1.generatedAt }
-            .first
+        var descriptor = FetchDescriptor<RejectionLearningSnapshot>(
+            sortBy: [SortDescriptor(\RejectionLearningSnapshot.generatedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 1
+        return (try? modelContext.fetch(descriptor))?.first
     }
 }
 

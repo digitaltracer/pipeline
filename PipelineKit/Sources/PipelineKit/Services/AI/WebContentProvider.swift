@@ -53,26 +53,31 @@ public final class BasicWebContentProvider: WebContentProvider {
         )
         request.timeoutInterval = 30
 
-        let (data, response): (Data, URLResponse)
-        do {
-            (data, response) = try await URLSession.shared.data(for: request)
-        } catch {
-            AIParseDebugLogger.error(
-                "\(serviceName): network error fetching webpage: \(error.localizedDescription)."
-            )
-            throw AIServiceError.networkError(error)
-        }
-
-        if let httpResponse = response as? HTTPURLResponse {
-            AIParseDebugLogger.info(
-                "\(serviceName): webpage fetch status=\(httpResponse.statusCode) bytes=\(data.count)."
-            )
-
-            if !(200...299).contains(httpResponse.statusCode) {
-                throw AIServiceError.apiError(
-                    "Job URL returned HTTP \(httpResponse.statusCode)."
+        let (data, response) = try await AIRequestRetry.withRetry { () async throws -> (Data, URLResponse) in
+            let (d, r): (Data, URLResponse)
+            do {
+                (d, r) = try await URLSession.shared.data(for: request)
+            } catch {
+                AIParseDebugLogger.error(
+                    "\(serviceName): network error fetching webpage: \(error.localizedDescription)."
                 )
+                throw AIServiceError.networkError(error)
             }
+
+            if let httpResponse = r as? HTTPURLResponse {
+                AIParseDebugLogger.info(
+                    "\(serviceName): webpage fetch status=\(httpResponse.statusCode) bytes=\(d.count)."
+                )
+
+                if !(200...299).contains(httpResponse.statusCode) {
+                    // Prefix with [statusCode] so isRetryable can identify 5xx errors.
+                    throw AIServiceError.apiError(
+                        "[\(httpResponse.statusCode)] Job URL returned HTTP \(httpResponse.statusCode)."
+                    )
+                }
+            }
+
+            return (d, r)
         }
 
         guard let html = String(data: data, encoding: .utf8) else {

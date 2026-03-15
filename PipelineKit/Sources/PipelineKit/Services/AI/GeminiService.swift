@@ -50,41 +50,8 @@ public final class GeminiService: AIServiceProtocol {
         request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
 
-        let (data, response): (Data, URLResponse)
-        do {
-            (data, response) = try await URLSession.shared.data(for: request)
-        } catch {
-            AIParseDebugLogger.error("GeminiService: network error during Gemini call: \(error.localizedDescription).")
-            throw AIServiceError.networkError(error)
-        }
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            AIParseDebugLogger.error("GeminiService: missing HTTP response from Gemini.")
-            throw AIServiceError.invalidResponse
-        }
-
-        AIParseDebugLogger.info(
-            "GeminiService: Gemini response status=\(httpResponse.statusCode) bytes=\(data.count)."
-        )
-
-        switch httpResponse.statusCode {
-        case 200:
-            break
-        case 401, 403:
-            throw AIServiceError.unauthorized
-        case 429:
-            throw AIServiceError.rateLimited
-        default:
-            if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let error = errorJson["error"] as? [String: Any],
-               let message = error["message"] as? String {
-                AIParseDebugLogger.error(
-                    "GeminiService: API error status=\(httpResponse.statusCode) message=\(message)."
-                )
-                throw AIServiceError.apiError(message)
-            }
-            AIParseDebugLogger.error("GeminiService: API error status=\(httpResponse.statusCode).")
-            throw AIServiceError.apiError("HTTP \(httpResponse.statusCode)")
+        let data = try await AIRequestRetry.withRetry {
+            try await AIHTTPClient.send(request, serviceName: "GeminiService")
         }
 
         let jsonObject: Any

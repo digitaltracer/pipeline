@@ -45,39 +45,8 @@ public final class OpenAIService: AIServiceProtocol {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
 
-        let (data, response): (Data, URLResponse)
-        do {
-            (data, response) = try await URLSession.shared.data(for: request)
-        } catch {
-            AIParseDebugLogger.error("OpenAIService: network error during OpenAI call: \(error.localizedDescription).")
-            throw AIServiceError.networkError(error)
-        }
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            AIParseDebugLogger.error("OpenAIService: missing HTTP response from OpenAI.")
-            throw AIServiceError.invalidResponse
-        }
-
-        AIParseDebugLogger.info(
-            "OpenAIService: OpenAI response status=\(httpResponse.statusCode) bytes=\(data.count)."
-        )
-
-        switch httpResponse.statusCode {
-        case 200:
-            break
-        case 401:
-            throw AIServiceError.unauthorized
-        case 429:
-            throw AIServiceError.rateLimited
-        default:
-            if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let error = errorJson["error"] as? [String: Any],
-               let message = error["message"] as? String {
-                AIParseDebugLogger.error("OpenAIService: API error status=\(httpResponse.statusCode) message=\(message).")
-                throw AIServiceError.apiError(message)
-            }
-            AIParseDebugLogger.error("OpenAIService: API error status=\(httpResponse.statusCode).")
-            throw AIServiceError.apiError("HTTP \(httpResponse.statusCode)")
+        let data = try await AIRequestRetry.withRetry {
+            try await AIHTTPClient.send(request, serviceName: "OpenAIService")
         }
 
         let jsonObject: Any

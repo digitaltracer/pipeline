@@ -194,9 +194,11 @@ final class InterviewPrepViewModel {
         )
         personalQuestionHighlights = personalizedContext.boostedQuestions
 
-        let latestSnapshot = ((try? modelContext.fetch(FetchDescriptor<InterviewLearningSnapshot>())) ?? [])
-            .sorted { $0.generatedAt > $1.generatedAt }
-            .first
+        var snapshotDescriptor = FetchDescriptor<InterviewLearningSnapshot>(
+            sortBy: [SortDescriptor(\InterviewLearningSnapshot.generatedAt, order: .reverse)]
+        )
+        snapshotDescriptor.fetchLimit = 1
+        let latestSnapshot = (try? modelContext.fetch(snapshotDescriptor))?.first
         personalHistorySignals = Array(
             ((latestSnapshot?.strengths ?? []) + (latestSnapshot?.growthAreas ?? []))
                 .prefix(6)
