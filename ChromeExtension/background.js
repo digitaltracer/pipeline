@@ -6,7 +6,7 @@ const NATIVE_MESSAGE_TIMEOUT_MS = 60000;
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "saveJobToPipeline") {
-    handleSave(request.data)
+    handleSave(request.data, Boolean(request.saveForLater))
       .then((result) => sendResponse(result))
       .catch((err) => sendResponse({ success: false, error: err.message }));
     return true;
@@ -43,7 +43,7 @@ function sendNativeMessage(message) {
   });
 }
 
-async function handleSave(jobData) {
+async function handleSave(jobData, saveForLater = false) {
   try {
     return await sendNativeMessage({
       command: "parse",
@@ -53,6 +53,9 @@ async function handleSave(jobData) {
       location: jobData.location,
       description: jobData.description,
       platform: jobData.platform,
+      postedAt: jobData.postedAt,
+      applicationDeadline: jobData.applicationDeadline,
+      saveForLater,
     });
   } catch (err) {
     return { success: false, error: err.message };
