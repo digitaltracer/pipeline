@@ -3,7 +3,7 @@
 // Shared between Safari and Chrome extensions.
 //
 // Extraction priority:
-//   1. Platform-specific extraction (currently LinkedIn two-pane details view)
+//   1. Platform-specific extraction (LinkedIn, Indeed, Glassdoor, Greenhouse, Lever, Workday)
 //   2. JSON-LD / microdata (schema.org JobPosting)
 //   3. Semantic DOM extraction (standards-first, class-agnostic heuristics)
 //   4. Open Graph / meta tags as weak fallback
@@ -201,11 +201,11 @@
     return true;
   }
 
-  function isValidDescription(value) {
+  function isValidDescription(value, minLength = MIN_DESCRIPTION_LENGTH) {
     if (!value) return false;
     const text = normalizeText(value);
-    if (text.length < MIN_DESCRIPTION_LENGTH) return false;
-    if (text.split(/\s+/).length < 35) return false;
+    if (text.length < minLength) return false;
+    if (text.split(/\s+/).length < (minLength < 120 ? 15 : 35)) return false;
     const noiseHits = countKeywordHits(text, NOISE_KEYWORDS);
     const jobHits = countKeywordHits(text, JOB_KEYWORDS);
     if (noiseHits >= 3) return false;
@@ -324,8 +324,18 @@
 
   function extractSalaryFromText(text) {
     if (!text) return "";
+
+    // Primary regex: explicit currency symbols/codes
     const salaryRegex =
-      /(?:\$|USD|INR|EUR|GBP)\s?(?:\d{2,3}(?:,\d{3})+|\d+(?:\.\d+)?\s?[kKmM])(?:\s*(?:-|to|–)\s*(?:\$|USD|INR|EUR|GBP)?\s?(?:\d{2,3}(?:,\d{3})+|\d+(?:\.\d+)?\s?[kKmM]))?(?:\s*(?:\/|per)\s*(?:year|yr|month|mo|hour|hr))?/i;
+      /(?:[\$\u20B9]|USD|INR|EUR|GBP|Rs\.?)\s?(?:\d{2,3}(?:,\d{3})+|\d+(?:\.\d+)?\s?[kKmM])(?:\s*(?:-|to|–)\s*(?:[\$\u20B9]|USD|INR|EUR|GBP|Rs\.?)?\s?(?:\d{2,3}(?:,\d{3})+|\d+(?:\.\d+)?\s?[kKmM]))?(?:\s*(?:\/|per)\s*(?:year|yr|month|mo|hour|hr|annum))?/i;
+
+    // Indian salary formats: ₹12 LPA, 8-12 LPA, 10 lakhs, 15 CTC
+    const indianSalaryRegex =
+      /(?:[\u20B9]|INR|Rs\.?)\s?\d+(?:\.\d+)?\s*(?:LPA|lakhs?|CTC|crore)?(?:\s*(?:-|to|–)\s*(?:[\u20B9]|INR|Rs\.?)?\s?\d+(?:\.\d+)?\s*(?:LPA|lakhs?|CTC|crore)?)?/i;
+
+    // Bare range fallback: "80,000 - 120,000" (only with salary context)
+    const bareRangeRegex =
+      /\b(\d{2,3}(?:,\d{3})+)\s*(?:-|to|–)\s*(\d{2,3}(?:,\d{3})+)\b/;
 
     const lines = compactMultiline(text)
       .split("\n")
@@ -333,13 +343,30 @@
       .filter(Boolean);
 
     for (const line of lines.slice(0, 120)) {
-      const hasSalaryContext = /\b(salary|compensation|pay|base|ctc|ote)\b/i.test(line);
+      const hasSalaryContext = /\b(salary|compensation|pay|base|ctc|ote|package|lpa|lakhs?)\b/i.test(line);
+
+      // Try primary currency regex
       const match = line.match(salaryRegex);
-      if (!match) continue;
-      if (!hasSalaryContext && !/(?:per|\/)\s*(?:year|yr|month|mo|hour|hr)|[-–]|\bto\b/i.test(match[0])) {
-        continue;
+      if (match) {
+        if (!hasSalaryContext && !/(?:per|\/)\s*(?:year|yr|month|mo|hour|hr|annum)|[-–]|\bto\b/i.test(match[0])) {
+          continue;
+        }
+        if (isLikelySalaryValue(match[0], line)) return normalizeText(match[0]);
       }
-      if (isLikelySalaryValue(match[0], line)) return normalizeText(match[0]);
+
+      // Try Indian salary format
+      const indianMatch = line.match(indianSalaryRegex);
+      if (indianMatch && isLikelySalaryValue(indianMatch[0], line)) {
+        return normalizeText(indianMatch[0]);
+      }
+
+      // Try bare range only with salary context
+      if (hasSalaryContext) {
+        const bareMatch = line.match(bareRangeRegex);
+        if (bareMatch && isLikelySalaryValue(bareMatch[0], line)) {
+          return normalizeText(bareMatch[0]);
+        }
+      }
     }
 
     return "";
@@ -546,7 +573,7 @@
       documentTitle: document.title || "",
       extraction: extractedData || null,
       candidates: {
-        linkedinPanel: toDebugRecord(rawCandidates.linkedinPanel),
+        platformSpecific: toDebugRecord(rawCandidates.platformSpecific),
         jsonLd: toDebugRecord(rawCandidates.jsonLd),
         microdata: toDebugRecord(rawCandidates.microdata),
         semanticDom: toDebugRecord(rawCandidates.semanticDom),
@@ -1016,7 +1043,303 @@
   }
 
   // ---------------------------------------------------------------------------
-  // 4. Semantic DOM extraction (class-agnostic heuristics)
+  // 4. Indeed extraction
+  // ---------------------------------------------------------------------------
+
+  function extractFromIndeed() {
+    if (!location.hostname.includes("indeed.com")) return null;
+
+    const title = cleanTitle(
+      pickFirstText([
+        'h1.jobsearch-JobInfoHeader-title',
+        '[data-testid="jobsearch-JobInfoHeader-title"]',
+        '.jobsearch-JobInfoHeader-title',
+        'h1[class*="JobInfoHeader"]',
+        'h1',
+      ])
+    );
+
+    const company =
+      pickFirstText([
+        '[data-testid="inlineHeader-companyName"]',
+        '[data-company-name="true"]',
+        '.jobsearch-InlineCompanyRating-companyHeader a',
+        '[data-testid="company-name"]',
+        '.jobsearch-CompanyInfoContainer a',
+      ]) || parseTitleCompanyFromDocumentTitle().company;
+
+    const locationCandidate = cleanLocation(
+      pickFirstText([
+        '[data-testid="inlineHeader-companyLocation"]',
+        '[data-testid="job-location"]',
+        '.jobsearch-JobInfoHeader-subtitle .companyLocation',
+        '.jobsearch-CompanyInfoContainer [data-testid="companyLocation"]',
+      ])
+    );
+    const loc = looksLikeLocation(locationCandidate) ? locationCandidate : "";
+
+    const description = clampDescription(
+      pickFirstInnerText([
+        '#jobDescriptionText',
+        '.jobsearch-JobComponent-description',
+        '[data-testid="jobDescriptionText"]',
+        '#jobDescriptionText .jobsearch-JobComponent-description',
+      ])
+    );
+
+    const salaryText = pickFirstText([
+      '#salaryInfoAndJobType',
+      '[data-testid="attribute_snippet_testid"]',
+      '.jobsearch-JobMetadataHeader-item',
+    ]);
+    const salary = isLikelySalaryValue(salaryText, salaryText) ? normalizeText(salaryText) : extractSalaryFromText(description);
+
+    const postedAt = extractPostedDateFromText(
+      pickFirstText(['.jobsearch-HiringInsights-entry--bullet']) || description
+    );
+    const applicationDeadline = extractDeadlineDateFromText(description);
+
+    if (!title && !description) return null;
+
+    return { title, company, location: loc, description, salary, postedAt, applicationDeadline, source: "indeed-panel" };
+  }
+
+  // ---------------------------------------------------------------------------
+  // 5. Glassdoor extraction
+  // ---------------------------------------------------------------------------
+
+  function extractFromGlassdoor() {
+    if (!location.hostname.includes("glassdoor.com")) return null;
+
+    const title = cleanTitle(
+      pickFirstText([
+        '[data-test="jobTitle"]',
+        '[data-testid="jobTitle"]',
+        '.JobDetails_jobTitle__Rbbh0',
+        'h1',
+      ])
+    );
+
+    const company =
+      pickFirstText([
+        '[data-test="employer-name"]',
+        '[data-testid="employer-name"]',
+        '[data-test="employerName"]',
+        '.EmployerProfile_employerName__2cxZV a',
+        '.employer-name',
+      ]) || parseTitleCompanyFromDocumentTitle().company;
+
+    const locationCandidate = cleanLocation(
+      pickFirstText([
+        '[data-test="location"]',
+        '[data-testid="location"]',
+        '[data-test="emp-location"]',
+        '.JobDetails_location__mSg5h',
+      ])
+    );
+    const loc = looksLikeLocation(locationCandidate) ? locationCandidate : "";
+
+    const description = clampDescription(
+      pickFirstInnerText([
+        '[data-test="jobDescription"]',
+        '[data-testid="jobDescription"]',
+        '.jobDescriptionContent',
+        '#JobDescriptionContainer',
+        '.JobDetails_jobDescription__uW_fK',
+      ])
+    );
+
+    const salaryText = pickFirstText([
+      '[data-test="detailSalary"]',
+      '[data-testid="detailSalary"]',
+      '.SalaryEstimate_salaryEstimate__QpbTY',
+      '.RatingAndEarnings_salary__wRCPu',
+    ]);
+    const salary = isLikelySalaryValue(salaryText, salaryText) ? normalizeText(salaryText) : extractSalaryFromText(description);
+
+    const postedAt = extractPostedDateFromText(description);
+    const applicationDeadline = extractDeadlineDateFromText(description);
+
+    if (!title && !description) return null;
+
+    return { title, company, location: loc, description, salary, postedAt, applicationDeadline, source: "glassdoor-panel" };
+  }
+
+  // ---------------------------------------------------------------------------
+  // 6. Greenhouse extraction
+  // ---------------------------------------------------------------------------
+
+  function extractFromGreenhouse() {
+    if (!location.hostname.includes("greenhouse.io")) return null;
+
+    const title = cleanTitle(
+      pickFirstText([
+        '.app-title',
+        '.job-post-title',
+        '#header .company-name + h1',
+        'h1.heading',
+        'h1',
+      ])
+    );
+
+    const companyFromDom = pickFirstText([
+      '.company-name',
+      '#header .company-name',
+      '.logo-container a[title]',
+    ]);
+    const parsed = parseTitleCompanyFromDocumentTitle();
+    const company = isValidCompany(companyFromDom) ? companyFromDom : (parsed.company || "");
+
+    const locationCandidate = cleanLocation(
+      pickFirstText([
+        '.location',
+        '.body .location',
+        '.job-post-location',
+      ])
+    );
+    const loc = looksLikeLocation(locationCandidate) ? locationCandidate : "";
+
+    const description = clampDescription(
+      pickFirstInnerText([
+        '#content .body',
+        '#content',
+        '.job-post-content',
+        '.job_description',
+      ])
+    );
+
+    const salary = extractSalaryFromText(description);
+    const postedAt = extractPostedDateFromText(description);
+    const applicationDeadline = extractDeadlineDateFromText(description);
+
+    // Greenhouse postings can be shorter
+    if (!title && !isValidDescription(description, 60)) return null;
+
+    return { title, company, location: loc, description, salary, postedAt, applicationDeadline, source: "greenhouse-panel" };
+  }
+
+  // ---------------------------------------------------------------------------
+  // 7. Lever extraction
+  // ---------------------------------------------------------------------------
+
+  function extractFromLever() {
+    if (!location.hostname.includes("lever.co")) return null;
+
+    const title = cleanTitle(
+      pickFirstText([
+        '.posting-headline h2',
+        '.section-wrapper .posting-headline h2',
+        'h2',
+      ])
+    );
+
+    const companyFromTitle = (() => {
+      const logoTitle = document.querySelector('.main-header-logo a[title]');
+      if (logoTitle) return normalizeText(logoTitle.getAttribute("title") || "");
+      return "";
+    })();
+    const companyFromDom = pickFirstText(['.company-name', '.main-header-content .company-name']);
+    const parsed = parseTitleCompanyFromDocumentTitle();
+    const company = isValidCompany(companyFromDom) ? companyFromDom : (isValidCompany(companyFromTitle) ? companyFromTitle : (parsed.company || ""));
+
+    const locationCandidate = cleanLocation(
+      pickFirstText([
+        '.posting-categories .sort-by-time.posting-category .display',
+        '.posting-categories .location',
+        '.location',
+        '.posting-categories .workplaceTypes',
+      ])
+    );
+    const loc = looksLikeLocation(locationCandidate) ? locationCandidate : "";
+
+    const description = clampDescription(
+      pickFirstInnerText([
+        '.section-wrapper .content',
+        '.posting-page .content',
+        '[data-qa="job-description"]',
+        '.posting-page .section-wrapper',
+      ])
+    );
+
+    const salary = extractSalaryFromText(description);
+    const postedAt = extractPostedDateFromText(description);
+    const applicationDeadline = extractDeadlineDateFromText(description);
+
+    // Lever postings can be shorter
+    if (!title && !isValidDescription(description, 60)) return null;
+
+    return { title, company, location: loc, description, salary, postedAt, applicationDeadline, source: "lever-panel" };
+  }
+
+  // ---------------------------------------------------------------------------
+  // 8. Workday extraction
+  // ---------------------------------------------------------------------------
+
+  function extractFromWorkday() {
+    if (!location.hostname.includes("workday.com") && !location.hostname.includes("myworkdayjobs.com")) return null;
+
+    const title = cleanTitle(
+      pickFirstText([
+        '[data-automation-id="jobPostingHeader"]',
+        'h2[data-automation-id="jobPostingHeader"]',
+        'h1[data-automation-id="jobPostingHeader"]',
+        '[data-automation-id="job-title"]',
+        'h1',
+        'h2',
+      ])
+    );
+
+    const companyFromDom = pickFirstText([
+      '[data-automation-id="jobPostingCompanyName"]',
+      '[data-automation-id="company"]',
+    ]);
+    const parsed = parseTitleCompanyFromDocumentTitle();
+    const company = isValidCompany(companyFromDom) ? companyFromDom : (parsed.company || "");
+
+    const locationCandidate = cleanLocation(
+      pickFirstText([
+        '[data-automation-id="locations"]',
+        '[data-automation-id="jobPostingLocation"]',
+        '[data-automation-id="location"]',
+      ])
+    );
+    const loc = looksLikeLocation(locationCandidate) ? locationCandidate : "";
+
+    const description = clampDescription(
+      pickFirstInnerText([
+        '[data-automation-id="jobPostingDescription"]',
+        '[data-automation-id="job-posting-description"]',
+        '.job-description',
+      ])
+    );
+
+    const salary = extractSalaryFromText(description);
+    const postedAt = extractPostedDateFromText(description);
+    const applicationDeadline = extractDeadlineDateFromText(description);
+
+    if (!title && !description) return null;
+
+    return { title, company, location: loc, description, salary, postedAt, applicationDeadline, source: "workday-panel" };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Platform-specific extractor dispatcher
+  // ---------------------------------------------------------------------------
+
+  function extractFromPlatformSpecific() {
+    switch (detectPlatform()) {
+      case "LinkedIn":   return extractFromLinkedInPanel();
+      case "Indeed":     return extractFromIndeed();
+      case "Glassdoor":  return extractFromGlassdoor();
+      case "Greenhouse": return extractFromGreenhouse();
+      case "Lever":      return extractFromLever();
+      case "Workday":    return extractFromWorkday();
+      default:           return null;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 9. Semantic DOM extraction (class-agnostic heuristics)
   // ---------------------------------------------------------------------------
 
   function scoreRegion(element) {
@@ -1220,6 +1543,9 @@
     if (host.includes("glassdoor.com")) return "Glassdoor";
     if (host.includes("naukri.com")) return "Naukri";
     if (host.includes("instahyre.com")) return "Instahyre";
+    if (host.includes("greenhouse.io")) return "Greenhouse";
+    if (host.includes("lever.co")) return "Lever";
+    if (host.includes("workday.com") || host.includes("myworkdayjobs.com")) return "Workday";
     return "Other";
   }
 
@@ -1273,6 +1599,11 @@
   function sourceBonus(source) {
     switch (source) {
       case "linkedin-panel":
+      case "indeed-panel":
+      case "glassdoor-panel":
+      case "greenhouse-panel":
+      case "lever-panel":
+      case "workday-panel":
         return 0.14;
       case "jsonld":
         return 0.12;
@@ -1324,6 +1655,11 @@
           score = 0.42;
           break;
         case "linkedin-panel":
+        case "indeed-panel":
+        case "glassdoor-panel":
+        case "greenhouse-panel":
+        case "lever-panel":
+        case "workday-panel":
           score = 0.34;
           break;
         case "semantic-dom":
@@ -1364,7 +1700,7 @@
 
   function gatherRawCandidates() {
     return {
-      linkedinPanel: extractFromLinkedInPanel(),
+      platformSpecific: extractFromPlatformSpecific(),
       jsonLd: extractFromJsonLd(),
       microdata: extractFromMicrodata(),
       semanticDom: extractFromSemanticDom(),
@@ -1434,8 +1770,19 @@
     return { extractedData, debugPacket };
   }
 
+  const PLATFORM_DELAYS = {
+    LinkedIn:  [0, 180, 420, 780, 1250],
+    Workday:   [0, 300, 700, 1200, 2000],
+    Glassdoor: [0, 200, 500, 900, 1500],
+  };
+  const DEFAULT_DELAYS = [0, 120, 320];
+
+  function getDelaysForPlatform() {
+    return PLATFORM_DELAYS[detectPlatform()] || DEFAULT_DELAYS;
+  }
+
   async function extractJobDataWithRetries() {
-    const delays = detectPlatform() === "LinkedIn" ? [0, 180, 420, 780, 1250] : [0, 120, 320];
+    const delays = getDelaysForPlatform();
     for (const delayMs of delays) {
       if (delayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -1447,7 +1794,7 @@
   }
 
   async function extractDebugPacketWithRetries() {
-    const delays = detectPlatform() === "LinkedIn" ? [0, 180, 420, 780, 1250] : [0, 120, 320];
+    const delays = getDelaysForPlatform();
     for (const delayMs of delays) {
       if (delayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -1477,7 +1824,39 @@
         try {
           const data = await extractJobDataWithRetries();
           if (!data) {
-            sendResponse({ success: false, error: "Low-confidence or missing job data" });
+            // Build diagnostics from a final snapshot
+            const raw = gatherRawCandidates();
+            const records = Object.values(raw).map(normalizeRecord).filter(Boolean);
+            const diagnostics = {
+              platform: detectPlatform(),
+              fieldsFound: {},
+              confidence: 0,
+            };
+            if (records.length) {
+              const fields = {
+                title: bestField("title", records),
+                company: bestField("company", records),
+                location: bestField("location", records),
+                description: bestField("description", records),
+                salary: bestField("salary", records),
+              };
+              diagnostics.confidence = computeConfidence(fields);
+              diagnostics.fieldsFound = {
+                title: !!fields.title.value,
+                company: !!fields.company.value,
+                location: !!fields.location.value,
+                description: !!fields.description.value,
+                salary: !!fields.salary.value,
+              };
+              // Include description length for debugging
+              const descLen = normalizeText(fields.description.value || "").length;
+              diagnostics.descriptionLength = descLen;
+            }
+            sendResponse({
+              success: false,
+              error: "Low-confidence or missing job data",
+              diagnostics,
+            });
             return;
           }
           sendResponse({ success: true, data });

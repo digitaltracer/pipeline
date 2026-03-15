@@ -34,13 +34,17 @@ struct PipelineApp: App {
                         cloudKitDatabase: .private(Constants.iCloud.containerID)
                     )
                     syncEnabledAtLaunch = true
+                    UserDefaults.standard.removeObject(forKey: Constants.UserDefaultsKeys.cloudSyncStartupError)
                 } catch {
                     // If CloudKit setup is invalid for the current signing profile, keep the app usable.
                     container = try SharedContainer.makeModelContainer(
                         cloudKitDatabase: .none
                     )
                     syncEnabledAtLaunch = false
-                    UserDefaults.standard.set(false, forKey: Constants.UserDefaultsKeys.cloudSyncEnabled)
+                    UserDefaults.standard.set(
+                        Self.cloudSyncStartupErrorMessage(for: error),
+                        forKey: Constants.UserDefaultsKeys.cloudSyncStartupError
+                    )
                     print("CloudKit initialization failed; using local storage only: \(error)")
                 }
             } else {
@@ -48,6 +52,7 @@ struct PipelineApp: App {
                     cloudKitDatabase: .none
                 )
                 syncEnabledAtLaunch = false
+                UserDefaults.standard.removeObject(forKey: Constants.UserDefaultsKeys.cloudSyncStartupError)
             }
 
             self.modelContainer = container
@@ -110,10 +115,28 @@ struct PipelineApp: App {
                         set: { onboardingStore.guidanceMuted = $0 }
                     )
                 )
-                    .modelContainer(modelContainer)
+                .modelContainer(modelContainer)
             }
             .environment(appLockCoordinator)
         }
         #endif
+    }
+
+    private static func cloudSyncStartupErrorMessage(for error: Error) -> String {
+        let nsError = error as NSError
+        let recoverySuggestion = nsError.localizedRecoverySuggestion?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let failureReason = nsError.localizedFailureReason?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let description = nsError.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let details: [String] = [failureReason, description, recoverySuggestion].compactMap { value in
+            guard let value, !value.isEmpty else { return nil }
+            return value
+        }
+
+        guard !details.isEmpty else {
+            return "CloudKit could not start for this launch."
+        }
+
+        return details.joined(separator: "\n")
     }
 }

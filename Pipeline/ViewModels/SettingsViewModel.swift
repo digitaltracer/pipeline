@@ -26,6 +26,7 @@ final class SettingsViewModel {
         static let selectedAIProvider = "selectedAIProvider"
         static let selectedAIModel = "selectedAIModel"
         static let cloudSyncEnabled = Constants.UserDefaultsKeys.cloudSyncEnabled
+        static let cloudSyncStartupError = Constants.UserDefaultsKeys.cloudSyncStartupError
         static let appLockEnabled = Constants.UserDefaultsKeys.appLockEnabled
         static let hiddenStatusesInAllApplications = "hiddenStatusesInAllApplications"
 
@@ -218,15 +219,23 @@ final class SettingsViewModel {
 
     let cloudSyncSupported: Bool
     let cloudSyncEnabledAtLaunch: Bool
+    let cloudSyncStartupError: String?
 
     var cloudSyncEnabled: Bool {
         didSet {
             UserDefaults.standard.set(cloudSyncEnabled, forKey: StorageKeys.cloudSyncEnabled)
+            if !cloudSyncEnabled {
+                UserDefaults.standard.removeObject(forKey: StorageKeys.cloudSyncStartupError)
+            }
         }
     }
 
     var cloudSyncNeedsRestart: Bool {
-        cloudSyncEnabled != cloudSyncEnabledAtLaunch
+        cloudSyncEnabled != cloudSyncEnabledAtLaunch && cloudSyncStartupError == nil
+    }
+
+    var cloudSyncFailedToStartAtLaunch: Bool {
+        cloudSyncEnabled && !cloudSyncEnabledAtLaunch && cloudSyncStartupError != nil
     }
 
     // MARK: - Initialization
@@ -240,6 +249,11 @@ final class SettingsViewModel {
         let initialCloudSyncEnabled = cloudSyncSupported ? (storedCloudSyncPreference ?? true) : false
         self.cloudSyncEnabled = initialCloudSyncEnabled
         self.cloudSyncEnabledAtLaunch = cloudSyncEnabledAtLaunch ?? initialCloudSyncEnabled
+        if cloudSyncSupported && initialCloudSyncEnabled {
+            self.cloudSyncStartupError = UserDefaults.standard.string(forKey: StorageKeys.cloudSyncStartupError)
+        } else {
+            self.cloudSyncStartupError = nil
+        }
 
         if let rawValue = UserDefaults.standard.string(forKey: StorageKeys.appearanceMode),
            let mode = AppearanceMode(rawValue: rawValue) {

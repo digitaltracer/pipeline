@@ -57,4 +57,29 @@ public enum Platform: String, Codable, CaseIterable, Identifiable, Sendable {
 
         return .other
     }
+
+    /// Resolve platform from both raw platform string and URL.
+    /// Tries URL-based detection first, then falls back to string matching.
+    public static func resolve(rawPlatform: String?, url: String) -> Platform {
+        let detected = detect(from: url)
+        if detected != .other { return detected }
+
+        let normalized = (rawPlatform ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        switch normalized {
+        case "linkedin", "linkedin.com", "linkedin jobs":
+            return .linkedin
+        case "indeed", "indeed.com":
+            return .indeed
+        case "glassdoor", "glassdoor.com":
+            return .glassdoor
+        case "naukri", "naukri.com":
+            return .naukri
+        case "instahyre", "instahyre.com":
+            return .instahyre
+        default:
+            return .other
+        }
+    }
 }

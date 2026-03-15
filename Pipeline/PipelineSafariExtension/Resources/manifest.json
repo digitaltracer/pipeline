@@ -6,6 +6,7 @@
 
   "permissions": [
     "activeTab",
+    "scripting",
     "nativeMessaging"
   ],
 
@@ -16,7 +17,9 @@
     "https://*.naukri.com/*",
     "https://*.greenhouse.io/*",
     "https://*.lever.co/*",
-    "https://*.workday.com/*"
+    "https://*.workday.com/*",
+    "https://*.myworkdayjobs.com/*",
+    "https://*.instahyre.com/*"
   ],
 
   "background": {
@@ -28,13 +31,16 @@
     {
       "matches": [
         "https://*.linkedin.com/jobs/*",
+        "https://*.linkedin.com/hiring/*",
         "https://*.indeed.com/*",
         "https://*.glassdoor.com/job-listing/*",
         "https://*.glassdoor.com/Job/*",
         "https://*.naukri.com/job-listings-*",
         "https://*.greenhouse.io/jobs/*",
         "https://*.lever.co/*",
-        "https://*.workday.com/*/job/*"
+        "https://*.workday.com/*/job/*",
+        "https://*.myworkdayjobs.com/*",
+        "https://*.instahyre.com/job/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"

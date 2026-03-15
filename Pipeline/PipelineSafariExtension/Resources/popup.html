@@ -33,27 +33,28 @@
     <!-- Extracted data preview -->
     <div id="preview" class="preview hidden">
       <div class="field">
-        <label>Title</label>
-        <p id="preview-title">—</p>
+        <label for="preview-title">Title</label>
+        <input type="text" id="preview-title" class="field-input" value="" />
       </div>
       <div class="field">
-        <label>Company</label>
-        <p id="preview-company">—</p>
+        <label for="preview-company">Company</label>
+        <input type="text" id="preview-company" class="field-input" value="" />
       </div>
       <div class="field">
-        <label>Location</label>
-        <p id="preview-location">—</p>
+        <label for="preview-location">Location</label>
+        <input type="text" id="preview-location" class="field-input" value="" />
       </div>
       <div id="salary-field" class="field hidden">
-        <label>Salary</label>
-        <p id="preview-salary">—</p>
+        <label for="preview-salary">Salary</label>
+        <input type="text" id="preview-salary" class="field-input" value="" />
       </div>
       <div class="field">
-        <label>Description</label>
-        <p id="preview-description" class="truncated">—</p>
+        <label for="preview-description">Description</label>
+        <textarea id="preview-description" class="field-textarea" rows="5"></textarea>
       </div>
 
       <div class="action-buttons">
+        <button id="re-extract-btn" class="btn-secondary hidden">Re-extract from page</button>
         <button id="save-btn" class="btn-primary">
           <span class="btn-icon">+</span>
           Save to Pipeline
@@ -71,7 +72,11 @@
     <div id="empty" class="empty hidden">
       <p>No job posting detected on this page.</p>
       <p id="empty-reason" class="hint hidden"></p>
-      <p class="hint">Navigate to a job posting on LinkedIn, Indeed, Glassdoor, Naukri, or another job board.</p>
+      <div id="diagnostics" class="diagnostics hidden">
+        <p class="diagnostics-title">Extraction Details</p>
+        <div id="diagnostics-content"></div>
+      </div>
+      <p class="hint">Navigate to a job posting on LinkedIn, Indeed, Glassdoor, Greenhouse, Lever, Workday, Naukri, or another job board.</p>
     </div>
 
     <div class="debug-tools">

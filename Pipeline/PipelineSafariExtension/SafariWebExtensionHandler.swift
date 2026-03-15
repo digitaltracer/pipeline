@@ -11,27 +11,6 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         category: "ExtensionHandler"
     )
 
-    private func resolvePlatform(rawPlatform: String?, url: String) -> Platform {
-        let detected = Platform.detect(from: url)
-        if detected != .other { return detected }
-
-        let normalized = (rawPlatform ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        switch normalized {
-        case "linkedin", "linkedin.com", "linkedin jobs":
-            return .linkedin
-        case "indeed", "indeed.com":
-            return .indeed
-        case "glassdoor", "glassdoor.com":
-            return .glassdoor
-        case "naukri", "naukri.com":
-            return .naukri
-        case "instahyre", "instahyre.com":
-            return .instahyre
-        default:
-            return .other
-        }
-    }
-
     func beginRequest(with context: NSExtensionContext) {
         let request = context.inputItems.first as? NSExtensionItem
 
@@ -179,7 +158,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             jobURL: url.isEmpty ? nil : url,
             jobDescription: description.isEmpty ? nil : description,
             status: .saved,
-            platform: resolvePlatform(rawPlatform: platform, url: url),
+            platform: Platform.resolve(rawPlatform: platform, url: url),
             isInApplyQueue: saveForLater,
             queuedAt: saveForLater ? Date() : nil,
             postedAt: postedAt,
@@ -187,7 +166,15 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         )
 
         context.insert(application)
+        _ = try? CompanyLinkingService.ensureCompanyLinked(for: application, in: context)
         try? ApplicationChecklistService().sync(for: application, trigger: .applicationCreated, in: context)
+        ApplicationTimelineRecorderService.seedInitialHistory(for: application, in: context)
+
+        // Ensure the application is durably saved even if checklist sync skipped the save.
+        if context.hasChanges {
+            try context.save()
+        }
+
         await syncApplyQueueReminderIfNeeded(afterSavingQueuedApplication: saveForLater, context: context)
         return application
     }

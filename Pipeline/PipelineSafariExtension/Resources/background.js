@@ -7,10 +7,25 @@ const NATIVE_MESSAGE_TIMEOUT_MS = 60000;
 const NATIVE_TIMEOUT_ERROR = "Native host timed out. Check Pipeline app permissions and host install.";
 
 // ---------------------------------------------------------------------------
-// Message handling
+// Tab extraction cache
 // ---------------------------------------------------------------------------
 
 const runtime = typeof browser !== "undefined" ? browser : chrome;
+const tabCache = new Map();
+
+runtime.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.url || changeInfo.status === "loading") {
+    tabCache.delete(tabId);
+  }
+});
+
+runtime.tabs.onRemoved.addListener((tabId) => {
+  tabCache.delete(tabId);
+});
+
+// ---------------------------------------------------------------------------
+// Message handling
+// ---------------------------------------------------------------------------
 
 function withTimeout(promise, timeoutMs, message) {
   return new Promise((resolve, reject) => {
@@ -50,6 +65,22 @@ runtime.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .then((result) => sendResponse(result))
       .catch((err) => sendResponse({ success: false, error: err.message }));
     return true;
+  }
+
+  if (request.action === "getCachedExtraction") {
+    const tabId = sender.tab?.id || request.tabId;
+    const cached = tabId ? tabCache.get(tabId) : null;
+    sendResponse(cached || { success: false });
+    return;
+  }
+
+  if (request.action === "cacheExtraction") {
+    const tabId = sender.tab?.id || request.tabId;
+    if (tabId && request.data) {
+      tabCache.set(tabId, { success: true, data: request.data, cachedAt: Date.now() });
+    }
+    sendResponse({ success: true });
+    return;
   }
 });
 

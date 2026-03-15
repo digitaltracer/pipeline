@@ -848,6 +848,26 @@ struct SyncSettingsView: View {
                 .font(.subheadline)
             }
 
+            if viewModel.cloudSyncFailedToStartAtLaunch,
+               let cloudSyncStartupError = viewModel.cloudSyncStartupError {
+                Section {
+                    Label(
+                        "Pipeline could not start iCloud sync on this launch.",
+                        systemImage: "exclamationmark.icloud.fill"
+                    )
+                    .foregroundColor(.secondary)
+
+                    Text(cloudSyncStartupError)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .textSelection(.enabled)
+                } footer: {
+                    Text(
+                        "Pipeline kept your sync preference enabled, but this build is still running local-only storage. Check your iCloud capability, CloudKit container, signing profile, and iCloud account, then restart."
+                    )
+                }
+            }
+
             if viewModel.cloudSyncNeedsRestart {
                 Section {
                     Label(
@@ -905,6 +925,26 @@ struct SyncSettingsContent: View {
                     systemImage: viewModel.cloudSyncEnabledAtLaunch ? "checkmark.circle.fill" : "internaldrive.fill"
                 )
                 .font(.subheadline)
+            }
+
+            if viewModel.cloudSyncFailedToStartAtLaunch,
+               let cloudSyncStartupError = viewModel.cloudSyncStartupError {
+                SettingsFormSectionCard(
+                    title: "Sync Unavailable",
+                    subtitle: "Pipeline kept your sync preference enabled, but CloudKit could not start on this launch.",
+                    icon: "exclamationmark.icloud.fill"
+                ) {
+                    Text(cloudSyncStartupError)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .textSelection(.enabled)
+
+                    Text(
+                        "Check your iCloud capability, CloudKit container, signing profile, and iCloud account, then restart Pipeline."
+                    )
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                }
             }
 
             if viewModel.cloudSyncNeedsRestart {
