@@ -34,7 +34,7 @@ struct PlatformBadge: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .foregroundColor(platform.color)
-        .background(platform.color.opacity(0.1))
+        .background(platform.color.opacity(0.15))
         .clipShape(Capsule())
     }
 }

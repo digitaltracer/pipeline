@@ -46,7 +46,8 @@ struct JobMatchSection: View {
             } label: {
                 HStack {
                     Label("Job Match", systemImage: "bolt.badge.checkmark")
-                        .font(.headline)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.secondary)
 
                     Spacer()
 
@@ -59,7 +60,7 @@ struct JobMatchSection: View {
             }
         }
         .padding(16)
-        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+        .appCard(elevated: true)
     }
 
     @ViewBuilder
@@ -157,7 +158,7 @@ struct JobMatchSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: DesignSystem.Radius.cardSmall, style: .continuous)
                 .fill(Color.secondary.opacity(0.08))
         )
     }

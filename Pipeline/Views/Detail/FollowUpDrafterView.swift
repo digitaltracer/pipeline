@@ -150,7 +150,8 @@ struct FollowUpDrafterView: View {
                         Image(systemName: "text.alignleft")
                             .foregroundColor(.blue)
                         Text("Subject")
-                            .font(.headline)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.secondary)
                     }
 
                     TextField("Subject", text: $viewModel.editableSubject)
@@ -158,7 +159,7 @@ struct FollowUpDrafterView: View {
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .appCard(cornerRadius: 14, elevated: true, shadow: false)
+                .appCard(elevated: true)
 
                 // Body
                 VStack(alignment: .leading, spacing: 8) {
@@ -166,7 +167,8 @@ struct FollowUpDrafterView: View {
                         Image(systemName: "text.justify.left")
                             .foregroundColor(.green)
                         Text("Body")
-                            .font(.headline)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.secondary)
                     }
 
                     TextEditor(text: $viewModel.editableBody)
@@ -183,7 +185,7 @@ struct FollowUpDrafterView: View {
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .appCard(cornerRadius: 14, elevated: true, shadow: false)
+                .appCard(elevated: true)
 
                 // Actions
                 HStack(spacing: 12) {
@@ -388,14 +390,15 @@ struct ReferralRequestDraftView: View {
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .appCard(cornerRadius: 14, elevated: true, shadow: false)
+                .appCard(elevated: true)
 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         Image(systemName: "text.alignleft")
                             .foregroundColor(.blue)
                         Text("Subject")
-                            .font(.headline)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.secondary)
                     }
 
                     TextField("Subject", text: $viewModel.editableSubject)
@@ -403,14 +406,15 @@ struct ReferralRequestDraftView: View {
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .appCard(cornerRadius: 14, elevated: true, shadow: false)
+                .appCard(elevated: true)
 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         Image(systemName: "text.justify.left")
                             .foregroundColor(.green)
                         Text("Body")
-                            .font(.headline)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.secondary)
                     }
 
                     TextEditor(text: $viewModel.editableBody)
@@ -427,7 +431,7 @@ struct ReferralRequestDraftView: View {
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .appCard(cornerRadius: 14, elevated: true, shadow: false)
+                .appCard(elevated: true)
 
                 HStack(spacing: 12) {
                     Button {
@@ -734,18 +738,19 @@ struct CoverLetterEditorView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .appCard(cornerRadius: 16, elevated: true, shadow: false)
+        .appCard(elevated: true)
     }
 
     private var toneCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Tone", systemImage: "waveform.and.magnifyingglass")
-                .font(.headline)
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(.secondary)
             tonePicker
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .appCard(cornerRadius: 16, elevated: true, shadow: false)
+        .appCard(elevated: true)
     }
 
     private var tonePicker: some View {
@@ -822,7 +827,8 @@ struct CoverLetterEditorView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Label(title, systemImage: icon)
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.secondary)
 
                 Spacer()
 
@@ -844,7 +850,7 @@ struct CoverLetterEditorView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .appCard(cornerRadius: 16, elevated: true, shadow: false)
+        .appCard(elevated: true)
     }
 
     private func sectionEditor(text: Binding<String>, minHeight: CGFloat) -> some View {

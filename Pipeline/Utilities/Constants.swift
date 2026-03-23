@@ -194,6 +194,13 @@ extension Constants {
         static let idealWidth: CGFloat = 500
         static let maxWidth: CGFloat = 700
     }
+
+    // MARK: - Detail Column
+
+    enum Detail {
+        static let minWidth: CGFloat = 432
+        static let idealWidth: CGFloat = 552
+    }
 }
 
 // MARK: - View Styles
@@ -212,6 +219,7 @@ private struct AppCardModifier: ViewModifier {
     let cornerRadius: CGFloat
     let elevated: Bool
     let showShadow: Bool
+    let showStroke: Bool
 
     func body(content: Content) -> some View {
         content
@@ -221,7 +229,7 @@ private struct AppCardModifier: ViewModifier {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+                    .stroke(showStroke ? DesignSystem.Colors.stroke(colorScheme) : .clear, lineWidth: showStroke ? 1 : 0)
             )
             .shadow(
                 color: showShadow ? DesignSystem.Colors.shadow(colorScheme) : .clear,
@@ -326,8 +334,8 @@ extension View {
         modifier(WindowBackgroundModifier())
     }
 
-    func appCard(cornerRadius: CGFloat = DesignSystem.Radius.card, elevated: Bool = false, shadow: Bool = false) -> some View {
-        modifier(AppCardModifier(cornerRadius: cornerRadius, elevated: elevated, showShadow: shadow))
+    func appCard(cornerRadius: CGFloat = DesignSystem.Radius.card, elevated: Bool = false, shadow: Bool = false, stroke: Bool = true) -> some View {
+        modifier(AppCardModifier(cornerRadius: cornerRadius, elevated: elevated, showShadow: shadow, showStroke: stroke))
     }
 
     func appInput() -> some View {

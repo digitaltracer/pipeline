@@ -14,10 +14,10 @@ struct StarRating: View {
             ForEach(1...maxRating, id: \.self) { index in
                 Image(systemName: index <= rating ? "star.fill" : "star")
                     .font(.system(size: size))
-                    .foregroundColor(index <= rating ? .yellow : .gray.opacity(0.3))
+                    .foregroundColor(index <= rating ? Color.pipelineOrange : .gray.opacity(0.3))
                     .onTapGesture {
                         if isEditable {
-                            withAnimation(.easeInOut(duration: 0.1)) {
+                            withAnimation(.easeInOut(duration: Constants.UI.animationFast)) {
                                 if rating == index {
                                     // Tapping same star toggles between that rating and one less
                                     rating = index - 1
@@ -46,7 +46,7 @@ struct StarRatingDisplay: View {
             ForEach(1...maxRating, id: \.self) { index in
                 Image(systemName: index <= rating ? "star.fill" : "star")
                     .font(.system(size: size))
-                    .foregroundColor(index <= rating ? .yellow : .gray.opacity(0.3))
+                    .foregroundColor(index <= rating ? Color.pipelineOrange : .gray.opacity(0.3))
             }
         }
     }

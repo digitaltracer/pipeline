@@ -46,7 +46,7 @@ struct JobDetailFieldsView: View {
                 .tint(.primary)
                 .padding(.horizontal, 18)
                 .padding(.vertical, 16)
-                .appCard(cornerRadius: 16, elevated: true, shadow: false)
+                .appCard(elevated: true)
             }
         }
     }
@@ -165,7 +165,7 @@ private struct JobDetailTableCard: View {
             JobDetailTableContent(sections: sections)
         }
         .padding(18)
-        .appCard(cornerRadius: 16, elevated: true, shadow: false)
+        .appCard(elevated: true)
     }
 }
 
@@ -251,7 +251,7 @@ struct DetailInfoCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(14)
-        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+        .appCard(elevated: true)
     }
 }
 

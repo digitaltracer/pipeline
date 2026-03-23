@@ -67,7 +67,8 @@ struct ATSCompatibilitySection: View {
             } label: {
                 HStack {
                     Label("ATS Compatibility", systemImage: "text.badge.checkmark")
-                        .font(.headline)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.secondary)
 
                     Spacer()
 
@@ -76,7 +77,7 @@ struct ATSCompatibilitySection: View {
             }
         }
         .padding(16)
-        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+        .appCard(elevated: true)
         .task(id: refreshTaskKey) {
             await refreshIfNeeded(force: false, trigger: .autoViewRefresh)
         }
@@ -218,7 +219,7 @@ struct ATSCompatibilitySection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: DesignSystem.Radius.cardSmall, style: .continuous)
                 .fill(Color.secondary.opacity(0.08))
         )
     }
@@ -280,7 +281,7 @@ struct ATSCompatibilitySection: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: DesignSystem.Radius.cardSmall, style: .continuous)
                 .fill(color(for: state).opacity(0.08))
         )
     }
@@ -353,7 +354,7 @@ struct ATSCompatibilitySection: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: DesignSystem.Radius.cardSmall, style: .continuous)
                 .fill(Color.secondary.opacity(0.06))
         )
     }

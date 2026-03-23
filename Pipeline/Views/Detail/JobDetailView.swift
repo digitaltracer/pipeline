@@ -56,7 +56,14 @@ struct JobDetailView: View {
     @State private var selectedInterviewActivityForDebrief: ApplicationActivity?
     @State private var rejectionLearningsViewModel: RejectionLearningsViewModel?
     @State private var settingsViewModel = SettingsViewModel()
+    @State private var showAllSections = false
+    @State private var taskSegment: TaskSegment = .smart
     @Environment(\.colorScheme) private var colorScheme
+
+    private enum TaskSegment: String, CaseIterable {
+        case smart = "Smart"
+        case manual = "Manual"
+    }
 
     init(
         application: JobApplication,
@@ -99,6 +106,55 @@ struct JobDetailView: View {
 
     private var referralSectionShouldShow: Bool {
         !referralSuggestions.isEmpty || !application.sortedReferralAttempts.isEmpty
+    }
+
+    // MARK: - Section Visibility
+
+    private enum DetailSection {
+        case interviewProgress, timeline, jobMatch, atsCompatibility
+        case contacts, referralTracker, resumePanel, tasks, smartFollowUp
+        case rejectionAnalysis, interviewLearnings, marketData
+    }
+
+    private func shouldShow(_ section: DetailSection) -> Bool {
+        if showAllSections { return true }
+        let status = application.status
+        switch section {
+        case .interviewProgress:
+            return status == .interviewing || status == .offered || status == .rejected
+        case .timeline:
+            return status != .saved
+        case .jobMatch:
+            return status == .saved || status == .applied || status == .interviewing
+        case .atsCompatibility:
+            return status == .saved || status == .applied
+        case .contacts:
+            return status != .saved && status != .rejected
+        case .referralTracker:
+            return status == .saved || status == .applied
+        case .resumePanel:
+            return status != .rejected
+        case .tasks:
+            return status != .rejected
+        case .smartFollowUp:
+            return status != .saved && status != .rejected
+        case .rejectionAnalysis:
+            return status == .rejected || application.latestRejectionLog != nil
+        case .interviewLearnings:
+            return status == .interviewing || status == .offered || status == .rejected
+        case .marketData:
+            return status != .saved
+        }
+    }
+
+    @ViewBuilder
+    private func sectionGroupLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.caption2.weight(.semibold))
+            .foregroundColor(.secondary)
+            .kerning(0.8)
+            .padding(.top, 14)
+            .padding(.bottom, 2)
     }
 
     private var marketDataBaseCurrency: Currency {
@@ -155,53 +211,93 @@ struct JobDetailView: View {
             .padding(.bottom, 14)
 
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 18) {
+                LazyVStack(alignment: .leading, spacing: 10) {
+
+                    // ── Overview ──────────────────────────────
+                    sectionGroupLabel("OVERVIEW")
                     JobDetailFieldsView(application: application)
-
-                    ApplicationMarketDataSection(
-                        application: application,
-                        viewModel: marketDataViewModel,
-                        onSeniorityChange: { seniority in
-                            do {
-                                try viewModel.updateSeniorityOverride(seniority, for: application, context: modelContext)
-                            } catch {
-                                actionErrorMessage = error.localizedDescription
-                            }
-                        },
-                        onGenerateNegotiation: {
-                            Task {
-                                await marketDataViewModel.generateNegotiation(for: application)
-                                if let error = marketDataViewModel.error {
-                                    actionErrorMessage = error
-                                    marketDataViewModel.error = nil
-                                }
-                            }
-                        }
-                    )
-
-                    ApplicationCompanySection(
-                        application: application,
-                        onOpenWorkspace: { tab in
-                            openCompanyWorkspace(tab)
-                        }
-                    )
 
                     if let urlString = application.jobURL, !urlString.isEmpty {
                         JobPostingSection(urlString: urlString)
                     }
 
-                    if application.status == .interviewing {
-                        InterviewStageIndicator(
-                            currentStage: application.interviewStage,
-                            onStageChange: { newStage in
-                                do {
-                                    try viewModel.updateInterviewStage(newStage, for: application, context: modelContext)
-                                } catch {
-                                    actionErrorMessage = error.localizedDescription
+                    // ── Interview Progress ───────────────────
+                    if shouldShow(.interviewProgress) {
+                        if application.status == .interviewing {
+                            sectionGroupLabel("INTERVIEW PROGRESS")
+                            InterviewStageIndicator(
+                                currentStage: application.interviewStage,
+                                onStageChange: { newStage in
+                                    do {
+                                        try viewModel.updateInterviewStage(newStage, for: application, context: modelContext)
+                                    } catch {
+                                        actionErrorMessage = error.localizedDescription
+                                    }
+                                }
+                            )
+                            .padding(.horizontal, 6)
+                        }
+
+                        if shouldShow(.timeline) {
+                            if application.status != .interviewing {
+                                sectionGroupLabel("ACTIVITY")
+                            }
+                            ApplicationTimelineView(
+                                activities: application.sortedActivities,
+                                onAddActivity: { kind in
+                                    draftActivityKind = kind
+                                    showingActivityEditor = true
+                                },
+                                onEditActivity: { activity in
+                                    editingActivity = activity
+                                },
+                                onDeleteActivity: { activity in
+                                    do {
+                                        try viewModel.deleteActivity(activity, from: application, context: modelContext)
+                                    } catch {
+                                        actionErrorMessage = error.localizedDescription
+                                    }
+                                },
+                                onDebrief: { activity in
+                                    openDebrief(for: activity)
+                                }
+                            )
+                        }
+                    }
+
+                    // ── Analysis ─────────────────────────────
+                    sectionGroupLabel("ANALYSIS")
+
+                    if shouldShow(.jobMatch) {
+                        JobMatchSection(
+                            application: application,
+                            settingsViewModel: SettingsViewModel(),
+                            onRefresh: {
+                                Task {
+                                    await JobMatchScoringCoordinator.shared.refresh(
+                                        application: application,
+                                        modelContext: modelContext,
+                                        settingsViewModel: SettingsViewModel(),
+                                        force: true
+                                    )
                                 }
                             }
                         )
-                        .padding(.horizontal, 6)
+                    }
+
+                    if shouldShow(.atsCompatibility) {
+                        ATSCompatibilitySection(
+                            application: application,
+                            settingsViewModel: settingsViewModel,
+                            onGenerateFixes: { assessment in
+                                resumeSeededPatches = []
+                                resumeTailoringMode = .atsFixes(ATSFixContext(assessment: assessment))
+                                showingTailorResume = true
+                            },
+                            onGenerateQuickFixes: { assessment in
+                                openATSQuickFixes(for: assessment)
+                            }
+                        )
                     }
 
                     if let description = application.jobDescription, !description.isEmpty {
@@ -216,72 +312,131 @@ struct JobDetailView: View {
                         )
                     }
 
-                    JobMatchSection(
-                        application: application,
-                        settingsViewModel: SettingsViewModel(),
-                        onRefresh: {
-                            Task {
-                                await JobMatchScoringCoordinator.shared.refresh(
+                    // ── People ───────────────────────────────
+                    if shouldShow(.contacts) || shouldShow(.referralTracker) {
+                        sectionGroupLabel("PEOPLE")
+
+                        if shouldShow(.contacts) {
+                            ApplicationContactsSection(
+                                application: application,
+                                onManageContacts: {
+                                    showingManageContacts = true
+                                },
+                                onSelectContact: onSelectContact
+                            )
+                        }
+
+                        if shouldShow(.referralTracker) && referralSectionShouldShow {
+                            ReferralTrackerSection(
+                                suggestions: referralSuggestions,
+                                attempts: application.sortedReferralAttempts,
+                                onPromote: { suggestion in
+                                    promoteReferralSuggestion(suggestion)
+                                },
+                                onLink: { suggestion in
+                                    linkReferralSuggestion(suggestion)
+                                },
+                                onAsk: { suggestion in
+                                    askReferralSuggestion(suggestion)
+                                },
+                                onDismiss: { suggestion in
+                                    dismissReferralSuggestion(suggestion)
+                                },
+                                onStatusChange: { attempt, status in
+                                    updateReferralAttempt(attempt, status: status)
+                                }
+                            )
+                        }
+                    }
+
+                    // ── Documents ────────────────────────────
+                    if shouldShow(.resumePanel) {
+                        sectionGroupLabel("DOCUMENTS")
+                        JobResumePanel(application: application)
+                    }
+
+                    // ── Tasks ────────────────────────────────
+                    if shouldShow(.tasks) {
+                        sectionGroupLabel("TASKS")
+
+                        // Merged checklist + tasks with segment tabs
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 8) {
+                                Label("Tasks", systemImage: "checklist")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Picker("", selection: $taskSegment) {
+                                    ForEach(TaskSegment.allCases, id: \.self) { segment in
+                                        Text(segment.rawValue).tag(segment)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+                                .frame(width: 160)
+                            }
+
+                            switch taskSegment {
+                            case .smart:
+                                ApplicationChecklistSection(
                                     application: application,
-                                    modelContext: modelContext,
-                                    settingsViewModel: SettingsViewModel(),
-                                    force: true
+                                    viewModel: viewModel,
+                                    onEditTask: { task in
+                                        editingTask = task
+                                    },
+                                    onOpenTaskAction: { task in
+                                        openChecklistAction(for: task)
+                                    },
+                                    onError: { message in
+                                        actionErrorMessage = message
+                                    }
+                                )
+
+                                ApplicationChecklistSuggestionsSection(
+                                    viewModel: checklistSuggestionsViewModel
+                                )
+                            case .manual:
+                                ApplicationTasksSection(
+                                    application: application,
+                                    viewModel: viewModel,
+                                    onAddTask: {
+                                        showingTaskEditor = true
+                                    },
+                                    onEditTask: { task in
+                                        editingTask = task
+                                    },
+                                    onError: { message in
+                                        actionErrorMessage = message
+                                    }
                                 )
                             }
                         }
-                    )
+                        .padding(DesignSystem.Spacing.md)
+                        .appCard(elevated: true)
 
-                    ATSCompatibilitySection(
-                        application: application,
-                        settingsViewModel: settingsViewModel,
-                        onGenerateFixes: { assessment in
-                            resumeSeededPatches = []
-                            resumeTailoringMode = .atsFixes(ATSFixContext(assessment: assessment))
-                            showingTailorResume = true
-                        },
-                        onGenerateQuickFixes: { assessment in
-                            openATSQuickFixes(for: assessment)
+                        if shouldShow(.smartFollowUp) {
+                            SmartFollowUpSection(
+                                application: application,
+                                viewModel: viewModel,
+                                onGenerate: { step in
+                                    draftingFollowUpStep = step
+                                    showingFollowUpDrafter = true
+                                },
+                                onError: { message in
+                                    actionErrorMessage = message
+                                }
+                            )
                         }
-                    )
-
-                    ApplicationContactsSection(
-                        application: application,
-                        onManageContacts: {
-                            showingManageContacts = true
-                        },
-                        onSelectContact: onSelectContact
-                    )
-
-                    if referralSectionShouldShow {
-                        ReferralTrackerSection(
-                            suggestions: referralSuggestions,
-                            attempts: application.sortedReferralAttempts,
-                            onPromote: { suggestion in
-                                promoteReferralSuggestion(suggestion)
-                            },
-                            onLink: { suggestion in
-                                linkReferralSuggestion(suggestion)
-                            },
-                            onAsk: { suggestion in
-                                askReferralSuggestion(suggestion)
-                            },
-                            onDismiss: { suggestion in
-                                dismissReferralSuggestion(suggestion)
-                            },
-                            onStatusChange: { attempt, status in
-                                updateReferralAttempt(attempt, status: status)
-                            }
-                        )
                     }
 
-                    JobResumePanel(application: application)
+                    // ── More ─────────────────────────────────
+                    sectionGroupLabel("MORE")
 
                     ApplicationOverviewNotesSection(
                         application: application,
                         viewModel: viewModel
                     )
 
-                    if application.status == .rejected || application.latestRejectionLog != nil {
+                    if shouldShow(.rejectionAnalysis) {
                         RejectionAnalysisSection(
                             application: application,
                             latestSnapshot: rejectionLearningSnapshots.first,
@@ -308,7 +463,7 @@ struct JobDetailView: View {
                         )
                     }
 
-                    if !application.sortedInterviewActivities.isEmpty {
+                    if shouldShow(.interviewLearnings) && !application.sortedInterviewActivities.isEmpty {
                         InterviewLearningsSection(
                             application: application,
                             applications: allApplications,
@@ -326,70 +481,54 @@ struct JobDetailView: View {
                         )
                     }
 
-                    ApplicationChecklistSection(
-                        application: application,
-                        viewModel: viewModel,
-                        onEditTask: { task in
-                            editingTask = task
-                        },
-                        onOpenTaskAction: { task in
-                            openChecklistAction(for: task)
-                        },
-                        onError: { message in
-                            actionErrorMessage = message
-                        }
-                    )
-
-                    ApplicationChecklistSuggestionsSection(
-                        viewModel: checklistSuggestionsViewModel
-                    )
-
-                    SmartFollowUpSection(
-                        application: application,
-                        viewModel: viewModel,
-                        onGenerate: { step in
-                            draftingFollowUpStep = step
-                            showingFollowUpDrafter = true
-                        },
-                        onError: { message in
-                            actionErrorMessage = message
-                        }
-                    )
-
-                    ApplicationTasksSection(
-                        application: application,
-                        viewModel: viewModel,
-                        onAddTask: {
-                            showingTaskEditor = true
-                        },
-                        onEditTask: { task in
-                            editingTask = task
-                        },
-                        onError: { message in
-                            actionErrorMessage = message
-                        }
-                    )
-
-                    ApplicationTimelineView(
-                        activities: application.sortedActivities,
-                        onAddActivity: { kind in
-                            draftActivityKind = kind
-                            showingActivityEditor = true
-                        },
-                        onEditActivity: { activity in
-                            editingActivity = activity
-                        },
-                        onDeleteActivity: { activity in
-                            do {
-                                try viewModel.deleteActivity(activity, from: application, context: modelContext)
-                            } catch {
-                                actionErrorMessage = error.localizedDescription
+                    if shouldShow(.marketData) {
+                        ApplicationMarketDataSection(
+                            application: application,
+                            viewModel: marketDataViewModel,
+                            onSeniorityChange: { seniority in
+                                do {
+                                    try viewModel.updateSeniorityOverride(seniority, for: application, context: modelContext)
+                                } catch {
+                                    actionErrorMessage = error.localizedDescription
+                                }
+                            },
+                            onGenerateNegotiation: {
+                                Task {
+                                    await marketDataViewModel.generateNegotiation(for: application)
+                                    if let error = marketDataViewModel.error {
+                                        actionErrorMessage = error
+                                        marketDataViewModel.error = nil
+                                    }
+                                }
                             }
-                        },
-                        onDebrief: { activity in
-                            openDebrief(for: activity)
+                        )
+                    }
+
+                    ApplicationCompanySection(
+                        application: application,
+                        onOpenWorkspace: { tab in
+                            openCompanyWorkspace(tab)
                         }
                     )
+
+                    // ── Show All Sections toggle ─────────────
+                    if !showAllSections {
+                        Button {
+                            withAnimation(.easeInOut(duration: Constants.UI.animationNormal)) {
+                                showAllSections = true
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "ellipsis.circle")
+                                Text("Show All Sections")
+                            }
+                            .font(.caption.weight(.medium))
+                            .foregroundColor(DesignSystem.Colors.accent)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
@@ -806,12 +945,14 @@ struct JobDetailView: View {
             Button {
                 showingEditSheet = true
             } label: {
-                Label("Edit", systemImage: "pencil")
+                Label("Edit Application", systemImage: "pencil")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(DesignSystem.Colors.accent)
             .interactiveHandCursor()
+
+            Spacer()
 
             Menu {
                 ForEach(ApplicationActivityKind.manualCases) { kind in
@@ -823,11 +964,13 @@ struct JobDetailView: View {
                     }
                 }
             } label: {
-                Label("Log", systemImage: "plus")
-                    .frame(width: 110)
+                Image(systemName: "plus.circle")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.secondary)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
             .interactiveHandCursor()
+            .fastTooltip("Log activity")
 
             Menu {
                 if application.status == .interviewing {
@@ -867,11 +1010,13 @@ struct JobDetailView: View {
                     Label("Cover Letter", systemImage: "doc.text")
                 }
             } label: {
-                Label("AI", systemImage: "sparkles")
-                    .frame(width: 120)
+                Image(systemName: "sparkles")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.secondary)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
             .interactiveHandCursor()
+            .fastTooltip("AI tools")
 
             if application.status != .archived {
                 Button {
@@ -881,15 +1026,20 @@ struct JobDetailView: View {
                         actionErrorMessage = error.localizedDescription
                     }
                 } label: {
-                    Label("Archive", systemImage: "archivebox")
-                        .frame(width: 120)
+                    Image(systemName: "archivebox")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.secondary)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
                 .interactiveHandCursor()
+                .fastTooltip("Archive")
             }
         }
-        .padding(16)
-        .background(DesignSystem.Colors.surfaceElevated(colorScheme))
+        .padding(DesignSystem.Spacing.md)
+        .background(DesignSystem.Colors.surface(colorScheme))
+        .overlay(alignment: .top) {
+            DesignSystem.Colors.divider(colorScheme).frame(height: 1)
+        }
     }
 }
 
@@ -2352,6 +2502,7 @@ private struct MarkdownPreviewText: View {
 struct ApplicationTaskEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) private var colorScheme
 
     let application: JobApplication
     let taskToEdit: ApplicationTask?
@@ -2365,6 +2516,14 @@ struct ApplicationTaskEditorView: View {
 
     private let viewModel = ApplicationDetailViewModel()
 
+    private var navigationTitle: String {
+        taskToEdit == nil ? "New Task" : "Edit Task"
+    }
+
+    private var primaryActionTitle: String {
+        taskToEdit == nil ? "Save" : "Update"
+    }
+
     init(application: JobApplication, taskToEdit: ApplicationTask? = nil) {
         self.application = application
         self.taskToEdit = taskToEdit
@@ -2377,38 +2536,136 @@ struct ApplicationTaskEditorView: View {
 
     var body: some View {
         NavigationStack {
+            #if os(macOS)
+            VStack(spacing: 0) {
+                // Header
+                HStack {
+                    Text(navigationTitle)
+                        .font(.title3.weight(.semibold))
+                    Spacer()
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 16)
+
+                Divider().overlay(DesignSystem.Colors.divider(colorScheme))
+
+                // Content
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Task Details Card
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("TASK DETAILS")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundColor(.secondary)
+                                .kerning(0.8)
+
+                            VStack(alignment: .leading, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Title")
+                                        .font(.caption.weight(.medium))
+                                        .foregroundColor(.secondary)
+                                    TextField("What needs to be done?", text: $title)
+                                        .textFieldStyle(.plain)
+                                        .appInput()
+                                }
+
+                                HStack(spacing: 16) {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text("Priority")
+                                            .font(.caption.weight(.medium))
+                                            .foregroundColor(.secondary)
+                                        PriorityPicker(selection: $priority)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Toggle("Due Date", isOn: $hasDueDate)
+                                            .font(.caption.weight(.medium))
+                                            .foregroundColor(.secondary)
+                                        if hasDueDate {
+                                            DatePicker("", selection: $dueDate, displayedComponents: .date)
+                                                .labelsHidden()
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            }
+                        }
+                        .padding(DesignSystem.Spacing.md)
+                        .appCard(elevated: true)
+
+                        // Notes Card
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("NOTES")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundColor(.secondary)
+                                .kerning(0.8)
+
+                            TextEditor(text: $notes)
+                                .font(.body)
+                                .frame(minHeight: 120)
+                                .scrollContentBackground(.hidden)
+                                .padding(10)
+                                .background(
+                                    RoundedRectangle(cornerRadius: DesignSystem.Radius.input, style: .continuous)
+                                        .fill(DesignSystem.Colors.inputBackground(colorScheme))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: DesignSystem.Radius.input, style: .continuous)
+                                        .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+                                )
+                        }
+                        .padding(DesignSystem.Spacing.md)
+                        .appCard(elevated: true)
+                    }
+                    .padding(24)
+                }
+
+                Divider().overlay(DesignSystem.Colors.divider(colorScheme))
+
+                // Footer
+                HStack {
+                    Button("Cancel") { dismiss() }
+                        .buttonStyle(.bordered)
+                        .interactiveHandCursor()
+
+                    Spacer()
+
+                    Button(primaryActionTitle) { saveTask() }
+                        .buttonStyle(.borderedProminent)
+                        .tint(DesignSystem.Colors.accent)
+                        .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .interactiveHandCursor()
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 14)
+            }
+            .frame(minWidth: 560, idealWidth: 640, minHeight: 480, idealHeight: 540)
+            .background(DesignSystem.Colors.contentBackground(colorScheme))
+            #else
             Form {
                 Section("Task") {
                     TextField("Title", text: $title)
-
                     PriorityPicker(selection: $priority)
-
                     Toggle("Due Date", isOn: $hasDueDate)
-
                     if hasDueDate {
                         DatePicker("Due", selection: $dueDate, displayedComponents: .date)
                     }
                 }
-
                 Section("Notes") {
                     TextEditor(text: $notes)
                         .frame(minHeight: 140)
                 }
             }
-            .navigationTitle(taskToEdit == nil ? "New Task" : "Edit Task")
+            .navigationTitle(navigationTitle)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
-
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(taskToEdit == nil ? "Save" : "Update") {
-                        saveTask()
-                    }
+                    Button(primaryActionTitle) { saveTask() }
                 }
             }
-            #if os(macOS)
-            .frame(minWidth: 540, idealWidth: 620, minHeight: 420, idealHeight: 480)
             #endif
         }
         .alert("Unable to Save Task", isPresented: Binding(
@@ -3461,30 +3718,246 @@ private struct InterviewLearningsSection: View {
 private struct InterviewDebriefSheet: View {
     @State var viewModel: InterviewDebriefViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         @Bindable var bindableViewModel = viewModel
 
         NavigationStack {
+            #if os(macOS)
+            VStack(spacing: 0) {
+                // Header
+                HStack {
+                    Text("Interview Debrief")
+                        .font(.title3.weight(.semibold))
+                    Spacer()
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 16)
+
+                Divider().overlay(DesignSystem.Colors.divider(colorScheme))
+
+                // Content
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Questions Card
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("QUESTIONS ASKED")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundColor(.secondary)
+                                .kerning(0.8)
+
+                            VStack(alignment: .leading, spacing: 14) {
+                                ForEach($bindableViewModel.questions) { $question in
+                                    VStack(alignment: .leading, spacing: 10) {
+                                        TextField("Question asked", text: $question.prompt, axis: .vertical)
+                                            .lineLimit(2 ... 4)
+                                            .textFieldStyle(.plain)
+                                            .appInput()
+
+                                        Picker("Category", selection: $question.category) {
+                                            ForEach(InterviewQuestionCategory.allCases) { category in
+                                                Text(category.displayName).tag(category)
+                                            }
+                                        }
+
+                                        TextField("How did you answer?", text: $question.answerNotes, axis: .vertical)
+                                            .lineLimit(2 ... 4)
+                                            .textFieldStyle(.plain)
+                                            .appInput()
+
+                                        TextField("Interviewer hint or context", text: $question.interviewerHint, axis: .vertical)
+                                            .lineLimit(1 ... 3)
+                                            .textFieldStyle(.plain)
+                                            .appInput()
+
+                                        HStack {
+                                            Spacer()
+                                            Button("Remove", role: .destructive) {
+                                                viewModel.removeQuestion(id: question.id)
+                                            }
+                                            .font(.caption)
+                                        }
+                                    }
+                                    .padding(14)
+                                    .appCard()
+                                }
+
+                                Button {
+                                    viewModel.addQuestion()
+                                } label: {
+                                    Label("Add Question", systemImage: "plus")
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundColor(DesignSystem.Colors.accent)
+                                }
+                                .buttonStyle(.plain)
+                                .interactiveHandCursor()
+                            }
+                        }
+                        .padding(DesignSystem.Spacing.md)
+                        .appCard(elevated: true)
+
+                        // Confidence Card
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("CONFIDENCE")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundColor(.secondary)
+                                .kerning(0.8)
+
+                            Stepper(value: $bindableViewModel.confidence, in: 1 ... 5) {
+                                HStack {
+                                    Text("How confident do you feel?")
+                                        .font(.subheadline)
+                                    Spacer()
+                                    Text("\(viewModel.confidence)/5")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                        .padding(DesignSystem.Spacing.md)
+                        .appCard(elevated: true)
+
+                        // Reflection Card
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("REFLECTION")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundColor(.secondary)
+                                .kerning(0.8)
+
+                            VStack(alignment: .leading, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("What went well?")
+                                        .font(.caption.weight(.medium))
+                                        .foregroundColor(.secondary)
+                                    TextField("", text: $bindableViewModel.whatWentWell, axis: .vertical)
+                                        .lineLimit(2 ... 5)
+                                        .textFieldStyle(.plain)
+                                        .appInput()
+                                }
+
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("What would you do differently?")
+                                        .font(.caption.weight(.medium))
+                                        .foregroundColor(.secondary)
+                                    TextField("", text: $bindableViewModel.wouldDoDifferently, axis: .vertical)
+                                        .lineLimit(2 ... 5)
+                                        .textFieldStyle(.plain)
+                                        .appInput()
+                                }
+
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Anything else to remember?")
+                                        .font(.caption.weight(.medium))
+                                        .foregroundColor(.secondary)
+                                    TextField("", text: $bindableViewModel.overallNotes, axis: .vertical)
+                                        .lineLimit(2 ... 5)
+                                        .textFieldStyle(.plain)
+                                        .appInput()
+                                }
+                            }
+                        }
+                        .padding(DesignSystem.Spacing.md)
+                        .appCard(elevated: true)
+
+                        // Follow-up Action Items Card
+                        VStack(alignment: .leading, spacing: 14) {
+                            HStack {
+                                Text("FOLLOW-UP ACTION ITEMS")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundColor(.secondary)
+                                    .kerning(0.8)
+                                Spacer()
+                            }
+
+                            Text("These become real tasks when you save the debrief.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            VStack(alignment: .leading, spacing: 10) {
+                                ForEach($bindableViewModel.followUpItems) { $item in
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        TextField("Action item", text: $item.title)
+                                            .textFieldStyle(.plain)
+                                            .appInput()
+
+                                        TextField("Optional notes", text: $item.notes, axis: .vertical)
+                                            .lineLimit(1 ... 3)
+                                            .textFieldStyle(.plain)
+                                            .appInput()
+
+                                        HStack {
+                                            Spacer()
+                                            Button("Remove", role: .destructive) {
+                                                viewModel.removeFollowUpItem(id: item.id)
+                                            }
+                                            .font(.caption)
+                                        }
+                                    }
+                                    .padding(14)
+                                    .appCard()
+                                }
+
+                                Button {
+                                    viewModel.addFollowUpItem()
+                                } label: {
+                                    Label("Add Action Item", systemImage: "plus")
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundColor(DesignSystem.Colors.accent)
+                                }
+                                .buttonStyle(.plain)
+                                .interactiveHandCursor()
+                            }
+                        }
+                        .padding(DesignSystem.Spacing.md)
+                        .appCard(elevated: true)
+                    }
+                    .padding(24)
+                }
+
+                Divider().overlay(DesignSystem.Colors.divider(colorScheme))
+
+                // Footer
+                HStack {
+                    Button("Cancel") { dismiss() }
+                        .buttonStyle(.bordered)
+                        .interactiveHandCursor()
+
+                    Spacer()
+
+                    Button("Save") {
+                        do {
+                            try viewModel.save()
+                            dismiss()
+                        } catch {
+                            viewModel.errorMessage = error.localizedDescription
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(DesignSystem.Colors.accent)
+                    .interactiveHandCursor()
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 14)
+            }
+            .frame(minWidth: 640, idealWidth: 740, minHeight: 660, idealHeight: 780)
+            .background(DesignSystem.Colors.contentBackground(colorScheme))
+            #else
             Form {
                 Section("Questions Asked") {
                     ForEach($bindableViewModel.questions) { $question in
                         VStack(alignment: .leading, spacing: 10) {
                             TextField("Question asked", text: $question.prompt, axis: .vertical)
                                 .lineLimit(2 ... 4)
-
                             Picker("Category", selection: $question.category) {
                                 ForEach(InterviewQuestionCategory.allCases) { category in
                                     Text(category.displayName).tag(category)
                                 }
                             }
-
                             TextField("How did you answer?", text: $question.answerNotes, axis: .vertical)
                                 .lineLimit(2 ... 4)
-
                             TextField("Interviewer hint or context", text: $question.interviewerHint, axis: .vertical)
                                 .lineLimit(1 ... 3)
-
                             HStack {
                                 Spacer()
                                 Button("Remove", role: .destructive) {
@@ -3495,14 +3968,12 @@ private struct InterviewDebriefSheet: View {
                         }
                         .padding(.vertical, 4)
                     }
-
                     Button {
                         viewModel.addQuestion()
                     } label: {
                         Label("Add Question", systemImage: "plus")
                     }
                 }
-
                 Section("Confidence") {
                     Stepper(value: $bindableViewModel.confidence, in: 1 ... 5) {
                         HStack {
@@ -3513,7 +3984,6 @@ private struct InterviewDebriefSheet: View {
                         }
                     }
                 }
-
                 Section("Reflection") {
                     TextField("What went well?", text: $bindableViewModel.whatWentWell, axis: .vertical)
                         .lineLimit(2 ... 5)
@@ -3522,18 +3992,15 @@ private struct InterviewDebriefSheet: View {
                     TextField("Anything else to remember?", text: $bindableViewModel.overallNotes, axis: .vertical)
                         .lineLimit(2 ... 5)
                 }
-
                 Section("Follow-up Action Items") {
                     Text("These become real tasks when you save the debrief.")
                         .font(.caption)
                         .foregroundColor(.secondary)
-
                     ForEach($bindableViewModel.followUpItems) { $item in
                         VStack(alignment: .leading, spacing: 10) {
                             TextField("Action item", text: $item.title)
                             TextField("Optional notes", text: $item.notes, axis: .vertical)
                                 .lineLimit(1 ... 3)
-
                             HStack {
                                 Spacer()
                                 Button("Remove", role: .destructive) {
@@ -3544,7 +4011,6 @@ private struct InterviewDebriefSheet: View {
                         }
                         .padding(.vertical, 4)
                     }
-
                     Button {
                         viewModel.addFollowUpItem()
                     } label: {
@@ -3557,7 +4023,6 @@ private struct InterviewDebriefSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
-
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         do {
@@ -3569,8 +4034,6 @@ private struct InterviewDebriefSheet: View {
                     }
                 }
             }
-            #if os(macOS)
-            .frame(minWidth: 620, idealWidth: 720, minHeight: 640, idealHeight: 760)
             #endif
         }
         .alert("Unable to Save Debrief", isPresented: Binding(
@@ -4060,6 +4523,7 @@ private struct RejectionAnalysisSection: View {
 struct RejectionLogSheet: View {
     @State var viewModel: RejectionLogEditorViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
 
     let onSaved: (() -> Void)?
 
@@ -4067,6 +4531,150 @@ struct RejectionLogSheet: View {
         @Bindable var bindableViewModel = viewModel
 
         NavigationStack {
+            #if os(macOS)
+            VStack(spacing: 0) {
+                // Header
+                HStack {
+                    Text("Rejection Log")
+                        .font(.title3.weight(.semibold))
+                    Spacer()
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 16)
+
+                Divider().overlay(DesignSystem.Colors.divider(colorScheme))
+
+                // Content
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Stage Card
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("STAGE")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundColor(.secondary)
+                                .kerning(0.8)
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Rejected At")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundColor(.secondary)
+                                Picker("", selection: $bindableViewModel.stageCategory) {
+                                    ForEach(RejectionStageCategory.allCases) { stage in
+                                        Text(stage.displayName).tag(stage)
+                                    }
+                                }
+                                .labelsHidden()
+                            }
+                        }
+                        .padding(DesignSystem.Spacing.md)
+                        .appCard(elevated: true)
+
+                        // Reason Card
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("REASON")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundColor(.secondary)
+                                .kerning(0.8)
+
+                            VStack(alignment: .leading, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Likely Reason")
+                                        .font(.caption.weight(.medium))
+                                        .foregroundColor(.secondary)
+                                    Picker("", selection: $bindableViewModel.reasonCategory) {
+                                        ForEach(RejectionReasonCategory.allCases) { reason in
+                                            Text(reason.displayName).tag(reason)
+                                        }
+                                    }
+                                    .labelsHidden()
+                                }
+
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Feedback Source")
+                                        .font(.caption.weight(.medium))
+                                        .foregroundColor(.secondary)
+                                    Picker("", selection: $bindableViewModel.feedbackSource) {
+                                        ForEach(RejectionFeedbackSource.allCases) { source in
+                                            Text(source.displayName).tag(source)
+                                        }
+                                    }
+                                    .labelsHidden()
+                                }
+                            }
+                        }
+                        .padding(DesignSystem.Spacing.md)
+                        .appCard(elevated: true)
+
+                        // Notes Card
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("NOTES")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundColor(.secondary)
+                                .kerning(0.8)
+
+                            VStack(alignment: .leading, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Feedback received")
+                                        .font(.caption.weight(.medium))
+                                        .foregroundColor(.secondary)
+                                    TextField("What did they say?", text: $bindableViewModel.feedbackText, axis: .vertical)
+                                        .lineLimit(2 ... 5)
+                                        .textFieldStyle(.plain)
+                                        .appInput()
+                                }
+
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Your reflection")
+                                        .font(.caption.weight(.medium))
+                                        .foregroundColor(.secondary)
+                                    TextField("What did you learn?", text: $bindableViewModel.candidateReflection, axis: .vertical)
+                                        .lineLimit(2 ... 5)
+                                        .textFieldStyle(.plain)
+                                        .appInput()
+                                }
+
+                                Toggle("Do not suggest re-applying here", isOn: $bindableViewModel.doNotReapply)
+                                    .font(.subheadline)
+                            }
+                        }
+                        .padding(DesignSystem.Spacing.md)
+                        .appCard(elevated: true)
+                    }
+                    .padding(24)
+                }
+
+                Divider().overlay(DesignSystem.Colors.divider(colorScheme))
+
+                // Footer
+                HStack {
+                    Button("Skip") { dismiss() }
+                        .buttonStyle(.bordered)
+                        .interactiveHandCursor()
+
+                    Spacer()
+
+                    Button(viewModel.isSaving ? "Saving…" : "Save") {
+                        Task {
+                            do {
+                                try await viewModel.save()
+                                onSaved?()
+                                dismiss()
+                            } catch {
+                                viewModel.errorMessage = error.localizedDescription
+                            }
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(DesignSystem.Colors.accent)
+                    .disabled(viewModel.isSaving)
+                    .interactiveHandCursor()
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 14)
+            }
+            .frame(minWidth: 560, idealWidth: 640, minHeight: 540, idealHeight: 640)
+            .background(DesignSystem.Colors.contentBackground(colorScheme))
+            #else
             Form {
                 Section("Stage") {
                     Picker("Rejected At", selection: $bindableViewModel.stageCategory) {
@@ -4075,28 +4683,23 @@ struct RejectionLogSheet: View {
                         }
                     }
                 }
-
                 Section("Reason") {
                     Picker("Likely Reason", selection: $bindableViewModel.reasonCategory) {
                         ForEach(RejectionReasonCategory.allCases) { reason in
                             Text(reason.displayName).tag(reason)
                         }
                     }
-
                     Picker("Feedback Source", selection: $bindableViewModel.feedbackSource) {
                         ForEach(RejectionFeedbackSource.allCases) { source in
                             Text(source.displayName).tag(source)
                         }
                     }
                 }
-
                 Section("Notes") {
                     TextField("Feedback received", text: $bindableViewModel.feedbackText, axis: .vertical)
                         .lineLimit(2 ... 5)
-
                     TextField("Your reflection", text: $bindableViewModel.candidateReflection, axis: .vertical)
                         .lineLimit(2 ... 5)
-
                     Toggle("Do not suggest re-applying here", isOn: $bindableViewModel.doNotReapply)
                 }
             }
@@ -4105,7 +4708,6 @@ struct RejectionLogSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Skip") { dismiss() }
                 }
-
                 ToolbarItem(placement: .confirmationAction) {
                     Button(viewModel.isSaving ? "Saving…" : "Save") {
                         Task {
@@ -4121,8 +4723,6 @@ struct RejectionLogSheet: View {
                     .disabled(viewModel.isSaving)
                 }
             }
-            #if os(macOS)
-            .frame(minWidth: 540, idealWidth: 620, minHeight: 520, idealHeight: 620)
             #endif
         }
         .alert("Unable to Save Rejection Log", isPresented: Binding(

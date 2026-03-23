@@ -369,7 +369,7 @@ struct MainView: View {
                 pendingNotificationOpenRequest: pendingNotificationOpenRequest,
                 onHandledNotificationOpenRequest: onHandledNotificationOpenRequest
             )
-            .navigationSplitViewColumnWidth(min: 360, ideal: 460)
+            .navigationSplitViewColumnWidth(min: Constants.Detail.minWidth, ideal: Constants.Detail.idealWidth)
             .background(DesignSystem.Colors.contentBackground(colorScheme))
         } else if shouldShowContactDetail, let contact = selectedContact {
             ContactDetailView(
@@ -383,7 +383,7 @@ struct MainView: View {
                     selectedContact = nil
                 }
             )
-            .navigationSplitViewColumnWidth(min: 360, ideal: 460)
+            .navigationSplitViewColumnWidth(min: Constants.Detail.minWidth, ideal: Constants.Detail.idealWidth)
             .background(DesignSystem.Colors.contentBackground(colorScheme))
         }
     }

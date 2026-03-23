@@ -42,19 +42,17 @@ struct PriorityBadge: View {
     let priority: Priority
 
     var body: some View {
-        if priority == .high {
-            HStack(spacing: 4) {
-                Image(systemName: "star.fill")
-                    .font(.system(size: 12))
-                Text("High Priority")
-                    .font(.system(size: 12, weight: .medium))
-            }
-            .foregroundColor(.yellow)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color.yellow.opacity(0.15))
-            .clipShape(Capsule())
+        HStack(spacing: 4) {
+            Image(systemName: priority.icon)
+                .font(.system(size: 12))
+            Text(priority.displayName)
+                .font(.system(size: 12, weight: .medium))
         }
+        .foregroundColor(priority.color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(priority.color.opacity(0.15))
+        .clipShape(Capsule())
     }
 }
 

@@ -24,7 +24,8 @@ struct InterviewStageIndicator: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Interview Progress")
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.secondary)
 
                 Spacer()
 

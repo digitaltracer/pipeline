@@ -10,7 +10,8 @@ struct ApplicationContactsSection: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Label("Contacts", systemImage: "person.2")
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.secondary)
 
                 Spacer()
 
@@ -23,25 +24,28 @@ struct ApplicationContactsSection: View {
             }
 
             if application.sortedContactLinks.isEmpty {
-                VStack(spacing: 8) {
+                VStack(spacing: 6) {
                     Image(systemName: "person.crop.circle.badge.plus")
-                        .font(.largeTitle)
-                        .foregroundColor(.secondary)
+                        .font(.title2)
+                        .foregroundColor(.secondary.opacity(0.5))
 
                     Text("No contacts linked")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
 
-                    Button("Link a Contact") {
+                    Button {
                         onManageContacts()
+                    } label: {
+                        Text("Link a Contact")
+                            .font(.caption.weight(.medium))
+                            .foregroundColor(DesignSystem.Colors.accent)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(DesignSystem.Colors.accent)
+                    .buttonStyle(.plain)
                     .interactiveHandCursor()
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 20)
-                .appCard(cornerRadius: 14, elevated: true, shadow: false)
+                .padding(.vertical, DesignSystem.Spacing.lg)
+                .appCard(elevated: true)
             } else {
                 ForEach(application.sortedContactLinks) { link in
                     if let contact = link.contact {
@@ -95,7 +99,7 @@ struct ApplicationContactsSection: View {
                         }
                         .buttonStyle(.plain)
                         .interactiveHandCursor()
-                        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+                        .appCard(elevated: true)
                     }
                 }
             }

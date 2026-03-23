@@ -58,7 +58,8 @@ struct JobDescriptionView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Label("Job Description", systemImage: "doc.text")
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.secondary)
 
                 Spacer()
 
@@ -116,7 +117,7 @@ struct JobDescriptionView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(16)
-        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+        .appCard(elevated: true)
     }
 
     @ViewBuilder

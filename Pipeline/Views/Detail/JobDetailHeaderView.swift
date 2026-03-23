@@ -33,8 +33,8 @@ struct JobDetailHeaderView: View {
             CompanyAvatar(
                 companyName: application.companyName,
                 logoURL: logoURL,
-                size: 54,
-                cornerRadius: 16
+                size: 58,
+                cornerRadius: 14
             )
 
             VStack(alignment: .leading, spacing: 6) {
@@ -83,7 +83,7 @@ struct JobDetailHeaderView: View {
 
             Spacer()
 
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 if let onQueueMembershipChange, application.status == .saved {
                     HeaderActionButton(
                         systemImage: application.isQueuedForApplyLater ? "bookmark.fill" : "bookmark",
@@ -116,8 +116,13 @@ struct JobDetailHeaderView: View {
                 }
             }
         }
-        .padding(16)
-        .appCard(cornerRadius: 16, elevated: true, shadow: false)
+        .padding(DesignSystem.Spacing.md)
+        .appCard(cornerRadius: DesignSystem.Radius.card, elevated: true, shadow: true, stroke: false)
+        .overlay(alignment: .top) {
+            application.status.color
+                .frame(height: 3)
+                .clipShape(UnevenRoundedRectangle(topLeadingRadius: DesignSystem.Radius.card, topTrailingRadius: DesignSystem.Radius.card))
+        }
     }
 }
 

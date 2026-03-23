@@ -11,7 +11,8 @@ struct InterviewHistoryView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Label("Interview History", systemImage: "bubble.left.and.bubble.right")
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.secondary)
 
                 Spacer()
 
@@ -44,26 +45,28 @@ struct InterviewHistoryView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             Image(systemName: "clock.badge.questionmark")
-                .font(.largeTitle)
-                .foregroundColor(.secondary)
+                .font(.title2)
+                .foregroundColor(.secondary.opacity(0.5))
 
             Text("No interview logs yet")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
 
-            Button("Add First Log") {
+            Button {
                 onAddLog()
+            } label: {
+                Text("Add First Log")
+                    .font(.caption.weight(.medium))
+                    .foregroundColor(DesignSystem.Colors.accent)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(DesignSystem.Colors.accent)
-            .controlSize(.regular)
+            .buttonStyle(.plain)
             .interactiveHandCursor()
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
-        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+        .padding(.vertical, DesignSystem.Spacing.lg)
+        .appCard(elevated: true)
     }
 }
 
@@ -129,7 +132,7 @@ struct InterviewLogRow: View {
             }
         }
         .padding(14)
-        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+        .appCard(elevated: true)
         .confirmationDialog(
             "Delete Interview Log",
             isPresented: $showingDeleteConfirmation,

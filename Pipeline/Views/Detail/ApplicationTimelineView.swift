@@ -14,7 +14,8 @@ struct ApplicationTimelineView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Label("Activity Timeline", systemImage: "clock.arrow.circlepath")
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.secondary)
 
                 Spacer()
 
@@ -56,10 +57,10 @@ struct ApplicationTimelineView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             Image(systemName: "clock.badge.questionmark")
-                .font(.largeTitle)
-                .foregroundColor(.secondary)
+                .font(.title2)
+                .foregroundColor(.secondary.opacity(0.5))
 
             Text(emptyTitle)
                 .font(.subheadline)
@@ -72,8 +73,8 @@ struct ApplicationTimelineView: View {
                 .frame(maxWidth: 320)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
-        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+        .padding(.vertical, DesignSystem.Spacing.lg)
+        .appCard(elevated: true)
     }
 }
 
@@ -197,7 +198,7 @@ private struct ActivityRowView: View {
             }
         }
         .padding(14)
-        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+        .appCard(elevated: true)
     }
 
     private func statusCapsule(_ title: String, tint: Color) -> some View {
