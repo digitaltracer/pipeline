@@ -144,8 +144,7 @@ private struct HeaderActionButton: View {
         }
         .buttonStyle(.plain)
         .interactiveHandCursor()
-        .help(helpText)
-        .accessibilityLabel(helpText)
+        .fastTooltip(helpText)
     }
 }
 

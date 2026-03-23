@@ -513,7 +513,7 @@ struct MainView: View {
             }
             .buttonStyle(.plain)
             .toolbarHandCursor()
-            .help("Change appearance")
+            .fastTooltip("Change appearance")
         }
 #endif
         if isApplicationsDestination {

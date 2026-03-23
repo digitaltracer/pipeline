@@ -271,6 +271,56 @@ private struct AppGlassModifier: ViewModifier {
     }
 }
 
+private struct FastTooltipModifier: ViewModifier {
+    let text: String
+    let delay: Double
+
+    @State private var isHovering = false
+    @State private var showTooltip = false
+    @State private var hoverTask: Task<Void, Never>?
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering in
+                isHovering = hovering
+                hoverTask?.cancel()
+                if hovering {
+                    hoverTask = Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(delay))
+                        guard !Task.isCancelled else { return }
+                        withAnimation(.easeIn(duration: 0.15)) {
+                            showTooltip = true
+                        }
+                    }
+                } else {
+                    withAnimation(.easeOut(duration: 0.1)) {
+                        showTooltip = false
+                    }
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if showTooltip {
+                    Text(text)
+                        .font(.caption)
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(.regularMaterial)
+                                .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+                        )
+                        .fixedSize()
+                        .offset(y: 32)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                        .zIndex(999)
+                }
+            }
+            .accessibilityLabel(text)
+    }
+}
+
 extension View {
     func appWindowBackground() -> some View {
         modifier(WindowBackgroundModifier())
@@ -286,6 +336,11 @@ extension View {
 
     func appGlass(cornerRadius: CGFloat = DesignSystem.Radius.card) -> some View {
         modifier(AppGlassModifier(cornerRadius: cornerRadius))
+    }
+
+    /// Fast tooltip that appears after a short delay (default 0.4s) instead of the system ~2s delay.
+    func fastTooltip(_ text: String, delay: Double = 0.4) -> some View {
+        modifier(FastTooltipModifier(text: text, delay: delay))
     }
 
 #if os(macOS)

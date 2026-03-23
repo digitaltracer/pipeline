@@ -534,7 +534,7 @@ struct CostCenterView: View {
                             }
                             .buttonStyle(.plain)
                             .frame(width: 34, alignment: .trailing)
-                            .help("Remove this provider/model cost rate")
+                            .fastTooltip("Remove this provider/model cost rate")
                         }
                     }
                 }

@@ -133,7 +133,7 @@ struct ManualEntryFormView: View {
                                 )
                         }
                         .buttonStyle(.plain)
-                        .help("Add custom status")
+                        .fastTooltip("Add custom status")
                         .popover(isPresented: $showingAddCustomStatus, arrowEdge: .top) {
                             AddCustomValuePopover(
                                 title: "Add Custom Status",
@@ -193,7 +193,7 @@ struct ManualEntryFormView: View {
                                 )
                         }
                         .buttonStyle(.plain)
-                        .help("Add custom source")
+                        .fastTooltip("Add custom source")
                         .popover(isPresented: $showingAddCustomSource, arrowEdge: .top) {
                             AddCustomValuePopover(
                                 title: "Add Custom Source",
@@ -368,7 +368,7 @@ struct ManualEntryFormView: View {
                                 )
                         }
                         .buttonStyle(.plain)
-                        .help("Add custom interview stage")
+                        .fastTooltip("Add custom interview stage")
                         .popover(isPresented: $showingAddCustomInterviewStage, arrowEdge: .top) {
                             AddCustomValuePopover(
                                 title: "Add Interview Stage",
