@@ -46,6 +46,7 @@ struct InterviewStageIndicator: View {
                     Image(systemName: "ellipsis.circle")
                         .foregroundColor(.secondary)
                 }
+                .interactiveHandCursor()
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -59,6 +60,7 @@ struct InterviewStageIndicator: View {
                         .onTapGesture {
                             onStageChange(stage)
                         }
+                        .interactiveHandCursor()
 
                         if stage != InterviewStage.orderedCases.last {
                             StageConnector(isCompleted: isCompleted(stage))
@@ -184,6 +186,7 @@ struct InterviewStageBannerView: View {
             #if os(macOS)
             .menuStyle(.borderlessButton)
             #endif
+            .interactiveHandCursor()
         }
         .padding(14)
         .background(

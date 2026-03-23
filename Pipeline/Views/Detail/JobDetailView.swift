@@ -55,6 +55,7 @@ struct JobDetailView: View {
     @State private var marketDataViewModel: ApplicationMarketDataViewModel
     @State private var selectedInterviewActivityForDebrief: ApplicationActivity?
     @State private var rejectionLearningsViewModel: RejectionLearningsViewModel?
+    @State private var settingsViewModel = SettingsViewModel()
     @Environment(\.colorScheme) private var colorScheme
 
     init(
@@ -101,7 +102,7 @@ struct JobDetailView: View {
     }
 
     private var marketDataBaseCurrency: Currency {
-        SettingsViewModel().analyticsBaseCurrency
+        settingsViewModel.analyticsBaseCurrency
     }
 
     private var marketDataRefreshKey: String {
@@ -232,6 +233,7 @@ struct JobDetailView: View {
 
                     ATSCompatibilitySection(
                         application: application,
+                        settingsViewModel: settingsViewModel,
                         onGenerateFixes: { assessment in
                             resumeSeededPatches = []
                             resumeTailoringMode = .atsFixes(ATSFixContext(assessment: assessment))
@@ -809,6 +811,7 @@ struct JobDetailView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(DesignSystem.Colors.accent)
+            .interactiveHandCursor()
 
             Menu {
                 ForEach(ApplicationActivityKind.manualCases) { kind in
@@ -824,6 +827,7 @@ struct JobDetailView: View {
                     .frame(width: 110)
             }
             .buttonStyle(.bordered)
+            .interactiveHandCursor()
 
             Menu {
                 if application.status == .interviewing {
@@ -867,6 +871,7 @@ struct JobDetailView: View {
                     .frame(width: 120)
             }
             .buttonStyle(.bordered)
+            .interactiveHandCursor()
 
             if application.status != .archived {
                 Button {
@@ -880,6 +885,7 @@ struct JobDetailView: View {
                         .frame(width: 120)
                 }
                 .buttonStyle(.bordered)
+                .interactiveHandCursor()
             }
         }
         .padding(16)
@@ -1029,6 +1035,7 @@ private struct ApplicationCompanySection: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
+            .interactiveHandCursor()
 
             Button {
                 onOpenWorkspace(.research)
@@ -1038,6 +1045,7 @@ private struct ApplicationCompanySection: View {
             .buttonStyle(.borderedProminent)
             .tint(DesignSystem.Colors.accent)
             .controlSize(.small)
+            .interactiveHandCursor()
 
             Button {
                 openSources()
@@ -1046,6 +1054,7 @@ private struct ApplicationCompanySection: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
+            .interactiveHandCursor()
         }
         .labelStyle(.titleAndIcon)
     }
@@ -1253,6 +1262,7 @@ private struct ApplicationMarketDataSection: View {
                 .buttonStyle(.borderedProminent)
                 .tint(DesignSystem.Colors.accent)
                 .disabled(viewModel.isGeneratingNegotiation || !viewModel.aiReady)
+                .interactiveHandCursor()
             }
 
             if !viewModel.aiReady {
@@ -1290,6 +1300,7 @@ private struct ApplicationMarketDataSection: View {
                             .buttonStyle(.plain)
                             .font(.caption)
                             .foregroundColor(DesignSystem.Colors.accent)
+                            .interactiveHandCursor()
                         }
                     }
                 }
@@ -1504,6 +1515,7 @@ private struct CompanyWorkspaceView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(DesignSystem.Colors.accent)
+                .interactiveHandCursor()
             }
         }
     }
@@ -1535,6 +1547,7 @@ private struct CompanyWorkspaceView: View {
                         .buttonStyle(.borderedProminent)
                         .tint(DesignSystem.Colors.accent)
                         .disabled(researchViewModel.isLoading)
+                        .interactiveHandCursor()
 
                         if let lastCompletedAt = researchViewModel.lastCompletedAt {
                             Text("Updated \(lastCompletedAt.formatted(date: .abbreviated, time: .shortened))")
@@ -1598,6 +1611,7 @@ private struct CompanyWorkspaceView: View {
                                     }
                                 }
                                 .buttonStyle(.plain)
+                                .interactiveHandCursor()
                             }
                         }
                     }
@@ -1631,6 +1645,7 @@ private struct CompanyWorkspaceView: View {
                                     }
                                     .buttonStyle(.plain)
                                     .font(.caption)
+                                    .interactiveHandCursor()
                                 }
                             }
                         }
@@ -1692,6 +1707,7 @@ private struct CompanyWorkspaceView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(DesignSystem.Colors.accent)
+                    .interactiveHandCursor()
 
                     if company.sortedSalarySnapshots.isEmpty {
                         Text("No salary snapshots yet.")
@@ -1820,23 +1836,27 @@ private struct CompanyWorkspaceView: View {
             Task { await researchViewModel.retryResearch(for: source) }
         }
         .buttonStyle(.bordered)
+        .interactiveHandCursor()
 
         if let url = source.resolvedURL ?? source.normalizedURL {
             Button("Open") {
                 openURL(url)
             }
             .buttonStyle(.bordered)
+            .interactiveHandCursor()
         }
 
         Button(source.isExcludedFromResearch ? "Include" : "Exclude") {
             researchViewModel.setExcluded(!source.isExcludedFromResearch, for: source)
         }
         .buttonStyle(.bordered)
+        .interactiveHandCursor()
 
         Button("Delete", role: .destructive) {
             deleteResearchSource(source)
         }
         .buttonStyle(.bordered)
+        .interactiveHandCursor()
 
         if source.sourceKind != .manual &&
             (source.validationStatus == .blocked || source.validationStatus == .invalid) {
@@ -1844,6 +1864,7 @@ private struct CompanyWorkspaceView: View {
                 researchViewModel.useManualNote(for: source)
             }
             .buttonStyle(.bordered)
+            .interactiveHandCursor()
         }
     }
 
@@ -1960,11 +1981,13 @@ private struct CompanyWorkspaceView: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundColor(DesignSystem.Colors.accent)
+                        .interactiveHandCursor()
 
                         Button("Delete", role: .destructive) {
                             deleteSalarySnapshot(snapshot)
                         }
                         .buttonStyle(.plain)
+                        .interactiveHandCursor()
                     }
                     .font(.caption)
                 }
@@ -1985,6 +2008,7 @@ private struct CompanyWorkspaceView: View {
                 .buttonStyle(.plain)
                 .font(.caption)
                 .foregroundColor(DesignSystem.Colors.accent)
+                .interactiveHandCursor()
             }
         }
         .padding(12)
@@ -2221,12 +2245,14 @@ private struct ApplicationOverviewNotesSection: View {
                         isEditing = false
                     }
                     .buttonStyle(.plain)
+                    .interactiveHandCursor()
 
                     Button("Save") {
                         saveNotes()
                     }
                     .buttonStyle(.plain)
                     .foregroundColor(DesignSystem.Colors.accent)
+                    .interactiveHandCursor()
                 } else {
                     Button(application.overviewMarkdown?.isEmpty == false ? "Edit" : "Add Notes") {
                         draftMarkdown = application.overviewMarkdown ?? ""
@@ -2234,6 +2260,7 @@ private struct ApplicationOverviewNotesSection: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundColor(DesignSystem.Colors.accent)
+                    .interactiveHandCursor()
                 }
             }
 
@@ -2590,6 +2617,7 @@ private struct ApplicationTasksSection: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(DesignSystem.Colors.accent)
+                .interactiveHandCursor()
             }
 
             if openTasks.isEmpty {
@@ -2903,6 +2931,7 @@ private struct FollowUpStepRow: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundColor(DesignSystem.Colors.accent)
+                        .interactiveHandCursor()
                     }
 
                     if let onSnooze {
@@ -2911,6 +2940,7 @@ private struct FollowUpStepRow: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundColor(.secondary)
+                        .interactiveHandCursor()
                     }
 
                     if let onMarkDone {
@@ -2919,6 +2949,7 @@ private struct FollowUpStepRow: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundColor(.green)
+                        .interactiveHandCursor()
                     }
 
                     if let onArchive {
@@ -2927,6 +2958,7 @@ private struct FollowUpStepRow: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundColor(.orange)
+                        .interactiveHandCursor()
                     }
 
                     if let onDismiss {
@@ -2935,6 +2967,7 @@ private struct FollowUpStepRow: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundColor(.secondary)
+                        .interactiveHandCursor()
                     }
 
                     Spacer()
@@ -2970,6 +3003,7 @@ private struct ApplicationChecklistSuggestionsSection: View {
                 .buttonStyle(.plain)
                 .foregroundColor(DesignSystem.Colors.accent)
                 .disabled(viewModel.isLoading)
+                .interactiveHandCursor()
             }
 
             Text("Optional ideas tailored to this role. Accepted suggestions become normal tasks and do not change the base checklist.")
@@ -3038,6 +3072,7 @@ private struct ApplicationTaskRow: View {
                         .foregroundColor(task.isCompleted ? .green : .secondary)
                 }
                 .buttonStyle(.plain)
+                .interactiveHandCursor()
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
@@ -3071,6 +3106,7 @@ private struct ApplicationTaskRow: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundColor(DesignSystem.Colors.accent)
+                        .interactiveHandCursor()
                     }
 
                     Button("Edit") {
@@ -3078,6 +3114,7 @@ private struct ApplicationTaskRow: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundColor(DesignSystem.Colors.accent)
+                    .interactiveHandCursor()
 
                     Button(role: .destructive) {
                         showingDeleteConfirmation = true
@@ -3085,6 +3122,7 @@ private struct ApplicationTaskRow: View {
                         Text(deleteLabel)
                     }
                     .buttonStyle(.plain)
+                    .interactiveHandCursor()
                     .confirmationDialog(
                         deleteConfirmationTitle,
                         isPresented: $showingDeleteConfirmation,
@@ -3128,11 +3166,13 @@ private struct ApplicationChecklistSuggestionRow: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(DesignSystem.Colors.accent)
+                .interactiveHandCursor()
 
                 Button("Dismiss", role: .destructive) {
                     onDismiss()
                 }
                 .buttonStyle(.plain)
+                .interactiveHandCursor()
             }
             .font(.caption.weight(.semibold))
         }
@@ -3164,6 +3204,7 @@ struct JobPostingSection: View {
                         .font(.subheadline)
                         .foregroundColor(DesignSystem.Colors.accent)
                     }
+                    .interactiveHandCursor()
                 }
             }
 
@@ -3249,6 +3290,7 @@ private struct JobDescriptionDenoiseReviewSheet: View {
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
+            .interactiveHandCursor()
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
@@ -3263,12 +3305,14 @@ private struct JobDescriptionDenoiseReviewSheet: View {
                 dismiss()
             }
             .buttonStyle(.bordered)
+            .interactiveHandCursor()
 
             Button("Replace Description") {
                 onReplace()
             }
             .buttonStyle(.borderedProminent)
             .tint(DesignSystem.Colors.accent)
+            .interactiveHandCursor()
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
@@ -3351,6 +3395,7 @@ private struct InterviewLearningsSection: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(DesignSystem.Colors.accent)
+                .interactiveHandCursor()
             }
 
             HStack(spacing: 10) {
@@ -3387,6 +3432,7 @@ private struct InterviewLearningsSection: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(DesignSystem.Colors.accent)
+                .interactiveHandCursor()
 
                 Button {
                     onViewLearnings()
@@ -3394,6 +3440,7 @@ private struct InterviewLearningsSection: View {
                     Label("Question Bank", systemImage: "text.book.closed")
                 }
                 .buttonStyle(.bordered)
+                .interactiveHandCursor()
             }
         }
         .padding(16)
@@ -3681,6 +3728,7 @@ private struct InterviewLearningsView: View {
                     } label: {
                         filterLabel(selectedCategory?.displayName ?? "All Categories")
                     }
+                    .interactiveHandCursor()
 
                     Menu {
                         ForEach(availableCompanies, id: \.self) { company in
@@ -3689,6 +3737,7 @@ private struct InterviewLearningsView: View {
                     } label: {
                         filterLabel(selectedCompany)
                     }
+                    .interactiveHandCursor()
 
                     Menu {
                         ForEach(availableStages, id: \.self) { stage in
@@ -3697,6 +3746,7 @@ private struct InterviewLearningsView: View {
                     } label: {
                         filterLabel(selectedStage)
                     }
+                    .interactiveHandCursor()
 
                     Spacer()
                 }
@@ -3819,6 +3869,7 @@ private struct RejectionAnalysisSection: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundColor(DesignSystem.Colors.accent)
+                    .interactiveHandCursor()
                 }
             }
 
@@ -3873,6 +3924,7 @@ private struct RejectionAnalysisSection: View {
                         .buttonStyle(.plain)
                         .foregroundColor(DesignSystem.Colors.accent)
                         .disabled(isAnalyzing)
+                        .interactiveHandCursor()
                     }
 
                     if isAnalyzing {
@@ -3968,6 +4020,7 @@ private struct RejectionAnalysisSection: View {
                     .buttonStyle(.borderedProminent)
                     .tint(accent)
                     .controlSize(.small)
+                    .interactiveHandCursor()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -4211,22 +4264,26 @@ private struct ReferralSuggestionCard: View {
             onPromote()
         }
         .buttonStyle(.bordered)
+        .interactiveHandCursor()
 
         Button("Link to App") {
             onLink()
         }
         .buttonStyle(.bordered)
+        .interactiveHandCursor()
 
         Button("Ask for Referral") {
             onAsk()
         }
         .buttonStyle(.borderedProminent)
         .tint(DesignSystem.Colors.accent)
+        .interactiveHandCursor()
 
         Button("Dismiss", role: .destructive) {
             onDismiss()
         }
         .buttonStyle(.bordered)
+        .interactiveHandCursor()
     }
 
     private func initials(for name: String) -> String {
@@ -4277,10 +4334,13 @@ private struct ReferralAttemptRow: View {
             HStack(spacing: 8) {
                 Button("Pending") { onStatusChange(.pending) }
                     .buttonStyle(.bordered)
+                    .interactiveHandCursor()
                 Button("Received") { onStatusChange(.received) }
                     .buttonStyle(.borderedProminent)
+                    .interactiveHandCursor()
                 Button("Declined") { onStatusChange(.declined) }
                     .buttonStyle(.bordered)
+                    .interactiveHandCursor()
             }
         }
         .padding(14)

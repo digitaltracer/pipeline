@@ -36,6 +36,7 @@ struct ApplicationTimelineView: View {
                         .foregroundColor(DesignSystem.Colors.accent)
                     }
                     .buttonStyle(.plain)
+                    .interactiveHandCursor()
                 }
             }
 
@@ -154,6 +155,7 @@ private struct ActivityRowView: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundColor(DesignSystem.Colors.accent)
+                        .interactiveHandCursor()
                     }
 
                     if activity.kind == .interview, let onDebrief {
@@ -165,6 +167,7 @@ private struct ActivityRowView: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundColor(activity.hasDebrief ? .green : .orange)
+                        .interactiveHandCursor()
                     }
 
                     if let onDelete {
@@ -176,6 +179,7 @@ private struct ActivityRowView: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundColor(.red.opacity(0.9))
+                        .interactiveHandCursor()
                         .confirmationDialog(
                             "Delete Activity",
                             isPresented: $showingDeleteConfirmation,

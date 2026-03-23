@@ -93,10 +93,108 @@
       .trim();
   }
 
+  function isDescriptionBulletLine(line) {
+    return /^(?:[•●◦▪‣∙*-]|\d{1,3}[.)]|[A-Za-z][.)])\s+/.test(line);
+  }
+
+  function normalizeDescriptionLine(line) {
+    const normalized = normalizeText(line || "");
+    if (!normalized) return "";
+
+    if (isDescriptionBulletLine(normalized)) {
+      const body = normalizeText(
+        normalized.replace(/^(?:[•●◦▪‣∙*-]|\d{1,3}[.)]|[A-Za-z][.)])\s+/, "")
+      );
+      return body ? `• ${body}` : "";
+    }
+
+    return normalized;
+  }
+
+  function isLikelyDescriptionHeading(line) {
+    const normalized = normalizeText(line || "");
+    if (!normalized || normalized.length > 80) return false;
+    if (normalized.endsWith(":")) return true;
+    if (/[.!?]/.test(normalized)) return false;
+
+    const words = normalized.split(/\s+/).filter(Boolean);
+    if (!words.length || words.length > 8) return false;
+    if (!/^[A-Z0-9]/.test(normalized)) return false;
+
+    const connectorWords = new Set(["a", "an", "and", "for", "in", "of", "on", "or", "the", "to", "with"]);
+    const titleishWords = words.filter((word) => {
+      const cleaned = word.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9:]+$/g, "");
+      if (!cleaned) return false;
+      if (connectorWords.has(cleaned.toLowerCase())) return true;
+      return /^[A-Z0-9]/.test(cleaned) || /^[A-Z]{2,}$/.test(cleaned);
+    }).length;
+
+    return titleishWords >= Math.max(1, words.length - 1);
+  }
+
+  function classifyDescriptionLine(line) {
+    if (!line) return "blank";
+    if (line.startsWith("• ")) return "bullet";
+    if (isLikelyDescriptionHeading(line)) return "heading";
+    return "paragraph";
+  }
+
+  function formatDescriptionText(text) {
+    const rawLines = String(text || "")
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n")
+      .replace(/\u00a0/g, " ")
+      .split("\n");
+
+    const formatted = [];
+    let previousKind = "blank";
+
+    for (const rawLine of rawLines) {
+      const line = normalizeDescriptionLine(rawLine);
+      if (!line) {
+        if (formatted.length && formatted[formatted.length - 1] !== "") {
+          formatted.push("");
+        }
+        previousKind = "blank";
+        continue;
+      }
+
+      const currentKind = classifyDescriptionLine(line);
+      const lastIndex = formatted.length - 1;
+
+      if (
+        currentKind === "paragraph" &&
+        previousKind === "paragraph" &&
+        lastIndex >= 0 &&
+        formatted[lastIndex] !== ""
+      ) {
+        formatted[lastIndex] = `${formatted[lastIndex]} ${line}`;
+      } else {
+        const needsBlankLine =
+          formatted.length > 0 &&
+          formatted[lastIndex] !== "" &&
+          (currentKind === "heading" ||
+            previousKind === "heading" ||
+            (currentKind === "paragraph" && previousKind === "bullet") ||
+            (currentKind === "bullet" && previousKind === "paragraph"));
+
+        if (needsBlankLine) {
+          formatted.push("");
+        }
+
+        formatted.push(line);
+      }
+
+      previousKind = currentKind;
+    }
+
+    return normalizeText(formatted.join("\n").replace(/\n{3,}/g, "\n\n"));
+  }
+
   function stripHtml(html) {
     const div = document.createElement("div");
     div.innerHTML = html;
-    return normalizeText(div.innerText);
+    return formatDescriptionText(div.innerText);
   }
 
   function compactMultiline(text) {
@@ -182,7 +280,7 @@
   }
 
   function clampDescription(text) {
-    return compactMultiline(text).substring(0, MAX_DESCRIPTION_LENGTH);
+    return formatDescriptionText(text).substring(0, MAX_DESCRIPTION_LENGTH);
   }
 
   function isValidCompany(value) {
@@ -504,12 +602,13 @@
   }
 
   function cleanDescriptionText(text) {
-    const lines = compactMultiline(text)
+    const lines = formatDescriptionText(text)
       .split("\n")
-      .map((line) => normalizeText(line))
-      .filter(Boolean);
+      .map((line) => normalizeText(line));
 
-    if (!lines.length) return "";
+    const contentLines = lines.filter(Boolean);
+
+    if (!contentLines.length) return "";
 
     let startIndex = lines.findIndex((line) =>
       DESCRIPTION_START_PATTERNS.some((pattern) => pattern.test(line))
@@ -523,7 +622,17 @@
     );
     if (endIndex < 0) endIndex = Math.min(lines.length, startIndex + 220);
 
-    const core = lines.slice(startIndex, endIndex).filter((line) => !isUiNoiseLine(line));
+    const core = lines
+      .slice(startIndex, endIndex)
+      .filter((line, index, source) => {
+        if (!line) {
+          const previous = source[index - 1];
+          const next = source[index + 1];
+          return Boolean(previous && next);
+        }
+        return !isUiNoiseLine(line);
+      });
+
     return clampDescription(core.join("\n"));
   }
 

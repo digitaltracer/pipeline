@@ -26,6 +26,16 @@ public enum Constants {
         public static let localFallbackDocumentsDirectoryName = "Documents"
     }
 
+    // MARK: - Browser Extensions
+
+    public enum BrowserExtensions {
+        public enum Chrome {
+            public static let extensionID = "onkppiodpcchcgjcfkpdbaiadjdcaejf"
+            public static let nativeHostName = "io.github.digitaltracer.pipeline"
+            public static let nativeHostExecutableName = "PipelineNativeHost"
+        }
+    }
+
     // MARK: - External URLs
 
     public enum URLs {

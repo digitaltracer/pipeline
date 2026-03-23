@@ -12,6 +12,7 @@ public enum AIUsageFeature: String, Codable, CaseIterable, Sendable, Identifiabl
     case companyResearch = "company_research"
     case jobDescriptionDenoise = "job_description_denoise"
     case jobMatchScoring = "job_match_scoring"
+    case atsKeywordExtraction = "ats_keyword_extraction"
     case resumeATSFixes = "resume_ats_fixes"
     case interviewLearnings = "interview_learnings"
     case rejectionLearnings = "rejection_learnings"
@@ -40,6 +41,8 @@ public enum AIUsageFeature: String, Codable, CaseIterable, Sendable, Identifiabl
             return "Job Description Denoise"
         case .jobMatchScoring:
             return "Job Match Scoring"
+        case .atsKeywordExtraction:
+            return "ATS Keyword Extraction"
         case .resumeATSFixes:
             return "Resume ATS Fixes"
         case .interviewLearnings:

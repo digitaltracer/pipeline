@@ -12,7 +12,8 @@ import Testing
 
     let draft = try ATSCompatibilityScoringService.prepareDraft(
         application: application,
-        resumeSource: nil
+        resumeSource: nil,
+        extractedKeywords: []
     )
 
     #expect(draft.status == .blocked)
@@ -39,7 +40,8 @@ import Testing
     let source = try ResumeStoreService.preferredResumeSource(for: application, in: context)
     let draft = try ATSCompatibilityScoringService.prepareDraft(
         application: application,
-        resumeSource: source
+        resumeSource: source,
+        extractedKeywords: sampleATSKeywords
     )
 
     #expect(source?.kind == .masterResume)
@@ -77,7 +79,8 @@ import Testing
     let source = try ResumeStoreService.preferredResumeSource(for: application, in: context)
     let draft = try ATSCompatibilityScoringService.prepareDraft(
         application: application,
-        resumeSource: source
+        resumeSource: source,
+        extractedKeywords: sampleATSKeywords
     )
 
     #expect(source?.kind == .tailoredSnapshot)
@@ -128,7 +131,16 @@ import Testing
 
     let draft = try ATSCompatibilityScoringService.prepareDraft(
         application: application,
-        resumeSource: source
+        resumeSource: source,
+        extractedKeywords: [
+            ATSKeywordCandidate(term: "CI/CD", aliases: ["continuous integration"], kind: .tool, importance: .core),
+            ATSKeywordCandidate(term: "Distributed Systems", kind: .domain, importance: .core),
+            ATSKeywordCandidate(term: "gRPC", aliases: ["grpc"], kind: .tool, importance: .core),
+            ATSKeywordCandidate(term: ".NET", aliases: ["dotnet"], kind: .platform, importance: .core),
+            ATSKeywordCandidate(term: "C++", aliases: ["c++"], kind: .hardSkill, importance: .supporting),
+            ATSKeywordCandidate(term: "Kubernetes", aliases: ["k8s"], kind: .platform, importance: .core),
+            ATSKeywordCandidate(term: "DataDog", aliases: ["Datadog"], kind: .tool, importance: .supporting)
+        ]
     )
 
     #expect(draft.status == .ready)
@@ -182,13 +194,17 @@ import Testing
 
     let draft = try ATSCompatibilityScoringService.prepareDraft(
         application: application,
-        resumeSource: source
+        resumeSource: source,
+        extractedKeywords: [
+            ATSKeywordCandidate(term: "Kubernetes", aliases: ["k8s"], kind: .platform, importance: .core),
+            ATSKeywordCandidate(term: "CI/CD", aliases: ["continuous integration"], kind: .tool, importance: .supporting)
+        ]
     )
 
     #expect(draft.matchedKeywords.contains("Kubernetes"))
     #expect(!draft.missingKeywords.contains("Kubernetes"))
     #expect(draft.skillsPromotionKeywords.contains("Kubernetes"))
-    #expect(draft.keywordEvidenceSummary.contains(where: { $0.contains("Kubernetes appears") }))
+    #expect(draft.keywordEvidenceSummary.contains(where: { $0.contains("Kubernetes") && $0.contains("Skills section") }))
 }
 
 @Test func atsFlagsUnknownRenderedFieldsInFormatWarnings() throws {
@@ -243,7 +259,8 @@ import Testing
 
     let draft = try ATSCompatibilityScoringService.prepareDraft(
         application: application,
-        resumeSource: source
+        resumeSource: source,
+        extractedKeywords: sampleATSKeywords
     )
 
     #expect(draft.formatWarningFindings.contains(where: { $0.contains("not rendered by Pipeline exports") }))
@@ -305,7 +322,7 @@ import Testing
 
 @Test func atsScoresAreDeterministicAndWeighted() throws {
     let application = JobApplication(
-        companyName: "Acme",
+        companyName: "Uber",
         role: "Backend Engineer",
         location: "Remote",
         jobDescription: sampleATSJobDescription
@@ -321,11 +338,23 @@ import Testing
     let first = try ATSCompatibilityScoringService.prepareDraft(
         application: application,
         resumeSource: source,
+        extractedKeywords: [
+            ATSKeywordCandidate(term: "Uber", kind: .domain, importance: .core),
+            ATSKeywordCandidate(term: "They", kind: .roleConcept, importance: .supporting),
+            ATSKeywordCandidate(term: "Kubernetes", aliases: ["k8s"], kind: .platform, importance: .core),
+            ATSKeywordCandidate(term: "Stakeholder Communication", kind: .roleConcept, importance: .supporting)
+        ],
         referenceDate: Date(timeIntervalSince1970: 2_000)
     )
     let second = try ATSCompatibilityScoringService.prepareDraft(
         application: application,
         resumeSource: source,
+        extractedKeywords: [
+            ATSKeywordCandidate(term: "Uber", kind: .domain, importance: .core),
+            ATSKeywordCandidate(term: "They", kind: .roleConcept, importance: .supporting),
+            ATSKeywordCandidate(term: "Kubernetes", aliases: ["k8s"], kind: .platform, importance: .core),
+            ATSKeywordCandidate(term: "Stakeholder Communication", kind: .roleConcept, importance: .supporting)
+        ],
         referenceDate: Date(timeIntervalSince1970: 2_000)
     )
 
@@ -339,6 +368,10 @@ import Testing
 
     #expect(first == second)
     #expect(first.overallScore == expectedOverall)
+    #expect(!first.matchedKeywords.contains("Uber"))
+    #expect(!first.matchedKeywords.contains("They"))
+    #expect(!first.missingKeywords.contains("Uber"))
+    #expect(!first.missingKeywords.contains("They"))
 }
 
 @Test func atsStaleDetectionTracksJobDescriptionSourceAndVersion() throws {
@@ -358,6 +391,7 @@ import Testing
     let draft = try ATSCompatibilityScoringService.prepareDraft(
         application: application,
         resumeSource: source,
+        extractedKeywords: sampleATSKeywords,
         referenceDate: Date(timeIntervalSince1970: 2_000)
     )
 
@@ -427,9 +461,69 @@ import Testing
     ))
 }
 
+@Test func atsDoesNotPromoteRoleConceptsIntoSkills() throws {
+    let application = JobApplication(
+        companyName: "Acme",
+        role: "Engineering Manager",
+        location: "Remote",
+        jobDescription: "Drive stakeholder communication and align cross-functional delivery."
+    )
+
+    let source = ResumeSourceSelection(
+        kind: .masterResume,
+        rawJSON: """
+        {
+          "name": "Taylor Candidate",
+          "contact": {
+            "phone": "+1 555 123 4567",
+            "email": "taylor@example.com",
+            "linkedin": "linkedin.com/in/taylor",
+            "github": "github.com/taylor"
+          },
+          "education": [{"university":"State University","location":"CA","degree":"BS","date":"2020"}],
+          "summary": "Engineering manager focused on execution.",
+          "experience": [{
+            "title":"Engineering Manager",
+            "company":"Example",
+            "location":"Remote",
+            "dates":"2021-Present",
+            "responsibilities":[
+              "Led stakeholder communication across product, design, and engineering teams."
+            ]
+          }],
+          "projects": [],
+          "skills": {"Platforms":["AWS"]}
+        }
+        """,
+        snapshotID: nil,
+        masterRevisionID: UUID(uuidString: "F0F0F0F0-F0F0-F0F0-F0F0-F0F0F0F0F0F0"),
+        createdAt: Date(timeIntervalSince1970: 1_000)
+    )
+
+    let draft = try ATSCompatibilityScoringService.prepareDraft(
+        application: application,
+        resumeSource: source,
+        extractedKeywords: [
+            ATSKeywordCandidate(term: "Stakeholder Communication", kind: .roleConcept, importance: .core)
+        ]
+    )
+
+    #expect(draft.matchedKeywords.contains("Stakeholder Communication"))
+    #expect(!draft.skillsPromotionKeywords.contains("Stakeholder Communication"))
+}
+
 private let sampleATSJobDescription = """
 Design and maintain backend services with Kubernetes, Terraform, CI/CD, gRPC, and DataDog. Build scalable APIs and support production reliability.
 """
+
+private let sampleATSKeywords: [ATSKeywordCandidate] = [
+    ATSKeywordCandidate(term: "Kubernetes", aliases: ["k8s"], kind: .platform, importance: .core),
+    ATSKeywordCandidate(term: "Terraform", kind: .tool, importance: .core),
+    ATSKeywordCandidate(term: "CI/CD", aliases: ["continuous integration"], kind: .tool, importance: .core),
+    ATSKeywordCandidate(term: "gRPC", aliases: ["grpc"], kind: .tool, importance: .supporting),
+    ATSKeywordCandidate(term: "DataDog", aliases: ["Datadog"], kind: .tool, importance: .supporting),
+    ATSKeywordCandidate(term: "Production Reliability", kind: .roleConcept, importance: .supporting)
+]
 
 private let sampleATSResumeJSON = """
 {

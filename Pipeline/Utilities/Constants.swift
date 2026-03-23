@@ -224,6 +224,21 @@ extension View {
     func appInput() -> some View {
         modifier(AppInputModifier())
     }
+
+#if os(macOS)
+    func interactiveHandCursor() -> some View {
+        onContinuousHover { phase in
+            switch phase {
+            case .active:
+                NSCursor.pointingHand.set()
+            case .ended:
+                NSCursor.arrow.set()
+            }
+        }
+    }
+#else
+    func interactiveHandCursor() -> some View { self }
+#endif
 }
 
 #if os(macOS)

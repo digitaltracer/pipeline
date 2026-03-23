@@ -2975,7 +2975,8 @@ struct ResumeTailoringView: View {
             await ATSCompatibilityCoordinator.shared.refresh(
                 application: application,
                 modelContext: modelContext,
-                force: true,
+                settingsViewModel: settingsViewModel,
+                force: false,
                 trigger: .autoSnapshot
             )
             lastPersistedJSON = validated.normalizedJSON

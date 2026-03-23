@@ -8,6 +8,16 @@ import PipelineKit
 // a JSON payload on stdin/stdout.
 // Chrome spawns a new host process for each sendNativeMessage() call.
 
+let expectedOrigin = "chrome-extension://\(Constants.BrowserExtensions.Chrome.extensionID)/"
+if let callerOrigin = CommandLine.arguments.dropFirst().first,
+   callerOrigin != expectedOrigin {
+    writeMessage([
+        "success": false,
+        "error": "Unauthorized Chrome extension origin: \(callerOrigin)"
+    ])
+    exit(1)
+}
+
 func readMessage() -> [String: Any]? {
     // Read 4-byte length prefix (little-endian UInt32)
     var lengthBytes = [UInt8](repeating: 0, count: 4)

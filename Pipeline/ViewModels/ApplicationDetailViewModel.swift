@@ -1830,7 +1830,8 @@ final class ApplyQueuePreparationCoordinator {
                     await persist(
                         payload: payload,
                         applications: applications,
-                        modelContext: modelContext
+                        modelContext: modelContext,
+                        settingsViewModel: settingsViewModel
                     )
                 )
             }
@@ -1885,7 +1886,8 @@ final class ApplyQueuePreparationCoordinator {
     private func persist(
         payload: ApplyQueuePreparationPayload,
         applications: [JobApplication],
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        settingsViewModel: SettingsViewModel
     ) async -> ApplyQueuePreparationResult {
         guard let application = applications.first(where: { $0.id == payload.applicationID }) else {
             return ApplyQueuePreparationResult(
@@ -1914,7 +1916,8 @@ final class ApplyQueuePreparationCoordinator {
                 await ATSCompatibilityCoordinator.shared.refresh(
                     application: application,
                     modelContext: modelContext,
-                    force: true,
+                    settingsViewModel: settingsViewModel,
+                    force: false,
                     trigger: .autoSnapshot
                 )
                 coverLetterSource = ResumeSourceSelection(

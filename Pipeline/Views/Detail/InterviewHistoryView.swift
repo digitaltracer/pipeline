@@ -26,6 +26,7 @@ struct InterviewHistoryView: View {
                     .foregroundColor(DesignSystem.Colors.accent)
                 }
                 .buttonStyle(.plain)
+                .interactiveHandCursor()
             }
 
             if logs.isEmpty {
@@ -58,6 +59,7 @@ struct InterviewHistoryView: View {
             .buttonStyle(.borderedProminent)
             .tint(DesignSystem.Colors.accent)
             .controlSize(.regular)
+            .interactiveHandCursor()
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 20)
@@ -113,6 +115,7 @@ struct InterviewLogRow: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(DesignSystem.Colors.accent)
+                .interactiveHandCursor()
 
                 Button(role: .destructive) {
                     showingDeleteConfirmation = true
@@ -122,6 +125,7 @@ struct InterviewLogRow: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(.red.opacity(0.9))
+                .interactiveHandCursor()
             }
         }
         .padding(14)

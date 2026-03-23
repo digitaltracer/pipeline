@@ -1,164 +1,226 @@
 import SwiftUI
 import PipelineKit
 
+struct JobDetailField: Identifiable {
+    let label: String
+    let value: String
+    let valueColor: Color?
+
+    var id: String { label }
+}
+
+private struct JobDetailSection: Identifiable {
+    let title: String
+    let rows: [JobDetailField]
+
+    var id: String { title }
+}
+
 struct JobDetailFieldsView: View {
     let application: JobApplication
-
-    private let columns = [
-        GridItem(.flexible()),
-        GridItem(.flexible())
-    ]
+    @State private var showsMoreDetails = false
 
     var body: some View {
-        LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
-            DetailInfoCard(
-                label: "Location",
-                value: application.location,
-                icon: "mappin.circle.fill",
-                iconColor: .red
+        VStack(alignment: .leading, spacing: 14) {
+            JobDetailTableCard(
+                title: "Application Snapshot",
+                sections: primarySections
             )
 
-            DetailInfoCard(
-                label: "Source",
-                value: application.source.displayName,
-                icon: application.source.icon,
-                iconColor: application.source.color
-            )
+            if !secondarySections.isEmpty {
+                DisclosureGroup(isExpanded: $showsMoreDetails) {
+                    JobDetailTableContent(sections: secondarySections)
+                        .padding(.top, 14)
+                } label: {
+                    HStack {
+                        Text("More Details")
+                            .font(.system(size: 13, weight: .semibold))
 
-            DetailInfoCard(
-                label: "Platform",
-                value: application.platform.displayName,
-                icon: application.platform.icon,
-                iconColor: application.platform.color
-            )
+                        Spacer()
 
-            DetailInfoCard(
-                label: "Search Cycle",
-                value: application.cycle?.name ?? "—",
-                icon: "scope",
-                iconColor: .blue
-            )
-
-            if let salaryRange = application.salaryRange {
-                DetailInfoCard(
-                    label: "Posted Base",
-                    value: salaryRange,
-                    icon: "dollarsign.circle",
-                    iconColor: .green
-                )
-            } else {
-                DetailInfoCard(
-                    label: "Posted Base",
-                    value: "—",
-                    icon: "dollarsign.circle",
-                    iconColor: .green
-                )
+                        Text("\(secondaryRowCount) field\(secondaryRowCount == 1 ? "" : "s")")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .tint(.primary)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 16)
+                .appCard(cornerRadius: 16, elevated: true, shadow: false)
             }
-
-            DetailInfoCard(
-                label: "Posted Total Comp",
-                value: application.postedTotalCompRange ?? "—",
-                icon: "chart.bar.fill",
-                iconColor: .green
-            )
-
-            DetailInfoCard(
-                label: "Expected Total Comp",
-                value: application.expectedTotalCompRange ?? "—",
-                icon: "flag.fill",
-                iconColor: .orange
-            )
-
-            DetailInfoCard(
-                label: "Offer Total Comp (Year 1)",
-                value: application.offerYearOneTotalCompText ?? "—",
-                icon: "gift.fill",
-                iconColor: .purple
-            )
-
-            DetailInfoCard(
-                label: "Equity (4yr est.)",
-                value: application.offerEquityCompensation.map(application.currency.format) ?? "—",
-                icon: "chart.line.uptrend.xyaxis",
-                iconColor: .purple
-            )
-
-            DetailInfoCard(
-                label: "PTO",
-                value: application.offerPTOText ?? "—",
-                icon: "figure.walk",
-                iconColor: .mint
-            )
-
-            DetailInfoCard(
-                label: "Remote Policy",
-                value: application.offerRemotePolicyText ?? "—",
-                icon: "house",
-                iconColor: .blue
-            )
-
-            DetailInfoCard(
-                label: "Growth Score",
-                value: starText(for: application.offerGrowthScore),
-                icon: "arrow.up.right.circle.fill",
-                iconColor: .orange
-            )
-
-            DetailInfoCard(
-                label: "Team/Culture Fit",
-                value: starText(for: application.offerTeamCultureFitScore),
-                icon: "person.3.fill",
-                iconColor: .pink
-            )
-
-            if let appliedDate = application.appliedDate {
-                DetailInfoCard(
-                    label: "Applied On",
-                    value: appliedDate.formatted(date: .long, time: .omitted),
-                    icon: "calendar",
-                    iconColor: .blue
-                )
-            }
-
-            if let followUpDate = application.nextFollowUpDate {
-                DetailInfoCard(
-                    label: "Next Follow Up",
-                    value: followUpDate.formatted(date: .long, time: .omitted),
-                    icon: "calendar.badge.clock",
-                    iconColor: followUpDate < Date() ? .red : .orange
-                )
-            }
-
-            if let postedAt = application.postedAt {
-                DetailInfoCard(
-                    label: "Posted On",
-                    value: postedAt.formatted(date: .long, time: .omitted),
-                    icon: "calendar.badge.plus",
-                    iconColor: .teal
-                )
-            }
-
-            if let applicationDeadline = application.applicationDeadline {
-                DetailInfoCard(
-                    label: "Apply By",
-                    value: applicationDeadline.formatted(date: .long, time: .omitted),
-                    icon: "hourglass",
-                    iconColor: applicationDeadline < Date() ? .red : .orange
-                )
-            }
-
-            DetailInfoCard(
-                label: "Apply Queue",
-                value: application.isQueuedForApplyLater ? "Queued" : "Not queued",
-                icon: application.isQueuedForApplyLater ? "bookmark.fill" : "bookmark",
-                iconColor: application.isQueuedForApplyLater ? .blue : .secondary
-            )
         }
     }
 
-    private func starText(for score: Int?) -> String {
-        guard let score, score > 0 else { return "—" }
+    private var primarySections: [JobDetailSection] {
+        [
+            JobDetailSection(
+                title: "Overview",
+                rows: [
+                    JobDetailField(label: "Location", value: displayText(application.location), valueColor: nil),
+                    JobDetailField(label: "Source", value: application.source.displayName, valueColor: nil),
+                    JobDetailField(label: "Platform", value: application.platform.displayName, valueColor: nil)
+                ]
+            ),
+            JobDetailSection(
+                title: "Timeline",
+                rows: [
+                    JobDetailField(
+                        label: "Next Follow Up",
+                        value: formattedDate(application.nextFollowUpDate),
+                        valueColor: application.nextFollowUpDate.map { $0 < Date() ? .red : .orange }
+                    ),
+                    JobDetailField(
+                        label: "Apply By",
+                        value: formattedDate(application.applicationDeadline),
+                        valueColor: application.applicationDeadline.map { $0 < Date() ? .red : .orange }
+                    )
+                ]
+            )
+        ]
+    }
+
+    private var secondarySections: [JobDetailSection] {
+        let compensationRows: [JobDetailField] = [
+            JobDetailField(label: "Posted Base", value: application.salaryRange ?? "—", valueColor: nil),
+            JobDetailField(label: "Posted Total Comp", value: application.postedTotalCompRange ?? "—", valueColor: nil),
+            JobDetailField(label: "Expected Total Comp", value: application.expectedTotalCompRange ?? "—", valueColor: nil),
+            JobDetailField(label: "Offer Total Comp", value: application.offerYearOneTotalCompText ?? "—", valueColor: nil)
+        ]
+
+        let workflowRows: [JobDetailField] = [
+            JobDetailField(label: "Search Cycle", value: displayText(application.cycle?.name), valueColor: nil),
+            JobDetailField(
+                label: "Apply Queue",
+                value: application.isQueuedForApplyLater ? "Queued" : "Not queued",
+                valueColor: application.isQueuedForApplyLater ? DesignSystem.Colors.accent : nil
+            ),
+            optionalDateRow(label: "Applied On", value: application.appliedDate),
+            optionalDateRow(label: "Posted On", value: application.postedAt)
+        ].compactMap { $0 }
+
+        let offerRows: [JobDetailField] = [
+            optionalTextRow(
+                label: "Equity (4yr est.)",
+                value: application.offerEquityCompensation.map(application.currency.format)
+            ),
+            optionalTextRow(label: "PTO", value: application.offerPTOText),
+            optionalTextRow(label: "Remote Policy", value: application.offerRemotePolicyText),
+            optionalTextRow(label: "Growth Score", value: starText(for: application.offerGrowthScore)),
+            optionalTextRow(label: "Team/Culture Fit", value: starText(for: application.offerTeamCultureFitScore))
+        ].compactMap { $0 }
+
+        return [
+            JobDetailSection(title: "Compensation", rows: compensationRows),
+            JobDetailSection(title: "Workflow", rows: workflowRows),
+            JobDetailSection(title: "Offer Details", rows: offerRows)
+        ].filter { !$0.rows.isEmpty }
+    }
+
+    private var secondaryRowCount: Int {
+        secondarySections.reduce(0) { $0 + $1.rows.count }
+    }
+
+    private func displayText(_ value: String?) -> String {
+        guard let value else { return "—" }
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedValue.isEmpty ? "—" : trimmedValue
+    }
+
+    private func formattedDate(_ value: Date?) -> String {
+        guard let value else { return "—" }
+        return value.formatted(date: .long, time: .omitted)
+    }
+
+    private func optionalTextRow(label: String, value: String?) -> JobDetailField? {
+        let displayValue = displayText(value)
+        guard displayValue != "—" else { return nil }
+        return JobDetailField(label: label, value: displayValue, valueColor: nil)
+    }
+
+    private func optionalDateRow(label: String, value: Date?) -> JobDetailField? {
+        guard let value else { return nil }
+        return JobDetailField(
+            label: label,
+            value: value.formatted(date: .long, time: .omitted),
+            valueColor: nil
+        )
+    }
+
+    private func starText(for score: Int?) -> String? {
+        guard let score, score > 0 else { return nil }
         return String(repeating: "★", count: score)
+    }
+}
+
+private struct JobDetailTableCard: View {
+    let title: String
+    let sections: [JobDetailSection]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.secondary)
+
+            JobDetailTableContent(sections: sections)
+        }
+        .padding(18)
+        .appCard(cornerRadius: 16, elevated: true, shadow: false)
+    }
+}
+
+private struct JobDetailTableContent: View {
+    let sections: [JobDetailSection]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(section.title.uppercased())
+                        .font(.system(size: 11, weight: .semibold))
+                        .kerning(0.8)
+                        .foregroundColor(.secondary)
+
+                    VStack(spacing: 0) {
+                        ForEach(Array(section.rows.enumerated()), id: \.element.id) { rowIndex, row in
+                            JobDetailTableRow(field: row)
+
+                            if rowIndex < section.rows.count - 1 {
+                                Divider()
+                            }
+                        }
+                    }
+                }
+
+                if index < sections.count - 1 {
+                    Divider()
+                        .padding(.vertical, 16)
+                }
+            }
+        }
+    }
+}
+
+private struct JobDetailTableRow: View {
+    let field: JobDetailField
+    private let labelColumnWidth: CGFloat = 150
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            Text(field.label)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.9)
+                .frame(width: labelColumnWidth, alignment: .leading)
+
+            Text(field.value)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(field.value == "—" ? .secondary : (field.valueColor ?? .primary))
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 10)
     }
 }
 

@@ -8,7 +8,6 @@ struct JobDetailHeaderView: View {
     let onStatusChange: (ApplicationStatus) -> Void
     let onPriorityChange: (Priority) -> Void
     var onQueueMembershipChange: ((Bool) -> Void)? = nil
-    @Environment(\.colorScheme) private var colorScheme
 
     private var statusMenuOptions: [ApplicationStatus] {
         let defaults = ApplicationStatus.allCases.sorted { $0.sortOrder < $1.sortOrder }
@@ -59,6 +58,7 @@ struct JobDetailHeaderView: View {
                     } label: {
                         StatusBadge(status: application.status, showIcon: true)
                     }
+                    .interactiveHandCursor()
 
                     Menu {
                         ForEach(Priority.allCases) { priority in
@@ -77,6 +77,7 @@ struct JobDetailHeaderView: View {
                         .background(application.priority.color.opacity(0.14))
                         .clipShape(Capsule())
                     }
+                    .interactiveHandCursor()
                 }
             }
 
@@ -84,51 +85,67 @@ struct JobDetailHeaderView: View {
 
             HStack(spacing: 8) {
                 if let onQueueMembershipChange, application.status == .saved {
-                    Button {
+                    HeaderActionButton(
+                        systemImage: application.isQueuedForApplyLater ? "bookmark.fill" : "bookmark",
+                        foregroundColor: application.isQueuedForApplyLater ? DesignSystem.Colors.accent : .secondary,
+                        helpText: application.isQueuedForApplyLater ? "Remove from apply queue" : "Add to apply queue"
+                    ) {
                         onQueueMembershipChange(!application.isQueuedForApplyLater)
-                    } label: {
-                        Image(systemName: application.isQueuedForApplyLater ? "bookmark.fill" : "bookmark")
-                            .font(.system(size: 13, weight: .semibold))
-                            .frame(width: 28, height: 28)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundColor(application.isQueuedForApplyLater ? DesignSystem.Colors.accent : .secondary)
-                    .background(DesignSystem.Colors.surfaceElevated(colorScheme))
-                    .clipShape(Circle())
-                    .help(application.isQueuedForApplyLater ? "Remove from apply queue" : "Add to apply queue")
                 }
 
                 if let onDelete {
-                    Button(role: .destructive) {
+                    HeaderActionButton(
+                        systemImage: "trash",
+                        foregroundColor: .red.opacity(0.9),
+                        helpText: "Delete application",
+                        role: .destructive
+                    ) {
                         onDelete()
-                    } label: {
-                        Image(systemName: "trash")
-                            .font(.system(size: 13, weight: .semibold))
-                            .frame(width: 28, height: 28)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.red.opacity(0.9))
-                    .background(DesignSystem.Colors.surfaceElevated(colorScheme))
-                    .clipShape(Circle())
                 }
 
                 if let onClose {
-                    Button {
+                    HeaderActionButton(
+                        systemImage: "xmark",
+                        foregroundColor: .secondary,
+                        helpText: "Close details"
+                    ) {
                         onClose()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 13, weight: .semibold))
-                            .frame(width: 28, height: 28)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
-                    .background(DesignSystem.Colors.surfaceElevated(colorScheme))
-                    .clipShape(Circle())
                 }
             }
         }
         .padding(16)
         .appCard(cornerRadius: 16, elevated: true, shadow: false)
+    }
+}
+
+private struct HeaderActionButton: View {
+    let systemImage: String
+    let foregroundColor: Color
+    let helpText: String
+    var role: ButtonRole? = nil
+    let action: () -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Button(role: role, action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(foregroundColor)
+                .frame(width: 30, height: 30)
+                .background(
+                    Circle()
+                        .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+                )
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .interactiveHandCursor()
+        .help(helpText)
+        .accessibilityLabel(helpText)
     }
 }
 

@@ -19,6 +19,7 @@ struct ApplicationContactsSection: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(DesignSystem.Colors.accent)
+                .interactiveHandCursor()
             }
 
             if application.sortedContactLinks.isEmpty {
@@ -36,6 +37,7 @@ struct ApplicationContactsSection: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(DesignSystem.Colors.accent)
+                    .interactiveHandCursor()
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 20)
@@ -92,6 +94,7 @@ struct ApplicationContactsSection: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(.plain)
+                        .interactiveHandCursor()
                         .appCard(cornerRadius: 14, elevated: true, shadow: false)
                     }
                 }

@@ -13,6 +13,7 @@ final class ATSCompatibilityCoordinator {
     func refresh(
         application: JobApplication,
         modelContext: ModelContext,
+        settingsViewModel: SettingsViewModel,
         force: Bool,
         trigger: ATSScanTrigger = .autoViewRefresh
     ) async {
@@ -25,6 +26,7 @@ final class ATSCompatibilityCoordinator {
             for: application,
             in: modelContext
         )
+        let description = application.jobDescription?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
         if !force,
            let existingAssessment,
@@ -37,10 +39,84 @@ final class ATSCompatibilityCoordinator {
             return
         }
 
-        do {
-            let draft = try ATSCompatibilityScoringService.prepareDraft(
+        if !force,
+           trigger != .manualRescan,
+           shouldSuppressAutomaticRefresh(
+            application: application,
+            resumeSource: resumeSource
+           ) {
+            return
+        }
+
+        guard let resumeSource else {
+            let draft = ATSCompatibilityScoringService.blockedDraft(
+                reason: .missingResumeSource,
+                application: application,
+                resumeSource: nil
+            )
+            try? persist(
+                draft: draft,
+                application: application,
+                assessment: existingAssessment,
+                modelContext: modelContext,
+                trigger: trigger
+            )
+            return
+        }
+
+        guard !description.isEmpty else {
+            let draft = ATSCompatibilityScoringService.blockedDraft(
+                reason: .missingJobDescription,
                 application: application,
                 resumeSource: resumeSource
+            )
+            try? persist(
+                draft: draft,
+                application: application,
+                assessment: existingAssessment,
+                modelContext: modelContext,
+                trigger: trigger
+            )
+            return
+        }
+
+        let provider = settingsViewModel.selectedAIProvider
+        let model = settingsViewModel.preferredModel(for: provider)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !model.isEmpty else {
+            let draft = ATSCompatibilityScoringService.blockedDraft(
+                reason: .missingAIConfiguration,
+                application: application,
+                resumeSource: resumeSource,
+                message: "No AI model configured. Please check Settings."
+            )
+            try? persist(
+                draft: draft,
+                application: application,
+                assessment: existingAssessment,
+                modelContext: modelContext,
+                trigger: trigger
+            )
+            return
+        }
+
+        let requestStartedAt = Date()
+        do {
+            let extraction = try await settingsViewModel.withAPIKeyWaterfall(for: provider) { apiKey in
+                try await ATSKeywordExtractionService.extractKeywords(
+                    provider: provider,
+                    apiKey: apiKey,
+                    model: model,
+                    companyName: application.companyName,
+                    role: application.role,
+                    jobDescription: description
+                )
+            }
+            let draft = try ATSCompatibilityScoringService.prepareDraft(
+                application: application,
+                resumeSource: resumeSource,
+                extractedKeywords: extraction.keywords
             )
             try persist(
                 draft: draft,
@@ -48,6 +124,55 @@ final class ATSCompatibilityCoordinator {
                 assessment: existingAssessment,
                 modelContext: modelContext,
                 trigger: trigger
+            )
+            recordUsage(
+                feature: .atsKeywordExtraction,
+                provider: provider,
+                model: model,
+                usage: extraction.usage,
+                status: .succeeded,
+                applicationID: application.id,
+                startedAt: requestStartedAt,
+                errorMessage: nil,
+                in: modelContext
+            )
+        } catch let keyError as SettingsViewModel.APIKeyValidationError {
+            let draft = ATSCompatibilityScoringService.blockedDraft(
+                reason: .missingAIConfiguration,
+                application: application,
+                resumeSource: resumeSource,
+                message: keyError.localizedDescription
+            )
+            try? persist(
+                draft: draft,
+                application: application,
+                assessment: existingAssessment,
+                modelContext: modelContext,
+                trigger: trigger
+            )
+        } catch let aiError as AIServiceError {
+            let draft = failureDraft(
+                message: aiError.localizedDescription,
+                application: application,
+                resumeSource: resumeSource
+            )
+            try? persist(
+                draft: draft,
+                application: application,
+                assessment: existingAssessment,
+                modelContext: modelContext,
+                trigger: trigger
+            )
+            recordUsage(
+                feature: .atsKeywordExtraction,
+                provider: provider,
+                model: model,
+                usage: nil,
+                status: .failed,
+                applicationID: application.id,
+                startedAt: requestStartedAt,
+                errorMessage: aiError.localizedDescription,
+                in: modelContext
             )
         } catch {
             let draft = failureDraft(
@@ -62,6 +187,37 @@ final class ATSCompatibilityCoordinator {
                 modelContext: modelContext,
                 trigger: trigger
             )
+            recordUsage(
+                feature: .atsKeywordExtraction,
+                provider: provider,
+                model: model,
+                usage: nil,
+                status: .failed,
+                applicationID: application.id,
+                startedAt: requestStartedAt,
+                errorMessage: error.localizedDescription,
+                in: modelContext
+            )
+        }
+    }
+
+    private func shouldSuppressAutomaticRefresh(
+        application: JobApplication,
+        resumeSource: ResumeSourceSelection?
+    ) -> Bool {
+        guard let jobDescriptionHash = ATSCompatibilityScoringService.jobDescriptionHash(for: application),
+              let resumeSourceFingerprint = ATSCompatibilityScoringService.resumeSourceFingerprint(for: resumeSource) else {
+            return false
+        }
+
+        return application.sortedATSScanRuns.contains { run in
+            guard run.jobDescriptionHash == jobDescriptionHash,
+                  run.resumeSourceFingerprint == resumeSourceFingerprint,
+                  run.scoringVersion == ATSCompatibilityScoringService.scoringVersion else {
+                return false
+            }
+
+            return !(run.status == .blocked && run.blockedReason == .missingAIConfiguration)
         }
     }
 
@@ -214,6 +370,31 @@ final class ATSCompatibilityCoordinator {
             jobDescriptionHash: ATSCompatibilityScoringService.jobDescriptionHash(for: application),
             scoringVersion: ATSCompatibilityScoringService.scoringVersion,
             scoredAt: Date()
+        )
+    }
+
+    private func recordUsage(
+        feature: AIUsageFeature,
+        provider: AIProvider,
+        model: String,
+        usage: AIUsageMetrics?,
+        status: AIUsageRequestStatus,
+        applicationID: UUID,
+        startedAt: Date,
+        errorMessage: String?,
+        in modelContext: ModelContext
+    ) {
+        _ = try? AIUsageLedgerService.record(
+            feature: feature,
+            provider: provider,
+            model: model,
+            usage: usage,
+            status: status,
+            applicationID: applicationID,
+            startedAt: startedAt,
+            finishedAt: Date(),
+            errorMessage: errorMessage,
+            in: modelContext
         )
     }
 }

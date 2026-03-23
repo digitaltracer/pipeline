@@ -82,6 +82,7 @@ struct JobMatchSection: View {
                 onRefresh()
             }
             .buttonStyle(.bordered)
+            .interactiveHandCursor()
         }
     }
 

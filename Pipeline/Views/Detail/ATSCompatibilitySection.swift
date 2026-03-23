@@ -7,6 +7,7 @@ struct ATSCompatibilitySection: View {
     @Query(sort: \ResumeMasterRevision.createdAt, order: .reverse) private var resumeRevisions: [ResumeMasterRevision]
 
     let application: JobApplication
+    let settingsViewModel: SettingsViewModel
     let onGenerateFixes: (ATSCompatibilityAssessment) -> Void
     let onGenerateQuickFixes: (ATSCompatibilityAssessment) -> Void
 
@@ -125,6 +126,7 @@ struct ATSCompatibilitySection: View {
             }
             .buttonStyle(.bordered)
             .disabled(isRefreshing)
+            .interactiveHandCursor()
         }
     }
 
@@ -183,7 +185,9 @@ struct ATSCompatibilitySection: View {
                 historySection
             case .blocked:
                 Label(
-                    assessment.blockedReason?.message ?? "ATS analysis is missing the inputs required to run.",
+                    assessment.lastErrorMessage
+                        ?? assessment.blockedReason?.message
+                        ?? "ATS analysis is missing the inputs required to run.",
                     systemImage: "exclamationmark.triangle.fill"
                 )
                 .font(.subheadline)
@@ -289,6 +293,7 @@ struct ATSCompatibilitySection: View {
                         onGenerateQuickFixes(assessment)
                     }
                     .buttonStyle(.bordered)
+                    .interactiveHandCursor()
                 }
 
                 Button("Generate ATS Fixes") {
@@ -296,6 +301,7 @@ struct ATSCompatibilitySection: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(DesignSystem.Colors.accent)
+                .interactiveHandCursor()
             }
 
             if isStale {
@@ -563,21 +569,12 @@ struct ATSCompatibilitySection: View {
 
     @MainActor
     private func refreshIfNeeded(force: Bool, trigger: ATSScanTrigger) async {
-        if !force,
-           let assessment,
-           !ATSCompatibilityScoringService.shouldAutoRefresh(
-            assessment,
-            application: application,
-            resumeSource: preferredResumeSource
-           ) {
-            return
-        }
-
         isRefreshing = true
         defer { isRefreshing = false }
         await ATSCompatibilityCoordinator.shared.refresh(
             application: application,
             modelContext: modelContext,
+            settingsViewModel: settingsViewModel,
             force: force,
             trigger: trigger
         )

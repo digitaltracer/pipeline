@@ -58,6 +58,50 @@ public enum AIServicePrompts {
         """
     }
 
+    public static let atsKeywordExtractionPrompt = """
+    You are extracting ATS-relevant resume keywords from a job posting.
+
+    Return exactly one valid JSON object with this schema:
+    {
+      "keywords": [
+        {
+          "term": string,
+          "aliases": [string],
+          "kind": "hard_skill"|"tool"|"platform"|"domain"|"role_concept",
+          "importance": "core"|"supporting"
+        }
+      ]
+    }
+
+    Rules:
+    - Extract at most 12 keywords.
+    - Focus on hard skills, tools, platforms, technical domains, and concrete role concepts that belong on a resume.
+    - Favor noun phrases over verbs.
+    - Exclude company names, employer self-reference, pronouns, benefits, culture statements, legal boilerplate, and generic filler like "team player" or "they".
+    - `aliases` should only include materially useful alternate spellings or abbreviations for matching.
+    - Do not include duplicate keywords or aliases.
+    - Output raw JSON only. No markdown fences. No prose outside the JSON.
+    """
+
+    public static func atsKeywordExtractionUserPrompt(
+        companyName: String,
+        role: String,
+        jobDescription: String
+    ) -> String {
+        """
+        Extract ATS-relevant keywords from this job posting.
+
+        Company:
+        \(companyName)
+
+        Role:
+        \(role)
+
+        Job Description:
+        \(jobDescription)
+        """
+    }
+
     public static let jobMatchScoringPrompt = """
     You are evaluating how well a candidate's master resume matches a job description.
 

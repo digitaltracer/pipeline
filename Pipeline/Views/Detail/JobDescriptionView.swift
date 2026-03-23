@@ -85,6 +85,7 @@ struct JobDescriptionView: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(isDenoising)
+                        .interactiveHandCursor()
                     }
 
                     if hasCollapsibleContent {
@@ -102,6 +103,7 @@ struct JobDescriptionView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         }
                         .buttonStyle(.plain)
+                        .interactiveHandCursor()
                     }
                 }
             }

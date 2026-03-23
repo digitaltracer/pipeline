@@ -99,21 +99,16 @@ public struct ATSCompatibilityAssessmentDraft: Sendable, Equatable {
 }
 
 public enum ATSCompatibilityScoringService {
-    public static let scoringVersion = "ats-compat-v2"
+    public static let scoringVersion = "ats-compat-v3"
 
     private static let keywordWeight = 0.55
     private static let sectionWeight = 0.20
     private static let contactWeight = 0.15
     private static let formatWeight = 0.10
-
-    private struct WeightedKeyword {
-        let display: String
-        let normalized: String
-        let specialTerm: SpecialTerm?
-        var weight: Double
-        var occurrences: Int
-        var isTitleTerm: Bool
-    }
+    private static let bannedExtractedTerms: Set<String> = [
+        "they", "them", "their", "theirs", "we", "our", "ours", "us",
+        "you", "your", "yours", "company", "employer", "candidate", "applicant"
+    ]
 
     private struct SpecialTerm {
         let display: String
@@ -121,11 +116,15 @@ public enum ATSCompatibilityScoringService {
         let usesWordBoundaries: Bool
     }
 
+    private struct SearchAlias {
+        let value: String
+        let usesWordBoundaries: Bool
+    }
+
     private struct SearchKeyword {
         let display: String
         let normalized: String
-        let aliases: [String]
-        let usesWordBoundaries: Bool
+        let aliases: [SearchAlias]
     }
 
     private struct KeywordAnalysis {
@@ -177,20 +176,10 @@ public enum ATSCompatibilityScoringService {
         SpecialTerm(display: "Microservices", aliases: ["microservices", "micro services"], usesWordBoundaries: false)
     ]
 
-    private static let stopWords: Set<String> = [
-        "the", "and", "for", "with", "that", "from", "this", "have", "will", "you",
-        "your", "our", "their", "about", "into", "role", "team", "work", "works",
-        "working", "using", "build", "built", "develop", "developed", "developer",
-        "engineer", "engineering", "experience", "years", "year", "requirements",
-        "required", "preferred", "skills", "skill", "ability", "abilities", "plus",
-        "nice", "must", "should", "can", "job", "description", "candidate", "across",
-        "through", "within", "strong", "excellent", "knowledge", "understanding",
-        "designing", "building", "teams", "products", "product"
-    ]
-
     public static func prepareDraft(
         application: JobApplication,
         resumeSource: ResumeSourceSelection?,
+        extractedKeywords: [ATSKeywordCandidate],
         referenceDate: Date = Date()
     ) throws -> ATSCompatibilityAssessmentDraft {
         guard let resumeSource else {
@@ -198,6 +187,7 @@ public enum ATSCompatibilityScoringService {
                 reason: .missingResumeSource,
                 application: application,
                 resumeSource: nil,
+                message: nil,
                 referenceDate: referenceDate
             )
         }
@@ -208,6 +198,7 @@ public enum ATSCompatibilityScoringService {
                 reason: .missingJobDescription,
                 application: application,
                 resumeSource: resumeSource,
+                message: nil,
                 referenceDate: referenceDate
             )
         }
@@ -216,8 +207,10 @@ public enum ATSCompatibilityScoringService {
         let resume = validation.schema
 
         let keywordAnalysis = analyzeKeywords(
-            role: application.role,
-            jobDescription: description,
+            extractedKeywords: sanitizeExtractedKeywords(
+                extractedKeywords,
+                companyName: application.companyName
+            ),
             resume: resume
         )
         let sectionAnalysis = analyzeSections(resume: resume)
@@ -291,6 +284,7 @@ public enum ATSCompatibilityScoringService {
         reason: ATSBlockedReason,
         application: JobApplication,
         resumeSource: ResumeSourceSelection?,
+        message: String? = nil,
         referenceDate: Date = Date()
     ) -> ATSCompatibilityAssessmentDraft {
         ATSCompatibilityAssessmentDraft(
@@ -320,7 +314,7 @@ public enum ATSCompatibilityScoringService {
             resumeSourceSnapshotID: resumeSource?.snapshotID,
             resumeSourceRevisionID: resumeSource?.masterRevisionID,
             resumeSourceFingerprint: resumeSource.flatMap(resumeSourceFingerprint(for:)),
-            lastErrorMessage: nil,
+            lastErrorMessage: message,
             jobDescriptionHash: jobDescriptionHash(for: application),
             scoringVersion: scoringVersion,
             scoredAt: referenceDate
@@ -380,6 +374,8 @@ public enum ATSCompatibilityScoringService {
                 return jobDescriptionHash(for: application) != nil
             case .missingResumeSource:
                 return resumeSource != nil
+            case .missingAIConfiguration:
+                return false
             case .none:
                 return true
             }
@@ -392,8 +388,12 @@ public enum ATSCompatibilityScoringService {
         return isStale(assessment, application: application, resumeSource: resumeSource)
     }
 
-    public static func evidencePaths(for keyword: String, in resume: ResumeSchema) -> [String] {
-        let searchTerm = searchKeyword(for: keyword)
+    public static func evidencePaths(
+        for keyword: String,
+        aliases: [String] = [],
+        in resume: ResumeSchema
+    ) -> [String] {
+        let searchTerm = searchKeyword(for: keyword, aliases: aliases)
         var paths: [String] = []
 
         if let summary = resume.summary,
@@ -435,40 +435,10 @@ public enum ATSCompatibilityScoringService {
     }
 
     private static func analyzeKeywords(
-        role: String,
-        jobDescription: String,
+        extractedKeywords: [ATSKeywordCandidate],
         resume: ResumeSchema
     ) -> KeywordAnalysis {
-        let title = role.trimmingCharacters(in: .whitespacesAndNewlines)
-        var candidates: [String: WeightedKeyword] = [:]
-
-        accumulateSpecialTerms(in: title, weightMultiplier: 3.0, isTitle: true, into: &candidates)
-        accumulateSpecialTerms(in: jobDescription, weightMultiplier: 1.8, isTitle: false, into: &candidates)
-        accumulateTokens(in: title, weightMultiplier: 3.0, into: &candidates)
-        accumulateTokens(in: jobDescription, weightMultiplier: 1.0, into: &candidates)
-        accumulatePhrases(in: title, weightMultiplier: 2.4, into: &candidates)
-        accumulatePhrases(in: jobDescription, weightMultiplier: 1.1, into: &candidates)
-
-        let selected = candidates.values
-            .sorted { lhs, rhs in
-                if lhs.weight == rhs.weight {
-                    if lhs.occurrences == rhs.occurrences {
-                        if lhs.display.count == rhs.display.count {
-                            return lhs.normalized < rhs.normalized
-                        }
-                        return lhs.display.count > rhs.display.count
-                    }
-                    return lhs.occurrences > rhs.occurrences
-                }
-                return lhs.weight > rhs.weight
-            }
-            .reduce(into: [WeightedKeyword]()) { result, candidate in
-                guard result.count < 12 else { return }
-                if result.contains(where: { $0.normalized == candidate.normalized }) {
-                    return
-                }
-                result.append(candidate)
-            }
+        let selected = deduplicatedKeywords(extractedKeywords)
 
         guard !selected.isEmpty else {
             return KeywordAnalysis(
@@ -478,7 +448,7 @@ public enum ATSCompatibilityScoringService {
                 skillsPromotionKeywords: [],
                 keywordEvidenceSummary: [],
                 criticalFindings: [],
-                warningFindings: ["No ATS keywords could be extracted from the job description."],
+                warningFindings: ["No ATS keywords were extracted from the job description."],
                 totalWeightedTerms: 0
             )
         }
@@ -498,33 +468,38 @@ public enum ATSCompatibilityScoringService {
         var warningFindings: [String] = []
 
         for candidate in selected {
-            totalWeight += candidate.weight
+            let searchTerm = searchKeyword(for: candidate)
+            let evidencePaths = evidencePaths(
+                for: candidate.term,
+                aliases: candidate.aliases,
+                in: resume
+            )
+            let weight = keywordWeight(for: candidate)
+            let importanceDescriptor = candidate.importance == .core ? "core JD requirement" : "supporting JD requirement"
+            totalWeight += weight
 
-            let matchedAnywhere = keyword(candidate, appearsIn: resumeRawText, normalizedText: resumeNormalizedText)
-            let matchedInSkills = keyword(candidate, appearsIn: skillsRawText, normalizedText: skillsNormalizedText)
-            let evidencePaths = evidencePaths(for: candidate.display, in: resume)
+            let matchedAnywhere = keyword(searchTerm, appearsIn: resumeRawText, normalizedText: resumeNormalizedText)
+            let matchedInSkills = keyword(searchTerm, appearsIn: skillsRawText, normalizedText: skillsNormalizedText)
 
             if matchedAnywhere {
-                matched.append(candidate.display)
-                matchedWeight += candidate.weight
+                matched.append(candidate.term)
+                matchedWeight += weight
 
-                if !matchedInSkills && !evidencePaths.isEmpty {
-                    skillsPromotionKeywords.append(candidate.display)
-                    warningFindings.append("\(candidate.display) appears in resume evidence but is not listed in Skills.")
-                    if candidate.isTitleTerm || candidate.occurrences >= 2 {
-                        keywordEvidenceSummary.append(
-                            "\(candidate.display) \(occurrencePhrase(for: candidate.occurrences)) in the JD and only appears outside the Skills section."
-                        )
-                    }
-                } else if candidate.isTitleTerm || candidate.occurrences >= 2 {
+                if candidate.kind != .roleConcept && !matchedInSkills && !evidencePaths.isEmpty {
+                    skillsPromotionKeywords.append(candidate.term)
+                    warningFindings.append("\(candidate.term) appears in resume evidence but is not listed in Skills.")
                     keywordEvidenceSummary.append(
-                        "\(candidate.display) \(occurrencePhrase(for: candidate.occurrences)) in the JD and already appears in the resume."
+                        "\(candidate.term) is a \(importanceDescriptor) and only appears outside the Skills section."
+                    )
+                } else {
+                    keywordEvidenceSummary.append(
+                        "\(candidate.term) is a \(importanceDescriptor) and already appears in the resume."
                     )
                 }
             } else {
-                missing.append(candidate.display)
-                if candidate.isTitleTerm || candidate.occurrences >= 2 {
-                    let message = "\(candidate.display) \(occurrencePhrase(for: candidate.occurrences)) in the JD and is absent from the resume."
+                missing.append(candidate.term)
+                if candidate.importance == .core {
+                    let message = "\(candidate.term) is a \(importanceDescriptor) and is absent from the resume."
                     criticalFindings.append(message)
                     keywordEvidenceSummary.append(message)
                 }
@@ -536,12 +511,12 @@ public enum ATSCompatibilityScoringService {
             : 0
 
         if !missing.isEmpty {
-            warningFindings.append("\(missing.count) of \(selected.count) weighted JD terms are missing from the resume.")
+            warningFindings.append("\(missing.count) of \(selected.count) extracted ATS keywords are missing from the resume.")
         }
 
         if !skillsPromotionKeywords.isEmpty {
             warningFindings.append(
-                "\(skillsPromotionKeywords.count) JD term\(skillsPromotionKeywords.count == 1 ? "" : "s") can be promoted into the Skills section from existing resume evidence."
+                "\(skillsPromotionKeywords.count) ATS keyword\(skillsPromotionKeywords.count == 1 ? "" : "s") can be promoted into the Skills section from existing resume evidence."
             )
         }
 
@@ -703,7 +678,7 @@ public enum ATSCompatibilityScoringService {
         formatAnalysis: FormatAnalysis
     ) -> String {
         var parts: [String] = []
-        parts.append("Matched \(keywordAnalysis.matched.count) of \(keywordAnalysis.totalWeightedTerms) weighted JD keywords.")
+        parts.append("Matched \(keywordAnalysis.matched.count) of \(keywordAnalysis.totalWeightedTerms) extracted ATS keywords.")
 
         if let primaryGap = keywordAnalysis.missing.first {
             parts.append("Biggest missing keyword: \(primaryGap).")
@@ -728,100 +703,7 @@ public enum ATSCompatibilityScoringService {
         return parts.joined(separator: " ")
     }
 
-    private static func accumulateSpecialTerms(
-        in text: String,
-        weightMultiplier: Double,
-        isTitle: Bool,
-        into candidates: inout [String: WeightedKeyword]
-    ) {
-        let lowered = text.lowercased()
-
-        for term in specialTerms {
-            let occurrences = term.aliases.reduce(0) { partialResult, alias in
-                partialResult + countOccurrences(
-                    of: alias.lowercased(),
-                    in: lowered,
-                    usesWordBoundaries: term.usesWordBoundaries
-                )
-            }
-            guard occurrences > 0 else { continue }
-
-            let key = specialKey(for: term.display)
-            var candidate = candidates[key] ?? WeightedKeyword(
-                display: term.display,
-                normalized: key,
-                specialTerm: term,
-                weight: 0,
-                occurrences: 0,
-                isTitleTerm: false
-            )
-            candidate.weight += Double(occurrences) * weightMultiplier
-            candidate.occurrences += occurrences
-            candidate.isTitleTerm = candidate.isTitleTerm || isTitle
-            candidates[key] = candidate
-        }
-    }
-
-    private static func accumulateTokens(
-        in text: String,
-        weightMultiplier: Double,
-        into candidates: inout [String: WeightedKeyword]
-    ) {
-        let tokens = normalizedWords(from: text)
-        guard !tokens.isEmpty else { return }
-
-        var counts: [String: Int] = [:]
-        for token in tokens {
-            counts[token, default: 0] += 1
-        }
-
-        for (token, occurrences) in counts {
-            var candidate = candidates[token] ?? WeightedKeyword(
-                display: token.uppercased() == token ? token : token.capitalizedIfNeeded(),
-                normalized: token,
-                specialTerm: nil,
-                weight: 0,
-                occurrences: 0,
-                isTitleTerm: false
-            )
-            candidate.weight += Double(occurrences) * weightMultiplier
-            candidate.occurrences += occurrences
-            candidate.isTitleTerm = candidate.isTitleTerm || weightMultiplier > 1.5
-            candidates[token] = candidate
-        }
-    }
-
-    private static func accumulatePhrases(
-        in text: String,
-        weightMultiplier: Double,
-        into candidates: inout [String: WeightedKeyword]
-    ) {
-        let tokens = normalizedWords(from: text)
-        guard tokens.count >= 2 else { return }
-
-        var counts: [String: Int] = [:]
-        for index in 0..<(tokens.count - 1) {
-            let phrase = "\(tokens[index]) \(tokens[index + 1])"
-            counts[phrase, default: 0] += 1
-        }
-
-        for (phrase, occurrences) in counts where occurrences > 1 || weightMultiplier > 2.0 {
-            var candidate = candidates[phrase] ?? WeightedKeyword(
-                display: phrase.capitalizedPhrase(),
-                normalized: phrase,
-                specialTerm: nil,
-                weight: 0,
-                occurrences: 0,
-                isTitleTerm: false
-            )
-            candidate.weight += Double(occurrences) * weightMultiplier
-            candidate.occurrences += occurrences
-            candidate.isTitleTerm = candidate.isTitleTerm || weightMultiplier > 2.0
-            candidates[phrase] = candidate
-        }
-    }
-
-    private static func searchKeyword(for keyword: String) -> SearchKeyword {
+    private static func searchKeyword(for keyword: String, aliases: [String] = []) -> SearchKeyword {
         if let specialTerm = specialTerms.first(where: {
             $0.display.caseInsensitiveCompare(keyword) == .orderedSame
                 || specialKey(for: $0.display) == specialKey(for: keyword)
@@ -829,25 +711,28 @@ public enum ATSCompatibilityScoringService {
             return SearchKeyword(
                 display: specialTerm.display,
                 normalized: specialKey(for: specialTerm.display),
-                aliases: specialTerm.aliases,
-                usesWordBoundaries: specialTerm.usesWordBoundaries
+                aliases: specialTerm.aliases.map {
+                    SearchAlias(value: $0.lowercased(), usesWordBoundaries: specialTerm.usesWordBoundaries)
+                }
             )
         }
 
+        let aliasValues = deduplicated([keyword] + aliases)
         return SearchKeyword(
             display: keyword,
             normalized: normalizePhrase(keyword),
-            aliases: [keyword.lowercased()],
-            usesWordBoundaries: true
+            aliases: aliasValues.map { alias in
+                SearchAlias(
+                    value: alias.lowercased(),
+                    usesWordBoundaries: shouldUseWordBoundaries(for: alias)
+                )
+            }
         )
     }
 
-    private static func keyword(
-        _ candidate: WeightedKeyword,
-        appearsIn rawText: String,
-        normalizedText: String
-    ) -> Bool {
-        keyword(searchKeyword(for: candidate.display), appearsIn: rawText, normalizedText: normalizedText)
+    private static func searchKeyword(for candidate: ATSKeywordCandidate) -> SearchKeyword {
+        let aliases = candidate.aliases + supplementalAliases(for: candidate.term)
+        return searchKeyword(for: candidate.term, aliases: aliases)
     }
 
     private static func keyword(
@@ -855,18 +740,19 @@ public enum ATSCompatibilityScoringService {
         appearsIn rawText: String,
         normalizedText: String
     ) -> Bool {
-        if searchKeyword.aliases.count > 1 || specialTerms.contains(where: { $0.display == searchKeyword.display }) {
-            return searchKeyword.aliases.contains { alias in
-                countOccurrences(
-                    of: alias.lowercased(),
-                    in: rawText.lowercased(),
-                    usesWordBoundaries: searchKeyword.usesWordBoundaries
-                ) > 0
-            }
+        let loweredRawText = rawText.lowercased()
+        if searchKeyword.aliases.contains(where: { alias in
+            countOccurrences(
+                of: alias.value,
+                in: loweredRawText,
+                usesWordBoundaries: alias.usesWordBoundaries
+            ) > 0
+        }) {
+            return true
         }
 
         let needle = " \(searchKeyword.normalized) "
-        return normalizedText.contains(needle)
+        return !searchKeyword.normalized.isEmpty && normalizedText.contains(needle)
     }
 
     private static func resumeSearchText(from resume: ResumeSchema) -> String {
@@ -901,7 +787,7 @@ public enum ATSCompatibilityScoringService {
     }
 
     private static func normalizePhrase(_ value: String) -> String {
-        normalizedWords(from: value).joined(separator: " ")
+        searchWords(from: value).joined(separator: " ")
     }
 
     private static func specialKey(for value: String) -> String {
@@ -912,13 +798,11 @@ public enum ATSCompatibilityScoringService {
         return value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    private static func normalizedWords(from text: String) -> [String] {
+    private static func searchWords(from text: String) -> [String] {
         text
             .lowercased()
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .filter { token in
-                token.count >= 3 && !stopWords.contains(token)
-            }
+            .filter { !$0.isEmpty }
     }
 
     private static func countOccurrences(
@@ -975,13 +859,6 @@ public enum ATSCompatibilityScoringService {
         return URL(string: normalized)?.host != nil
     }
 
-    private static func occurrencePhrase(for occurrences: Int) -> String {
-        if occurrences == 1 {
-            return "appears once"
-        }
-        return "appears \(occurrences) times"
-    }
-
     private static func atsResumeSourceKind(for kind: ResumeSourceSelection.Kind) -> ATSResumeSourceKind {
         switch kind {
         case .tailoredSnapshot:
@@ -989,6 +866,64 @@ public enum ATSCompatibilityScoringService {
         case .masterResume:
             return .masterResume
         }
+    }
+
+    private static func keywordWeight(for candidate: ATSKeywordCandidate) -> Double {
+        let importanceWeight = candidate.importance == .core ? 1.6 : 1.0
+        let kindWeight: Double
+        switch candidate.kind {
+        case .roleConcept:
+            kindWeight = 0.9
+        case .hardSkill, .tool, .platform, .domain:
+            kindWeight = 1.0
+        }
+        return importanceWeight * kindWeight
+    }
+
+    private static func deduplicatedKeywords(_ keywords: [ATSKeywordCandidate]) -> [ATSKeywordCandidate] {
+        var seen = Set<String>()
+        var ordered: [ATSKeywordCandidate] = []
+
+        for keyword in keywords {
+            guard ordered.count < 12 else { break }
+            let normalized = specialKey(for: keyword.term)
+            guard !normalized.isEmpty else { continue }
+            guard seen.insert(normalized).inserted else { continue }
+            ordered.append(keyword)
+        }
+
+        return ordered
+    }
+
+    private static func sanitizeExtractedKeywords(
+        _ keywords: [ATSKeywordCandidate],
+        companyName: String
+    ) -> [ATSKeywordCandidate] {
+        let normalizedCompanyName = specialKey(for: companyName)
+
+        return keywords.filter { keyword in
+            let normalized = specialKey(for: keyword.term)
+            guard !normalized.isEmpty else { return false }
+            guard !bannedExtractedTerms.contains(normalized) else { return false }
+            return normalized != normalizedCompanyName
+        }
+    }
+
+    private static func shouldUseWordBoundaries(for alias: String) -> Bool {
+        alias.unicodeScalars.allSatisfy {
+            CharacterSet.alphanumerics.contains($0) || CharacterSet.whitespaces.contains($0)
+        }
+    }
+
+    private static func supplementalAliases(for term: String) -> [String] {
+        guard let specialTerm = specialTerms.first(where: {
+            $0.display.caseInsensitiveCompare(term) == .orderedSame
+                || specialKey(for: $0.display) == specialKey(for: term)
+        }) else {
+            return []
+        }
+
+        return specialTerm.aliases
     }
 
     private static func deduplicated(_ values: [String]) -> [String] {
@@ -999,23 +934,5 @@ public enum ATSCompatibilityScoringService {
             ordered.append(value)
         }
         return ordered
-    }
-}
-
-private extension String {
-    func capitalizedIfNeeded() -> String {
-        if count <= 4 {
-            return uppercased()
-        }
-        return capitalized
-    }
-
-    func capitalizedPhrase() -> String {
-        split(separator: " ")
-            .map { token in
-                let value = String(token)
-                return value.capitalizedIfNeeded()
-            }
-            .joined(separator: " ")
     }
 }
