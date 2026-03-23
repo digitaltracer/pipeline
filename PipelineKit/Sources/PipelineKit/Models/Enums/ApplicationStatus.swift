@@ -61,11 +61,11 @@ public enum ApplicationStatus: Codable, CaseIterable, Identifiable, Hashable, Se
     #if canImport(SwiftUI)
     public var color: Color {
         switch self {
-        case .saved: return .gray
-        case .applied: return .blue
-        case .interviewing: return .orange
-        case .offered: return .green
-        case .rejected: return .red
+        case .saved: return Color(red: 0.601, green: 0.634, blue: 0.699)        // slate HSL(220, 14%, 65%)
+        case .applied: return Color(red: 0.236, green: 0.515, blue: 0.964)      // blue HSL(217, 91%, 60%)
+        case .interviewing: return Color(red: 0.96, green: 0.622, blue: 0.04)   // amber HSL(38, 92%, 50%)
+        case .offered: return Color(red: 0.131, green: 0.77, blue: 0.365)       // emerald HSL(142, 71%, 45%)
+        case .rejected: return Color(red: 0.936, green: 0.264, blue: 0.264)     // red HSL(0, 84%, 60%)
         case .archived: return .secondary
         case .custom: return .purple
         }

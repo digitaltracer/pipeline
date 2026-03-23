@@ -8,38 +8,48 @@ import AppKit
 // MARK: - Color Extensions
 
 extension Color {
-    static let pipelineBlue = Color(red: 0.2, green: 0.4, blue: 0.9)
-    static let pipelineGreen = Color(red: 0.2, green: 0.8, blue: 0.4)
-    static let pipelineOrange = Color(red: 1.0, green: 0.6, blue: 0.2)
-    static let pipelineRed = Color(red: 0.9, green: 0.3, blue: 0.3)
+    static let pipelineBlue = Color(red: 0.15, green: 0.383, blue: 0.85)      // HSL(220, 70%, 50%)
+    static let pipelineGreen = Color(red: 0.131, green: 0.77, blue: 0.365)    // HSL(142, 71%, 45%)
+    static let pipelineOrange = Color(red: 0.96, green: 0.622, blue: 0.04)    // HSL(38, 92%, 50%)
+    static let pipelineRed = Color(red: 0.863, green: 0.157, blue: 0.157)     // HSL(0, 72%, 51%)
 }
 
 // MARK: - Design System
 
 enum DesignSystem {
     enum Radius {
-        static let card: CGFloat = 16
-        static let cardSmall: CGFloat = 12
-        static let input: CGFloat = 12
-        static let pill: CGFloat = 999
+        static let card: CGFloat = 12       // rounded-lg, cards & modals
+        static let cardSmall: CGFloat = 10  // rounded-md, compact panels
+        static let input: CGFloat = 10      // rounded-md, buttons & inputs
+        static let badge: CGFloat = 8       // rounded-sm, badges & small elements
+        static let pill: CGFloat = 999      // rounded-full, capsules
     }
 
     enum Spacing {
-        static let xs: CGFloat = 6
-        static let sm: CGFloat = 10
-        static let md: CGFloat = 16
-        static let lg: CGFloat = 24
+        static let xs: CGFloat = 4    // tight inline spacing
+        static let sm: CGFloat = 8    // badge spacing, compact rows
+        static let md: CGFloat = 16   // card padding, section gaps
+        static let lg: CGFloat = 24   // major section spacing
+        static let xl: CGFloat = 32   // page margins, modal padding
     }
 
     enum Colors {
+        // MARK: Accent / Primary
         static let accent = Color.pipelineBlue
 
+        static func primary(_ scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color(red: 0.236, green: 0.515, blue: 0.964)  // HSL(217, 91%, 60%)
+                : Color(red: 0.15, green: 0.383, blue: 0.85)     // HSL(220, 70%, 50%)
+        }
+
+        // MARK: Surfaces
         static func windowGradient(_ scheme: ColorScheme) -> LinearGradient {
             if scheme == .dark {
                 return LinearGradient(
                     colors: [
-                        Color(red: 0.06, green: 0.07, blue: 0.09),
-                        Color(red: 0.05, green: 0.06, blue: 0.07)
+                        Color(red: 0.08, green: 0.093, blue: 0.12),   // --background dark
+                        Color(red: 0.064, green: 0.075, blue: 0.096)  // sidebar-background dark
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -48,8 +58,8 @@ enum DesignSystem {
 
             return LinearGradient(
                 colors: [
-                    Color(red: 0.96, green: 0.97, blue: 0.99),
-                    Color(red: 0.94, green: 0.95, blue: 0.97)
+                    Color(red: 0.954, green: 0.958, blue: 0.966),  // --background light
+                    Color(red: 0.932, green: 0.937, blue: 0.948)   // --accent light
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -58,56 +68,83 @@ enum DesignSystem {
 
         static func sidebarBackground(_ scheme: ColorScheme) -> Color {
             scheme == .dark
-                ? Color(red: 0.06, green: 0.07, blue: 0.09)
-                : Color(red: 0.98, green: 0.98, blue: 0.99)
+                ? Color(red: 0.064, green: 0.075, blue: 0.096)  // HSL(220, 20%, 8%)
+                : Color(red: 0.98, green: 0.98, blue: 0.98)     // HSL(0, 0%, 98%)
         }
 
         static func contentBackground(_ scheme: ColorScheme) -> Color {
             scheme == .dark
-                ? Color(red: 0.05, green: 0.06, blue: 0.07)
-                : Color(red: 0.95, green: 0.96, blue: 0.98)
+                ? Color(red: 0.08, green: 0.093, blue: 0.12)    // HSL(220, 20%, 10%)
+                : Color(red: 0.954, green: 0.958, blue: 0.966)  // HSL(220, 14%, 96%)
         }
 
         static func surface(_ scheme: ColorScheme) -> Color {
             scheme == .dark
-                ? Color(red: 0.10, green: 0.12, blue: 0.15)
+                ? Color(red: 0.115, green: 0.132, blue: 0.165)  // HSL(220, 18%, 14%)
                 : .white
         }
 
         static func surfaceElevated(_ scheme: ColorScheme) -> Color {
             scheme == .dark
-                ? Color(red: 0.12, green: 0.14, blue: 0.18)
-                : Color(red: 0.99, green: 0.99, blue: 1.0)
+                ? Color(red: 0.164, green: 0.188, blue: 0.236)  // HSL(220, 18%, 20%)
+                : Color(red: 0.909, green: 0.916, blue: 0.931)  // HSL(220, 14%, 92%)
         }
 
         static func inputBackground(_ scheme: ColorScheme) -> Color {
             scheme == .dark
-                ? Color(red: 0.10, green: 0.12, blue: 0.15).opacity(0.8)
-                : Color(red: 0.95, green: 0.96, blue: 0.98)
+                ? Color(red: 0.148, green: 0.169, blue: 0.212)  // HSL(220, 18%, 18%)
+                : Color(red: 0.886, green: 0.895, blue: 0.914)  // HSL(220, 14%, 90%)
         }
 
+        // MARK: Utility
         static func stroke(_ scheme: ColorScheme) -> Color {
             scheme == .dark
-                ? Color.white.opacity(0.06)
-                : Color.black.opacity(0.08)
+                ? Color(red: 0.180, green: 0.207, blue: 0.259)  // HSL(220, 18%, 22%)
+                : Color(red: 0.863, green: 0.874, blue: 0.897)  // HSL(220, 14%, 88%)
         }
 
         static func divider(_ scheme: ColorScheme) -> Color {
             scheme == .dark
-                ? Color.white.opacity(0.08)
-                : Color.black.opacity(0.08)
+                ? Color(red: 0.180, green: 0.207, blue: 0.259)  // HSL(220, 18%, 22%)
+                : Color(red: 0.863, green: 0.874, blue: 0.897)  // HSL(220, 14%, 88%)
         }
 
         static func shadow(_ scheme: ColorScheme) -> Color {
             scheme == .dark
-                ? Color.black.opacity(0.45)
-                : Color.black.opacity(0.12)
+                ? Color.black.opacity(0.3)
+                : Color(red: 0.08, green: 0.093, blue: 0.12).opacity(0.08)
         }
 
         static func placeholder(_ scheme: ColorScheme) -> Color {
             scheme == .dark
-                ? Color.white.opacity(0.35)
-                : Color.black.opacity(0.35)
+                ? Color(red: 0.505, green: 0.535, blue: 0.595)  // HSL(220, 10%, 55%)
+                : Color(red: 0.405, green: 0.435, blue: 0.495)  // HSL(220, 10%, 45%)
+        }
+
+        // MARK: Destructive
+        static func destructive(_ scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color(red: 0.81, green: 0.19, blue: 0.19)     // HSL(0, 62%, 50%)
+                : Color(red: 0.863, green: 0.157, blue: 0.157)  // HSL(0, 72%, 51%)
+        }
+
+        // MARK: Glass Effect
+        static func glassBackground(_ scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color(red: 0.115, green: 0.132, blue: 0.165).opacity(0.7)
+                : Color.white.opacity(0.7)
+        }
+
+        static func glassBorder(_ scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color.white.opacity(0.1)
+                : Color.white.opacity(0.3)
+        }
+
+        static func glassShadow(_ scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color.black.opacity(0.3)
+                : Color(red: 0.08, green: 0.093, blue: 0.12).opacity(0.08)
         }
     }
 }
@@ -138,8 +175,8 @@ extension Constants {
 
         // Animation durations
         static let animationFast: Double = 0.15
-        static let animationNormal: Double = 0.25
-        static let animationSlow: Double = 0.4
+        static let animationNormal: Double = 0.2
+        static let animationSlow: Double = 0.3
     }
 
     // MARK: - Sidebar
@@ -188,8 +225,8 @@ private struct AppCardModifier: ViewModifier {
             )
             .shadow(
                 color: showShadow ? DesignSystem.Colors.shadow(colorScheme) : .clear,
-                radius: showShadow ? 16 : 0,
-                y: showShadow ? 8 : 0
+                radius: showShadow ? 6 : 0,
+                y: showShadow ? 2 : 0
             )
     }
 }
@@ -212,17 +249,43 @@ private struct AppInputModifier: ViewModifier {
     }
 }
 
+private struct AppGlassModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(DesignSystem.Colors.glassBorder(colorScheme), lineWidth: 1)
+            )
+            .shadow(
+                color: DesignSystem.Colors.glassShadow(colorScheme),
+                radius: 12,
+                y: 4
+            )
+    }
+}
+
 extension View {
     func appWindowBackground() -> some View {
         modifier(WindowBackgroundModifier())
     }
 
-    func appCard(cornerRadius: CGFloat = DesignSystem.Radius.cardSmall, elevated: Bool = false, shadow: Bool = false) -> some View {
+    func appCard(cornerRadius: CGFloat = DesignSystem.Radius.card, elevated: Bool = false, shadow: Bool = false) -> some View {
         modifier(AppCardModifier(cornerRadius: cornerRadius, elevated: elevated, showShadow: shadow))
     }
 
     func appInput() -> some View {
         modifier(AppInputModifier())
+    }
+
+    func appGlass(cornerRadius: CGFloat = DesignSystem.Radius.card) -> some View {
+        modifier(AppGlassModifier(cornerRadius: cornerRadius))
     }
 
 #if os(macOS)
