@@ -1593,6 +1593,9 @@ private struct CycleManagementSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+            #if os(macOS)
+            .frame(minWidth: 620, idealWidth: 680, minHeight: 520, idealHeight: 600)
+            #endif
             .alert("Cycle Action Failed", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
@@ -1736,6 +1739,9 @@ private struct GoalManagementSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+            #if os(macOS)
+            .frame(minWidth: 620, idealWidth: 680, minHeight: 560, idealHeight: 640)
+            #endif
             .alert("Goal Action Failed", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
