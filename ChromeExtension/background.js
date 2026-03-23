@@ -4,6 +4,26 @@
 const NATIVE_HOST_NAME = "io.github.digitaltracer.pipeline";
 const NATIVE_MESSAGE_TIMEOUT_MS = 60000;
 
+// ---------------------------------------------------------------------------
+// Tab extraction cache
+// ---------------------------------------------------------------------------
+
+const tabCache = new Map();
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.url || changeInfo.status === "loading") {
+    tabCache.delete(tabId);
+  }
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  tabCache.delete(tabId);
+});
+
+// ---------------------------------------------------------------------------
+// Message handling
+// ---------------------------------------------------------------------------
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "saveJobToPipeline") {
     handleSave(request.data, Boolean(request.saveForLater))
@@ -18,7 +38,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch((err) => sendResponse({ success: false, error: err.message }));
     return true;
   }
+
+  if (request.action === "getCachedExtraction") {
+    const tabId = sender.tab?.id || request.tabId;
+    const cached = tabId ? tabCache.get(tabId) : null;
+    sendResponse(cached || { success: false });
+    return;
+  }
+
+  if (request.action === "cacheExtraction") {
+    const tabId = sender.tab?.id || request.tabId;
+    if (tabId && request.data) {
+      tabCache.set(tabId, { success: true, data: request.data, cachedAt: Date.now() });
+    }
+    sendResponse({ success: true });
+    return;
+  }
 });
+
+// ---------------------------------------------------------------------------
+// Native communication
+// ---------------------------------------------------------------------------
 
 function sendNativeMessage(message) {
   return new Promise((resolve, reject) => {
@@ -42,6 +82,10 @@ function sendNativeMessage(message) {
     });
   });
 }
+
+// ---------------------------------------------------------------------------
+// Command handlers
+// ---------------------------------------------------------------------------
 
 async function handleSave(jobData, saveForLater = false) {
   try {

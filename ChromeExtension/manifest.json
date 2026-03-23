@@ -1,14 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Pipeline — Job Application Tracker",
-  "version": "1.0.0",
+  "version": "1.1.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3d7xSbJYPvUeQBWb3gTd/rPmlC8+rBl7ApuaOgW0fhkrIicA9vCtgjsMegC2+r8ysuhxI60xC9HI3MiBQ7U4eUkT6cJlJc2u2Uelx1mHE2vHi7IwLa88DDhbrCs8PvHwZh9LlPXfanX14msUMYzYuZhcdVXJTSUgezoMHI+mZC++8TqowI6Zv2tM+KHlal9rZCwEF+W7xZznPv9Wi5g5T/M+Q72rYGrf82dF0IzoPvkbcj9tT+izecd9Eg+uFhi7gbu1stmBOFfZvgZ6KwN0RNkzvmpLlVjpK6pqTAUIFX2v9zfnTFXBEBfv6JIJNdcb8HVG+MWDoHWp7L6oqa9xdQIDAQAB",
   "description": "Save job postings directly to Pipeline from LinkedIn, Indeed, Glassdoor, Naukri, and more.",
 
-  "permissions": [
-    "activeTab",
-    "scripting",
-    "nativeMessaging"
-  ],
+  "permissions": ["activeTab", "scripting", "nativeMessaging"],
 
   "host_permissions": [
     "https://*.linkedin.com/*",
@@ -17,7 +14,9 @@
     "https://*.naukri.com/*",
     "https://*.greenhouse.io/*",
     "https://*.lever.co/*",
-    "https://*.workday.com/*"
+    "https://*.workday.com/*",
+    "https://*.myworkdayjobs.com/*",
+    "https://*.instahyre.com/*"
   ],
 
   "background": {
@@ -36,7 +35,9 @@
         "https://*.naukri.com/job-listings-*",
         "https://*.greenhouse.io/jobs/*",
         "https://*.lever.co/*",
-        "https://*.workday.com/*/job/*"
+        "https://*.workday.com/*/job/*",
+        "https://*.myworkdayjobs.com/*",
+        "https://*.instahyre.com/job/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"

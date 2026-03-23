@@ -1,10 +1,9 @@
 #!/bin/bash
 # Pipeline — Install Chrome Native Messaging Host manifest
 #
-# Usage: ./install_host.sh <extension_id> [--dev]
+# Usage: ./install_host.sh [--dev]
 #
 # Arguments:
-#   extension_id  The Chrome extension ID from chrome://extensions
 #   --dev         Use the Xcode DerivedData build path instead of /Applications
 
 set -euo pipefail
@@ -12,22 +11,22 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HOST_NAME="io.github.digitaltracer.pipeline"
 TARGET_DIR="${HOME}/Library/Application Support/Google/Chrome/NativeMessagingHosts"
+EXTENSION_ID="onkppiodpcchcgjcfkpdbaiadjdcaejf"
 
-if [ $# -lt 1 ] || [ "$1" = "--help" ]; then
-    echo "Usage: ./install_host.sh <extension_id> [--dev]"
+if [ $# -gt 1 ] || [ "${1:-}" = "--help" ]; then
+    echo "Usage: ./install_host.sh [--dev]"
     echo ""
-    echo "  extension_id  Your Chrome extension ID (from chrome://extensions)"
+    echo "  Extension ID is fixed to ${EXTENSION_ID}"
     echo "  --dev         Use Xcode DerivedData build path (for development)"
     echo ""
     echo "Example:"
-    echo "  ./install_host.sh abcdefghijklmnopqrstuvwx --dev"
+    echo "  ./install_host.sh --dev"
     exit 1
 fi
 
-EXT_ID="$1"
 USE_DEV=false
 
-if [ $# -ge 2 ] && [ "$2" = "--dev" ]; then
+if [ "${1:-}" = "--dev" ]; then
     USE_DEV=true
 fi
 
@@ -67,14 +66,14 @@ cat > "${MANIFEST_DEST}" << MANIFEST
   "path": "${HOST_PATH}",
   "type": "stdio",
   "allowed_origins": [
-    "chrome-extension://${EXT_ID}/"
+    "chrome-extension://${EXTENSION_ID}/"
   ]
 }
 MANIFEST
 
 echo ""
 echo "Installed: ${MANIFEST_DEST}"
-echo "Extension ID: ${EXT_ID}"
+echo "Extension ID: ${EXTENSION_ID}"
 echo "Host binary: ${HOST_PATH}"
 echo ""
 echo "Restart Chrome for changes to take effect."
