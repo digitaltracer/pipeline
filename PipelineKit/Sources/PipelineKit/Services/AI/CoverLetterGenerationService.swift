@@ -147,11 +147,13 @@ public enum CoverLetterGenerationService {
         - Output raw JSON only. No markdown fences. No extra prose.
         - Write in a \(tone.promptDescriptor) tone.
         - The greeting should address the hiring team naturally when no person is provided.
-        - The hook paragraph should connect the candidate to the role and company without repeating the greeting.
-        - bodyParagraphs must contain 2 or 3 paragraphs.
-        - Each body paragraph must map the candidate's prior experience to concrete requirements from the job description.
+        - The hook paragraph should connect the candidate to the role without repeating the greeting. When the job description or notes mention something specific about the company (mission, product, industry position), reference it. Otherwise, lead with the candidate's strongest relevant qualification.
+        - bodyParagraphs must contain 2 or 3 paragraphs. Each body paragraph should follow an evidence-then-impact pattern: name a specific resume experience, then connect it to a specific job requirement.
         - Use only evidence grounded in the provided resume JSON or notes. Do not invent metrics, employers, technologies, or achievements.
         - The closing paragraph should restate fit, invite further discussion, and end with a professional sign-off placeholder such as "Best regards,".
+        - Target lengths: hook 40-60 words, each body paragraph 60-100 words, closing 40-60 words, total letter 250-350 words.
+        - Avoid cliche openings such as "I am writing to express my interest", "passionate about", "excited to apply", or "I believe I would be a great fit". Start with a confident, specific statement.
+        - Do not repeat the exact job title more than once; use natural variations.
         """
 
         let userPrompt = """

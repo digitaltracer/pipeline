@@ -140,7 +140,7 @@ public enum ATSKeywordExtractionService {
         var sanitized: [ATSKeywordCandidate] = []
 
         for rawKeyword in keywords {
-            guard sanitized.count < 12 else { break }
+            guard sanitized.count < 15 else { break }
 
             let rawTerm = (
                 rawKeyword.term ??

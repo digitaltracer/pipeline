@@ -31,6 +31,11 @@ public enum ResumeTailoringPrompts {
     - Summary must be at most 80 words.
     - Each responsibility/project bullet must be at most 32 words.
     - Do not produce long paragraphs; prefer compact phrasing.
+    - Preserve and emphasize quantified achievements (numbers, percentages, dollar amounts) from the original resume.
+    - Prioritize tailoring to "required" qualifications over "preferred" or "nice-to-have" ones.
+    - Start each responsibility or project bullet with a strong action verb (Led, Designed, Reduced, Scaled, Implemented, Delivered, Optimized, Architected).
+    - When rewriting experience bullets, preserve the original achievement and reframe the context to match the target role's language.
+    - Integrate target-role keywords naturally into achievement bullets rather than appending them to a skills list.
     - Use valid JSON pointer paths.
     - Output raw JSON only. No markdown, no prose.
     """
@@ -62,6 +67,7 @@ public enum ResumeTailoringPrompts {
     - Keep each reason under 12 words.
     - Summary must be at most 80 words.
     - Each responsibility/project bullet must be at most 32 words.
+    - Start each bullet with a strong action verb. Preserve quantified achievements.
     - Do not copy long original text into beforeValue. Use null if original value is long (>120 chars).
     - Keep sectionGaps to at most 5 short items.
     - Output raw JSON only. No markdown, no prose.

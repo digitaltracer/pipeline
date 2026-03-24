@@ -885,7 +885,7 @@ public enum ATSCompatibilityScoringService {
         var ordered: [ATSKeywordCandidate] = []
 
         for keyword in keywords {
-            guard ordered.count < 12 else { break }
+            guard ordered.count < 15 else { break }
             let normalized = specialKey(for: keyword.term)
             guard !normalized.isEmpty else { continue }
             guard seen.insert(normalized).inserted else { continue }
