@@ -317,6 +317,61 @@ import Testing
     #expect(olderDateFallback?.usedFallback == true)
 }
 
+@Test func originCyclePreservesStatsWhenAppMovedBetweenCycles() async {
+    let previousCycle = JobSearchCycle(
+        name: "Q1 Search",
+        startDate: Calendar.current.date(byAdding: .month, value: -3, to: Date()) ?? Date(),
+        endDate: Calendar.current.date(byAdding: .month, value: -1, to: Date()),
+        isActive: false
+    )
+    let activeCycle = JobSearchCycle(
+        name: "Q2 Search",
+        startDate: Calendar.current.date(byAdding: .day, value: -5, to: Date()) ?? Date(),
+        isActive: true
+    )
+
+    let submittedDate = Calendar.current.date(byAdding: .month, value: -2, to: Date()) ?? Date()
+
+    // App originally in previousCycle, then moved to activeCycle
+    let movedApp = JobApplication(
+        companyName: "Stripe",
+        role: "Backend Engineer",
+        location: "Remote",
+        status: .interviewing,
+        appliedDate: submittedDate,
+        cycle: previousCycle
+    )
+    // Simulate the move — this should capture originCycle
+    movedApp.assignCycle(activeCycle)
+
+    // App that stayed in the previous cycle
+    let stayedApp = JobApplication(
+        companyName: "Meta",
+        role: "iOS Engineer",
+        location: "Menlo Park",
+        status: .rejected,
+        appliedDate: submittedDate,
+        cycle: previousCycle
+    )
+
+    #expect(movedApp.originCycle?.id == previousCycle.id)
+    #expect(movedApp.cycle?.id == activeCycle.id)
+
+    let analyticsService = DashboardAnalyticsService(exchangeRateService: MockExchangeRateProvider(rate: 1.0))
+    let analytics = await analyticsService.analyze(
+        applications: [movedApp, stayedApp],
+        cycles: [previousCycle, activeCycle],
+        goals: [],
+        scope: .currentCycle,
+        baseCurrency: .usd
+    )
+
+    // Active cycle should count the moved app
+    #expect(analytics.currentSnapshot.totalApplications == 1)
+    // Previous cycle should count BOTH: the stayed app AND the originated app
+    #expect(analytics.previousSnapshot.totalApplications == 2)
+}
+
 private func makeAnalyticsContainer() throws -> ModelContainer {
     let schema = Schema([
         JobApplication.self,

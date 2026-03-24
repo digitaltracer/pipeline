@@ -45,6 +45,7 @@ public final class JobApplication {
     public var dismissedChecklistTemplateIDs: [String] = []
 
     public var cycle: JobSearchCycle?
+    public var originCycle: JobSearchCycle?
     public var company: CompanyProfile?
 
     @Relationship(deleteRule: .cascade, inverse: \InterviewLog.application)
@@ -654,6 +655,9 @@ public final class JobApplication {
 
     public func assignCycle(_ cycle: JobSearchCycle?) {
         guard self.cycle?.id != cycle?.id else { return }
+        if originCycle == nil, self.cycle != nil {
+            originCycle = self.cycle
+        }
         self.cycle = cycle
         updateTimestamp()
         cycle?.updateTimestamp()

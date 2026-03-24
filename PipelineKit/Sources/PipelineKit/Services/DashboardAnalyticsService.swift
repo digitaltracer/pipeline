@@ -369,7 +369,10 @@ public final class DashboardAnalyticsService: @unchecked Sendable {
         case .currentCycle:
             return (
                 applications.filter { $0.cycle?.id == activeCycle?.id },
-                applications.filter { $0.cycle?.id == previousCycle?.id }
+                applications.filter {
+                    $0.cycle?.id == previousCycle?.id ||
+                    $0.originCycle?.id == previousCycle?.id
+                }
             )
         }
     }

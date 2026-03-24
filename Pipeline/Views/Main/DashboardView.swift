@@ -13,8 +13,7 @@ struct DashboardView: View {
     @State private var viewModel = DashboardViewModel()
     @Environment(\.colorScheme) private var colorScheme
 
-    @State private var showingCycleManager = false
-    @State private var showingGoalManager = false
+    @State private var showingSearchCycleSheet = false
 
     let settingsViewModel: SettingsViewModel
     var onboardingProgress: OnboardingProgress? = nil
@@ -53,6 +52,9 @@ struct DashboardView: View {
                     if viewModel.summaryCards.isEmpty {
                         emptyStateCard
                     } else {
+                        if let cycle = analytics.activeCycle {
+                            cycleStatsBar(cycle: cycle)
+                        }
                         overviewSection(analytics: analytics)
                         dashboardContent(analytics: analytics)
                     }
@@ -82,11 +84,8 @@ struct DashboardView: View {
         .onDisappear {
             viewModel.cancelRefresh()
         }
-        .sheet(isPresented: $showingCycleManager) {
-            CycleManagementSheet()
-        }
-        .sheet(isPresented: $showingGoalManager) {
-            GoalManagementSheet(activeCycle: viewModel.analytics?.activeCycle)
+        .sheet(isPresented: $showingSearchCycleSheet) {
+            SearchCycleSheet()
         }
     }
 
@@ -302,22 +301,12 @@ struct DashboardView: View {
     }
 
     private var dashboardToolbarActions: some View {
-        HStack(spacing: 8) {
-            dashboardToolbarButton(
-                title: "Cycles",
-                systemImage: "arrow.triangle.branch",
-                accent: false
-            ) {
-                showingCycleManager = true
-            }
-
-            dashboardToolbarButton(
-                title: "Goals",
-                systemImage: "target",
-                accent: true
-            ) {
-                showingGoalManager = true
-            }
+        dashboardToolbarButton(
+            title: "Cycles & Goals",
+            systemImage: "arrow.triangle.branch",
+            accent: true
+        ) {
+            showingSearchCycleSheet = true
         }
     }
 
@@ -366,6 +355,70 @@ struct DashboardView: View {
         viewModel.selectedScope == scope
             ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.65 : 0.4)
             : .clear
+    }
+
+    private func cycleStatsBar(cycle: JobSearchCycle) -> some View {
+        let apps = cycle.applications ?? []
+        let total = apps.count
+        let applied = apps.filter { $0.status == .applied }.count
+        let interviewing = apps.filter { $0.status == .interviewing }.count
+        let offered = apps.filter { $0.status == .offered }.count
+        let saved = apps.filter { $0.status == .saved }.count
+
+        return HStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(DesignSystem.Colors.accent)
+
+                Text(cycle.name)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+
+                Text("ACTIVE")
+                    .font(.system(size: 9, weight: .bold))
+                    .kerning(0.6)
+                    .foregroundColor(.green)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Capsule(style: .continuous).fill(Color.green.opacity(colorScheme == .dark ? 0.16 : 0.10)))
+            }
+            .frame(minWidth: 140, alignment: .leading)
+
+            StatDivider()
+
+            cycleStatPill(value: "\(total)", label: "In Pipeline", icon: "tray.full", color: DesignSystem.Colors.accent)
+            StatDivider()
+            cycleStatPill(value: "\(saved)", label: "Saved", icon: "bookmark", color: ApplicationStatus.saved.color)
+            StatDivider()
+            cycleStatPill(value: "\(applied)", label: "Applied", icon: "paperplane", color: ApplicationStatus.applied.color)
+            StatDivider()
+            cycleStatPill(value: "\(interviewing)", label: "Interviewing", icon: "person.2", color: ApplicationStatus.interviewing.color)
+            StatDivider()
+            cycleStatPill(value: "\(offered)", label: "Offered", icon: "gift", color: ApplicationStatus.offered.color)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+    }
+
+    private func cycleStatPill(value: String, label: String, icon: String, color: Color) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(color)
+                .frame(width: 16)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(value)
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                Text(label)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .frame(minWidth: 90, maxWidth: .infinity, alignment: .leading)
     }
 
     private func overviewSection(analytics: DashboardAnalyticsResult) -> some View {
@@ -690,11 +743,7 @@ struct DashboardView: View {
                             : "Create weekly or monthly goals for the active search cycle to make this dashboard actionable.",
                         actionTitle: analytics.activeCycle == nil ? "Manage Cycles" : "Create Goals"
                     ) {
-                        if analytics.activeCycle == nil {
-                            showingCycleManager = true
-                        } else {
-                            showingGoalManager = true
-                        }
+                        showingSearchCycleSheet = true
                     }
                 } else {
                     ForEach(analytics.goalProgress) { progress in
@@ -1294,19 +1343,11 @@ struct DashboardView: View {
                 }
 
                 dashboardToolbarButton(
-                    title: "Manage Cycles",
+                    title: "Cycles & Goals",
                     systemImage: "arrow.triangle.branch",
-                    accent: false
-                ) {
-                    showingCycleManager = true
-                }
-
-                dashboardToolbarButton(
-                    title: "Create Goals",
-                    systemImage: "target",
                     accent: true
                 ) {
-                    showingGoalManager = true
+                    showingSearchCycleSheet = true
                 }
             }
         }
@@ -1529,85 +1570,707 @@ private struct CadenceHeatmapView: View {
     }
 }
 
-private struct CycleManagementSheet: View {
+// MARK: - Search Cycle Sheet
+
+private struct SearchCycleSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) private var colorScheme
     @Query(sort: \JobSearchCycle.startDate, order: .reverse) private var cycles: [JobSearchCycle]
 
+    // Create-cycle form
     @State private var newCycleName = ""
     @State private var newCycleStartDate = Date()
+
+    // Goal form
+    @State private var selectedMetric: SearchGoalMetric = .applicationsSubmitted
+    @State private var selectedCadence: SearchGoalCadence = .weekly
+    @State private var targetValue = ""
+    @State private var editingGoal: SearchGoal?
+
+    // Import picker
+    @State private var showImportPicker = false
+    @State private var importSourceCycle: JobSearchCycle?
+    @State private var importTargetCycle: JobSearchCycle?
+    @State private var selectedAppIDs: Set<UUID> = []
+
+    // Confirmations & errors
     @State private var errorMessage: String?
+    @State private var cycleToDelete: JobSearchCycle?
+    @State private var showDeleteConfirmation = false
+
+    private var activeCycle: JobSearchCycle? {
+        cycles.first(where: \.isActive)
+    }
 
     var body: some View {
         NavigationStack {
-            List {
-                Section("Start New Cycle") {
-                    TextField("Cycle Name", text: $newCycleName)
-                    DatePicker("Start Date", selection: $newCycleStartDate, displayedComponents: .date)
+            #if os(macOS)
+            VStack(spacing: 0) {
+                macHeader
 
-                    Button("Start Cycle") {
-                        startCycle()
-                    }
-                    .disabled(newCycleName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Divider().overlay(DesignSystem.Colors.divider(colorScheme))
+
+                ScrollView {
+                    modalContent
+                        .padding(24)
                 }
 
-                Section("Existing Cycles") {
-                    ForEach(cycles) { cycle in
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text(cycle.name)
-                                    .font(.headline)
-                                if cycle.isActive {
-                                    Text("ACTIVE")
-                                        .font(.caption2.weight(.bold))
-                                        .foregroundColor(.green)
-                                }
-                                Spacer()
-                            }
+                Divider().overlay(DesignSystem.Colors.divider(colorScheme))
 
-                            Text(cycleDateText(for: cycle))
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-
-                            HStack {
-                                Button(cycle.isActive ? "Active" : "Activate") {
-                                    activate(cycle)
-                                }
-                                .disabled(cycle.isActive)
-
-                                if cycle.isActive {
-                                    Button("End Cycle") {
-                                        end(cycle)
-                                    }
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
+                macFooter
             }
+            .frame(minWidth: 760, idealWidth: 820, minHeight: 650, idealHeight: 720)
+            .background(DesignSystem.Colors.contentBackground(colorScheme))
+            #else
+            ScrollView {
+                modalContent
+                    .padding(16)
+            }
+            .background(DesignSystem.Colors.contentBackground(colorScheme).ignoresSafeArea())
             .navigationTitle("Search Cycles")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
             }
-            #if os(macOS)
-            .frame(minWidth: 620, idealWidth: 680, minHeight: 520, idealHeight: 600)
             #endif
-            .alert("Cycle Action Failed", isPresented: Binding(
-                get: { errorMessage != nil },
-                set: { if !$0 { errorMessage = nil } }
-            )) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(errorMessage ?? "An unknown error occurred.")
+        }
+        .alert("Action Failed", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "An unknown error occurred.")
+        }
+        .sheet(isPresented: $showImportPicker) {
+            ApplicationImportPicker(
+                targetCycle: importTargetCycle,
+                sourceCycle: importSourceCycle,
+                selectedAppIDs: $selectedAppIDs,
+                onImport: { importApplications() },
+                onCancel: { resetImportState() }
+            )
+        }
+        .confirmationDialog(
+            "Delete Cycle?",
+            isPresented: $showDeleteConfirmation
+        ) {
+            Button("Delete", role: .destructive) {
+                if let cycle = cycleToDelete { deleteCycle(cycle) }
+            }
+            Button("Cancel", role: .cancel) { cycleToDelete = nil }
+        } message: {
+            if let cycle = cycleToDelete {
+                Text("This will permanently remove \"\(cycle.name)\". Its \(cycle.applications?.count ?? 0) application(s) will become unlinked.")
             }
         }
     }
 
-    private func startCycle() {
+    // MARK: - Modal Content
+
+    private var modalContent: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            heroCard
+            newCycleCard
+            if activeCycle != nil {
+                goalsCard
+            }
+            allCyclesCard
+        }
+    }
+
+    // MARK: - Hero Card
+
+    private var heroCard: some View {
+        HStack(alignment: .top, spacing: 16) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.2 : 0.12))
+                    .frame(width: 58, height: 58)
+
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundColor(DesignSystem.Colors.accent)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .center, spacing: 10) {
+                    Text(activeCycle?.name ?? "No Active Cycle")
+                        .font(.title3.weight(.semibold))
+
+                    Text(activeCycle != nil ? "ACTIVE" : "NONE")
+                        .font(.system(size: 11, weight: .semibold))
+                        .kerning(0.8)
+                        .foregroundColor(activeCycle != nil ? .green : .secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(
+                                    (activeCycle != nil ? Color.green : Color.secondary)
+                                        .opacity(colorScheme == .dark ? 0.16 : 0.10)
+                                )
+                        )
+                }
+
+                if let cycle = activeCycle {
+                    Text("Started \(cycle.startDate.formatted(date: .abbreviated, time: .omitted)) \u{00B7} \(cycleDurationText(cycle)) \u{00B7} \(applicationCount(for: cycle)) applications \u{00B7} \(activeGoalCount(cycle)) goals")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("Start or activate a search cycle to begin tracking your job search progress.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(20)
+        .appCard(cornerRadius: 18, elevated: true, shadow: false)
+    }
+
+    // MARK: - New Cycle Card
+
+    private var newCycleCard: some View {
+        sectionCard(
+            title: "New Cycle",
+            icon: "plus.circle",
+            description: "Start a new search cycle. The previous active cycle will be deactivated automatically."
+        ) {
+            #if os(macOS)
+            let columns = [
+                GridItem(.flexible(), spacing: 14, alignment: .top),
+                GridItem(.flexible(), spacing: 14, alignment: .top)
+            ]
+            #else
+            let columns = [GridItem(.flexible(), spacing: 14, alignment: .top)]
+            #endif
+
+            LazyVGrid(columns: columns, spacing: 14) {
+                fieldSurface(title: "Cycle Name", caption: "A memorable label for this search phase.") {
+                    TextField("e.g. Q2 2026 Search", text: $newCycleName)
+                        .textFieldStyle(.plain)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .appInput()
+                }
+
+                fieldSurface(title: "Start Date", caption: "When this search phase begins.") {
+                    DatePicker("", selection: $newCycleStartDate, displayedComponents: .date)
+                        .labelsHidden()
+                        #if os(macOS)
+                        .datePickerStyle(.compact)
+                        #endif
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .appInput()
+                }
+            }
+
+            if activeCycle != nil {
+                banner(
+                    text: "Starting a new cycle will deactivate \"\(activeCycle!.name)\". You\u{2019}ll be able to carry over in-progress applications.",
+                    systemImage: "exclamationmark.triangle",
+                    tint: .orange
+                )
+            }
+
+            HStack {
+                Spacer()
+                Button("Start Cycle") { handleStartCycle() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(DesignSystem.Colors.accent)
+                    .controlSize(.large)
+                    .disabled(newCycleName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+    }
+
+    // MARK: - Goals Card
+
+    private var goalsCard: some View {
+        sectionCard(
+            title: editingGoal == nil ? "Goals" : "Edit Goal",
+            icon: "target",
+            description: "Set weekly or monthly targets for the active cycle to keep your search accountable."
+        ) {
+            #if os(macOS)
+            let columns = [
+                GridItem(.flexible(), spacing: 14, alignment: .top),
+                GridItem(.flexible(), spacing: 14, alignment: .top),
+                GridItem(.flexible(), spacing: 14, alignment: .top)
+            ]
+            #else
+            let columns = [GridItem(.flexible(), spacing: 14, alignment: .top)]
+            #endif
+
+            LazyVGrid(columns: columns, spacing: 14) {
+                fieldSurface(title: "Metric") {
+                    Picker("", selection: $selectedMetric) {
+                        ForEach(SearchGoalMetric.allCases) { metric in
+                            Label(metric.displayName, systemImage: metric.icon).tag(metric)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .appInput()
+                }
+
+                fieldSurface(title: "Cadence") {
+                    Picker("", selection: $selectedCadence) {
+                        ForEach(SearchGoalCadence.allCases) { cadence in
+                            Text(cadence.displayName).tag(cadence)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .appInput()
+                }
+
+                fieldSurface(title: "Target") {
+                    TextField("e.g. 10", text: $targetValue)
+                        .textFieldStyle(.plain)
+                        #if os(iOS)
+                        .keyboardType(.numberPad)
+                        #endif
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .appInput()
+                }
+            }
+
+            HStack {
+                if editingGoal != nil {
+                    Button("Cancel Edit") { resetGoalForm() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
+                }
+                Spacer()
+                Button(editingGoal == nil ? "Add Goal" : "Update Goal") {
+                    if let cycle = activeCycle {
+                        saveGoal(for: cycle)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DesignSystem.Colors.accent)
+                .controlSize(.regular)
+                .disabled(Int(targetValue) == nil || (Int(targetValue) ?? 0) <= 0)
+            }
+
+            if let cycle = activeCycle, !cycle.sortedGoals.isEmpty {
+                Divider().overlay(DesignSystem.Colors.divider(colorScheme))
+
+                ForEach(cycle.sortedGoals) { goal in
+                    goalRow(goal)
+                }
+            }
+        }
+    }
+
+    // MARK: - All Cycles Card
+
+    private var allCyclesCard: some View {
+        sectionCard(
+            title: "All Cycles",
+            icon: "clock.arrow.circlepath",
+            description: "Your search history. Activate a past cycle or remove cycles you no longer need."
+        ) {
+            if cycles.isEmpty {
+                banner(
+                    text: "No cycles yet. Create your first cycle above to start tracking your job search.",
+                    systemImage: "lightbulb",
+                    tint: .orange
+                )
+            } else {
+                ForEach(cycles) { cycle in
+                    cycleRow(cycle)
+                }
+            }
+        }
+    }
+
+    // MARK: - Row Views
+
+    private func cycleRow(_ cycle: JobSearchCycle) -> some View {
+        HStack(spacing: 12) {
+            Circle()
+                .fill(cycle.isActive ? Color.green : Color.secondary.opacity(0.4))
+                .frame(width: 10, height: 10)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(cycle.name)
+                    .font(.subheadline.weight(.semibold))
+                Text(cycleDateText(for: cycle))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            HStack(spacing: 4) {
+                Image(systemName: "doc.text")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text("\(applicationCount(for: cycle))")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.secondary)
+            }
+
+            Text(cycle.isActive ? "ACTIVE" : (cycle.endDate != nil ? "ENDED" : "INACTIVE"))
+                .font(.system(size: 10, weight: .semibold))
+                .kerning(0.6)
+                .foregroundColor(cycle.isActive ? .green : .secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(
+                            (cycle.isActive ? Color.green : Color.secondary)
+                                .opacity(colorScheme == .dark ? 0.16 : 0.10)
+                        )
+                )
+
+            HStack(spacing: 6) {
+                if !cycle.isActive {
+                    Button {
+                        activate(cycle)
+                    } label: {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(DesignSystem.Colors.accent)
+                            .frame(width: 28, height: 28)
+                            .background(
+                                Circle()
+                                    .fill(DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.18 : 0.12))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .fastTooltip("Activate this cycle")
+                    .interactiveHandCursor()
+                }
+
+                if cycle.isActive {
+                    Button {
+                        end(cycle)
+                    } label: {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.orange)
+                            .frame(width: 28, height: 28)
+                            .background(
+                                Circle()
+                                    .fill(Color.orange.opacity(colorScheme == .dark ? 0.18 : 0.12))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .fastTooltip("End this cycle")
+                    .interactiveHandCursor()
+                }
+
+                Button {
+                    importTargetCycle = cycle
+                    importSourceCycle = nil
+                    selectedAppIDs = []
+                    showImportPicker = true
+                } label: {
+                    Image(systemName: "square.and.arrow.down.on.square")
+                        .font(.system(size: 12))
+                        .foregroundColor(DesignSystem.Colors.accent)
+                        .frame(width: 28, height: 28)
+                        .background(
+                            Circle()
+                                .fill(DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.18 : 0.12))
+                        )
+                }
+                .buttonStyle(.plain)
+                .fastTooltip("Import applications")
+                .interactiveHandCursor()
+
+                Button {
+                    cycleToDelete = cycle
+                    showDeleteConfirmation = true
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 12))
+                        .foregroundColor(DesignSystem.Colors.destructive(colorScheme))
+                        .frame(width: 28, height: 28)
+                        .background(
+                            Circle()
+                                .fill(DesignSystem.Colors.destructive(colorScheme).opacity(colorScheme == .dark ? 0.18 : 0.12))
+                        )
+                }
+                .buttonStyle(.plain)
+                .fastTooltip("Delete this cycle")
+                .interactiveHandCursor()
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(
+                    cycle.isActive ? Color.green.opacity(0.4) : DesignSystem.Colors.stroke(colorScheme),
+                    lineWidth: cycle.isActive ? 1.5 : 1
+                )
+        )
+    }
+
+    private func goalRow(_ goal: SearchGoal) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: goal.metric.icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(goal.isArchived ? .secondary : DesignSystem.Colors.accent)
+                .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(goal.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(goal.isArchived ? .secondary : .primary)
+                Text("\(goal.targetValue) per \(goal.cadence.displayName.lowercased())")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            if goal.isArchived {
+                Text("ARCHIVED")
+                    .font(.system(size: 10, weight: .semibold))
+                    .kerning(0.6)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule(style: .continuous).fill(Color.secondary.opacity(0.12)))
+            }
+
+            Button {
+                editGoal(goal)
+            } label: {
+                Image(systemName: "pencil")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(DesignSystem.Colors.surfaceElevated(colorScheme)))
+            }
+            .buttonStyle(.plain)
+            .fastTooltip("Edit goal")
+            .interactiveHandCursor()
+
+            Button {
+                toggleArchive(goal)
+            } label: {
+                Image(systemName: goal.isArchived ? "arrow.uturn.backward" : "archivebox")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(DesignSystem.Colors.surfaceElevated(colorScheme)))
+            }
+            .buttonStyle(.plain)
+            .fastTooltip(goal.isArchived ? "Restore goal" : "Archive goal")
+            .interactiveHandCursor()
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+        )
+    }
+
+    // MARK: - macOS Header & Footer
+
+    #if os(macOS)
+    private var macHeader: some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Search Cycles")
+                    .font(.title3.weight(.semibold))
+
+                Text("Manage cycles and goals for your job search")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        Circle()
+                            .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 18)
+    }
+
+    private var macFooter: some View {
+        HStack(spacing: 16) {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.triangle.branch")
+                    .foregroundColor(DesignSystem.Colors.accent)
+
+                Text(activeCycle != nil ? "Active: \(activeCycle!.name)" : "No active cycle")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            Button("Done") { dismiss() }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 18)
+    }
+    #endif
+
+    // MARK: - Helpers
+
+    private func sectionCard<Content: View>(
+        title: String,
+        icon: String,
+        description: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Label(title, systemImage: icon)
+                    .font(.headline)
+
+                Text(description)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            content()
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard(cornerRadius: 16, elevated: true, shadow: false)
+    }
+
+    private func fieldSurface<Content: View>(
+        title: String,
+        caption: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title.uppercased())
+                .font(.system(size: 11, weight: .semibold))
+                .kerning(0.8)
+                .foregroundColor(.secondary)
+
+            content()
+
+            if let caption {
+                Text(caption)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+        )
+    }
+
+    private func banner(text: String, systemImage: String, tint: Color) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(tint)
+                .frame(width: 20, alignment: .center)
+
+            Text(text)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(tint.opacity(colorScheme == .dark ? 0.10 : 0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(tint.opacity(colorScheme == .dark ? 0.25 : 0.15), lineWidth: 1)
+        )
+    }
+
+    // MARK: - Computed Properties
+
+    private func cycleDurationText(_ cycle: JobSearchCycle) -> String {
+        let end = cycle.endDate ?? Date()
+        let days = max(1, Calendar.current.dateComponents([.day], from: cycle.startDate, to: end).day ?? 1)
+        return "\(days) day\(days == 1 ? "" : "s")"
+    }
+
+    private func activeGoalCount(_ cycle: JobSearchCycle) -> Int {
+        (cycle.goals ?? []).filter { !$0.isArchived }.count
+    }
+
+    private func applicationCount(for cycle: JobSearchCycle) -> Int {
+        let direct = cycle.applications?.count ?? 0
+        guard !cycle.isActive else { return direct }
+        let originated = cycles
+            .filter { $0.id != cycle.id }
+            .flatMap { $0.applications ?? [] }
+            .filter { $0.originCycle?.id == cycle.id }
+            .count
+        return direct + originated
+    }
+
+    private func cycleDateText(for cycle: JobSearchCycle) -> String {
+        let start = cycle.startDate.formatted(date: .abbreviated, time: .omitted)
+        if let endDate = cycle.endDate {
+            return "\(start) \u{2013} \(endDate.formatted(date: .abbreviated, time: .omitted))"
+        }
+        return "Started \(start)"
+    }
+
+    // MARK: - Actions
+
+    private func handleStartCycle() {
+        let outgoing = activeCycle
+        guard let newCycle = createCycle() else { return }
+
+        if let outgoing, hasEligibleApps(in: outgoing) {
+            importSourceCycle = outgoing
+            importTargetCycle = newCycle
+            selectedAppIDs = preSelectedAppIDs(from: outgoing)
+            showImportPicker = true
+        }
+    }
+
+    @discardableResult
+    private func createCycle() -> JobSearchCycle? {
         do {
             let cycle = JobSearchCycle(
                 name: newCycleName.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -1622,9 +2285,56 @@ private struct CycleManagementSheet: View {
             try modelContext.save()
             newCycleName = ""
             newCycleStartDate = Date()
+            return cycle
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    private func hasEligibleApps(in cycle: JobSearchCycle) -> Bool {
+        (cycle.applications ?? []).contains { !isTerminalStatus($0.status) }
+    }
+
+    private func isTerminalStatus(_ status: ApplicationStatus) -> Bool {
+        status == .rejected || status == .archived
+    }
+
+    private func preSelectedAppIDs(from cycle: JobSearchCycle) -> Set<UUID> {
+        let eligible = (cycle.applications ?? []).filter { app in
+            let s = app.status
+            return s == .saved || s == .applied || s == .interviewing
+        }
+        return Set(eligible.map(\.id))
+    }
+
+    private func importApplications() {
+        guard let target = importTargetCycle else { return }
+        let allApps: [JobApplication]
+        if let source = importSourceCycle {
+            allApps = source.applications ?? []
+        } else {
+            allApps = cycles.flatMap { cycle in
+                guard cycle.id != target.id else { return [JobApplication]() }
+                return cycle.applications ?? []
+            }
+        }
+        for app in allApps where selectedAppIDs.contains(app.id) {
+            app.assignCycle(target)
+        }
+        do {
+            try modelContext.save()
         } catch {
             errorMessage = error.localizedDescription
         }
+        resetImportState()
+    }
+
+    private func resetImportState() {
+        showImportPicker = false
+        importSourceCycle = nil
+        importTargetCycle = nil
+        selectedAppIDs = []
     }
 
     private func activate(_ cycle: JobSearchCycle) {
@@ -1644,112 +2354,19 @@ private struct CycleManagementSheet: View {
         }
     }
 
-    private func cycleDateText(for cycle: JobSearchCycle) -> String {
-        let start = cycle.startDate.formatted(date: .abbreviated, time: .omitted)
-        if let endDate = cycle.endDate {
-            return "\(start) - \(endDate.formatted(date: .abbreviated, time: .omitted))"
-        }
-        return "Started \(start)"
-    }
-}
-
-private struct GoalManagementSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
-
-    let activeCycle: JobSearchCycle?
-
-    @State private var selectedMetric: SearchGoalMetric = .applicationsSubmitted
-    @State private var selectedCadence: SearchGoalCadence = .weekly
-    @State private var targetValue = ""
-    @State private var editingGoal: SearchGoal?
-    @State private var errorMessage: String?
-
-    var body: some View {
-        NavigationStack {
-            List {
-                if let activeCycle {
-                    Section("Active Cycle") {
-                        Text(activeCycle.name)
-                            .font(.headline)
-                    }
-
-                    Section(editingGoal == nil ? "Add Goal" : "Edit Goal") {
-                        Picker("Metric", selection: $selectedMetric) {
-                            ForEach(SearchGoalMetric.allCases) { metric in
-                                Text(metric.displayName).tag(metric)
-                            }
-                        }
-
-                        Picker("Cadence", selection: $selectedCadence) {
-                            ForEach(SearchGoalCadence.allCases) { cadence in
-                                Text(cadence.displayName).tag(cadence)
-                            }
-                        }
-
-                        TextField("Target", text: $targetValue)
-                            #if os(iOS)
-                            .keyboardType(.numberPad)
-                            #endif
-
-                        Button(editingGoal == nil ? "Save Goal" : "Update Goal") {
-                            saveGoal(for: activeCycle)
-                        }
-                        .disabled(Int(targetValue) == nil)
-                    }
-
-                    Section("Goals") {
-                        ForEach(activeCycle.sortedGoals) { goal in
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
-                                    Label(goal.title, systemImage: goal.metric.icon)
-                                    Spacer()
-                                    Text(goal.isArchived ? "Archived" : "\(goal.targetValue)")
-                                        .foregroundColor(.secondary)
-                                }
-
-                                HStack {
-                                    Button("Edit") {
-                                        editingGoal = goal
-                                        selectedMetric = goal.metric
-                                        selectedCadence = goal.cadence
-                                        targetValue = String(goal.targetValue)
-                                    }
-
-                                    Button(goal.isArchived ? "Restore" : "Archive") {
-                                        toggleArchive(goal)
-                                    }
-                                }
-                                .buttonStyle(.bordered)
-                            }
-                            .padding(.vertical, 4)
-                        }
-                    }
-                } else {
-                    ContentUnavailableView(
-                        "No active cycle",
-                        systemImage: "target",
-                        description: Text("Start or activate a search cycle before creating goals.")
-                    )
-                }
+    private func deleteCycle(_ cycle: JobSearchCycle) {
+        do {
+            for app in (cycle.applications ?? []) {
+                app.assignCycle(nil)
             }
-            .navigationTitle("Goal Tracking")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                }
+            for goal in (cycle.goals ?? []) {
+                modelContext.delete(goal)
             }
-            #if os(macOS)
-            .frame(minWidth: 620, idealWidth: 680, minHeight: 560, idealHeight: 640)
-            #endif
-            .alert("Goal Action Failed", isPresented: Binding(
-                get: { errorMessage != nil },
-                set: { if !$0 { errorMessage = nil } }
-            )) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(errorMessage ?? "An unknown error occurred.")
-            }
+            modelContext.delete(cycle)
+            try modelContext.save()
+            cycleToDelete = nil
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 
@@ -1774,13 +2391,24 @@ private struct GoalManagementSheet: View {
 
             cycle.updateTimestamp()
             try modelContext.save()
-            editingGoal = nil
-            selectedMetric = .applicationsSubmitted
-            selectedCadence = .weekly
-            targetValue = ""
+            resetGoalForm()
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func editGoal(_ goal: SearchGoal) {
+        editingGoal = goal
+        selectedMetric = goal.metric
+        selectedCadence = goal.cadence
+        targetValue = String(goal.targetValue)
+    }
+
+    private func resetGoalForm() {
+        editingGoal = nil
+        selectedMetric = .applicationsSubmitted
+        selectedCadence = .weekly
+        targetValue = ""
     }
 
     private func toggleArchive(_ goal: SearchGoal) {
@@ -1796,6 +2424,402 @@ private struct GoalManagementSheet: View {
             errorMessage = error.localizedDescription
         }
     }
+}
+
+// MARK: - Application Import Picker
+
+private struct ApplicationImportPicker: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @Query(sort: \JobSearchCycle.startDate, order: .reverse) private var allCycles: [JobSearchCycle]
+
+    let targetCycle: JobSearchCycle?
+    let sourceCycle: JobSearchCycle?
+    @Binding var selectedAppIDs: Set<UUID>
+    let onImport: () -> Void
+    let onCancel: () -> Void
+
+    @State private var selectedSourceID: UUID?
+
+    private var isAdHocMode: Bool { sourceCycle == nil }
+
+    private var sourceCycles: [JobSearchCycle] {
+        allCycles.filter { $0.id != targetCycle?.id }
+    }
+
+    private var resolvedSource: JobSearchCycle? {
+        if let sourceCycle { return sourceCycle }
+        if let selectedSourceID {
+            return allCycles.first { $0.id == selectedSourceID }
+        }
+        return nil
+    }
+
+    private var eligibleApps: [JobApplication] {
+        let apps: [JobApplication]
+        if let source = resolvedSource {
+            apps = source.applications ?? []
+        } else if isAdHocMode {
+            apps = sourceCycles.flatMap { $0.applications ?? [] }
+        } else {
+            apps = []
+        }
+        return apps.filter { !isTerminal($0.status) }
+    }
+
+    private var statusGroups: [(status: ApplicationStatus, apps: [JobApplication])] {
+        let order: [ApplicationStatus] = [.saved, .applied, .interviewing, .offered]
+        var result: [(ApplicationStatus, [JobApplication])] = []
+
+        for status in order {
+            let matching = eligibleApps.filter { $0.status == status }
+                .sorted { ($0.companyName, $0.role) < ($1.companyName, $1.role) }
+            if !matching.isEmpty {
+                result.append((status, matching))
+            }
+        }
+
+        // Custom statuses
+        let customApps = eligibleApps.filter {
+            if case .custom = $0.status { return true }
+            return false
+        }.sorted { ($0.companyName, $0.role) < ($1.companyName, $1.role) }
+
+        if !customApps.isEmpty {
+            result.append((.custom("Other"), customApps))
+        }
+
+        return result
+    }
+
+    private func isTerminal(_ status: ApplicationStatus) -> Bool {
+        status == .rejected || status == .archived
+    }
+
+    var body: some View {
+        #if os(macOS)
+        VStack(spacing: 0) {
+            macHeader
+
+            Divider().overlay(DesignSystem.Colors.divider(colorScheme))
+
+            ScrollView {
+                pickerContent
+                    .padding(24)
+            }
+
+            Divider().overlay(DesignSystem.Colors.divider(colorScheme))
+
+            macFooter
+        }
+        .frame(minWidth: 680, idealWidth: 740, minHeight: 520, idealHeight: 620)
+        .background(DesignSystem.Colors.contentBackground(colorScheme))
+        #else
+        NavigationStack {
+            ScrollView {
+                pickerContent
+                    .padding(16)
+            }
+            .background(DesignSystem.Colors.contentBackground(colorScheme).ignoresSafeArea())
+            .navigationTitle("Import Applications")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { onCancel(); dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Import (\(selectedAppIDs.count))") {
+                        onImport()
+                        dismiss()
+                    }
+                    .disabled(selectedAppIDs.isEmpty)
+                }
+            }
+        }
+        #endif
+    }
+
+    // MARK: - Content
+
+    private var pickerContent: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            moveBanner
+
+            if isAdHocMode {
+                sourceFilterCard
+            }
+
+            if eligibleApps.isEmpty {
+                emptyState
+            } else {
+                applicationListCard
+            }
+        }
+    }
+
+    private var moveBanner: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "arrow.right.doc.on.clipboard")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(DesignSystem.Colors.accent)
+                .frame(width: 20, alignment: .center)
+
+            Text("Selected applications will be **moved** to \"\(targetCycle?.name ?? "the target cycle")\". They will no longer appear in their source cycle.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.10 : 0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.25 : 0.15), lineWidth: 1)
+        )
+    }
+
+    private var sourceFilterCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Label("Source", systemImage: "line.3.horizontal.decrease.circle")
+                    .font(.headline)
+
+                Text("Choose which cycle to import applications from, or browse all.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+
+            Picker("", selection: $selectedSourceID) {
+                Text("All Cycles").tag(nil as UUID?)
+                ForEach(sourceCycles) { cycle in
+                    HStack {
+                        Text(cycle.name)
+                        if cycle.isActive {
+                            Text("(Active)")
+                        }
+                    }.tag(cycle.id as UUID?)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .appInput()
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard(cornerRadius: 16, elevated: true, shadow: false)
+    }
+
+    private var applicationListCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Label("Applications", systemImage: "doc.on.doc")
+                    .font(.headline)
+
+                Text("\(eligibleApps.count) eligible application\(eligibleApps.count == 1 ? "" : "s"). Rejected and archived applications are excluded.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+
+            ForEach(statusGroups, id: \.status) { group in
+                statusGroupView(status: group.status, apps: group.apps)
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard(cornerRadius: 16, elevated: true, shadow: false)
+    }
+
+    private func statusGroupView(status: ApplicationStatus, apps: [JobApplication]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                StatusBadge(status: status, showIcon: true, size: .small)
+
+                Text("\(apps.count)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                let allSelected = apps.allSatisfy { selectedAppIDs.contains($0.id) }
+                Button(allSelected ? "Deselect All" : "Select All") {
+                    if allSelected {
+                        for app in apps { selectedAppIDs.remove(app.id) }
+                    } else {
+                        for app in apps { selectedAppIDs.insert(app.id) }
+                    }
+                }
+                .font(.caption.weight(.medium))
+                .foregroundColor(DesignSystem.Colors.accent)
+                .buttonStyle(.plain)
+                .interactiveHandCursor()
+            }
+
+            ForEach(apps) { app in
+                applicationRow(app)
+            }
+        }
+    }
+
+    private func applicationRow(_ app: JobApplication) -> some View {
+        let isSelected = selectedAppIDs.contains(app.id)
+
+        return Button {
+            if isSelected {
+                selectedAppIDs.remove(app.id)
+            } else {
+                selectedAppIDs.insert(app.id)
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 18))
+                    .foregroundColor(isSelected ? DesignSystem.Colors.accent : .secondary.opacity(0.5))
+
+                CompanyAvatar(
+                    companyName: app.companyName,
+                    logoURL: app.googleS2FaviconURL(size: 64)?.absoluteString,
+                    size: 34,
+                    cornerRadius: 8
+                )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(app.role)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    Text(app.companyName)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                if isAdHocMode, let cycleName = app.cycle?.name {
+                    Text(cycleName)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(Color.secondary.opacity(colorScheme == .dark ? 0.14 : 0.08))
+                        )
+                }
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isSelected
+                        ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.10 : 0.05)
+                        : Color.clear
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(
+                        isSelected
+                            ? DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.30 : 0.20)
+                            : DesignSystem.Colors.stroke(colorScheme),
+                        lineWidth: 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .interactiveHandCursor()
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "tray")
+                .font(.title2)
+                .foregroundColor(.secondary)
+
+            Text("No eligible applications")
+                .font(.subheadline.weight(.medium))
+
+            Text("There are no active applications to import from \(resolvedSource != nil ? "this cycle" : "other cycles").")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(32)
+        .appCard(cornerRadius: 16, elevated: true, shadow: false)
+    }
+
+    // MARK: - macOS Header & Footer
+
+    #if os(macOS)
+    private var macHeader: some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Import Applications")
+                    .font(.title3.weight(.semibold))
+
+                Text("Select applications to move into \"\(targetCycle?.name ?? "cycle")\"")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            Button {
+                onCancel()
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        Circle()
+                            .fill(DesignSystem.Colors.surfaceElevated(colorScheme))
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 18)
+    }
+
+    private var macFooter: some View {
+        HStack(spacing: 16) {
+            HStack(spacing: 10) {
+                Image(systemName: "checkmark.circle")
+                    .foregroundColor(DesignSystem.Colors.accent)
+
+                Text("\(selectedAppIDs.count) of \(eligibleApps.count) selected")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            Button("Cancel") {
+                onCancel()
+                dismiss()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+
+            Button("Import \(selectedAppIDs.count) Application\(selectedAppIDs.count == 1 ? "" : "s")") {
+                onImport()
+                dismiss()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(DesignSystem.Colors.accent)
+            .controlSize(.large)
+            .disabled(selectedAppIDs.isEmpty)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 18)
+    }
+    #endif
 }
 
 #Preview {
