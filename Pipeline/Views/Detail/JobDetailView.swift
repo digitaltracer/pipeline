@@ -271,17 +271,7 @@ struct JobDetailView: View {
                     if shouldShow(.jobMatch) {
                         JobMatchSection(
                             application: application,
-                            settingsViewModel: SettingsViewModel(),
-                            onRefresh: {
-                                Task {
-                                    await JobMatchScoringCoordinator.shared.refresh(
-                                        application: application,
-                                        modelContext: modelContext,
-                                        settingsViewModel: SettingsViewModel(),
-                                        force: true
-                                    )
-                                }
-                            }
+                            settingsViewModel: SettingsViewModel()
                         )
                     }
 

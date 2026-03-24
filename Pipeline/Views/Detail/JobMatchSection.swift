@@ -8,9 +8,9 @@ struct JobMatchSection: View {
 
     let application: JobApplication
     let settingsViewModel: SettingsViewModel
-    let onRefresh: () -> Void
 
     @State private var isExpanded = true
+    @State private var isRefreshing = false
 
     private var currentResumeRevision: ResumeMasterRevision? {
         resumeRevisions.first(where: \.isCurrent) ?? resumeRevisions.first
@@ -51,11 +51,16 @@ struct JobMatchSection: View {
 
                     Spacer()
 
-                    JobMatchBadge(
-                        application: application,
-                        currentResumeRevisionID: currentResumeRevision?.id,
-                        matchPreferences: matchPreferences
-                    )
+                    if isRefreshing {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        JobMatchBadge(
+                            application: application,
+                            currentResumeRevisionID: currentResumeRevision?.id,
+                            matchPreferences: matchPreferences
+                        )
+                    }
                 }
             }
             .disclosureGroupStyle(FullWidthDisclosureStyle())
@@ -80,10 +85,11 @@ struct JobMatchSection: View {
 
             Spacer()
 
-            Button(isStale ? "Refresh Score" : "Re-score") {
-                onRefresh()
+            Button(isRefreshing ? "Rescoring..." : (isStale ? "Refresh Score" : "Re-score")) {
+                Task { await refreshScore() }
             }
             .buttonStyle(.bordered)
+            .disabled(isRefreshing)
             .interactiveHandCursor()
         }
     }
@@ -194,6 +200,18 @@ struct JobMatchSection: View {
             return "Stale • scored \(date.formatted(date: .abbreviated, time: .shortened))"
         }
         return "Scored \(date.formatted(date: .abbreviated, time: .shortened))"
+    }
+
+    @MainActor
+    private func refreshScore() async {
+        isRefreshing = true
+        defer { isRefreshing = false }
+        await JobMatchScoringCoordinator.shared.refresh(
+            application: application,
+            modelContext: modelContext,
+            settingsViewModel: settingsViewModel,
+            force: true
+        )
     }
 }
 
