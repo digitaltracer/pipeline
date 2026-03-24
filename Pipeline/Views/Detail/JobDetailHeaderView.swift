@@ -118,11 +118,6 @@ struct JobDetailHeaderView: View {
         }
         .padding(DesignSystem.Spacing.md)
         .appCard(cornerRadius: DesignSystem.Radius.card, elevated: true, shadow: true, stroke: false)
-        .overlay(alignment: .top) {
-            application.status.color
-                .frame(height: 3)
-                .clipShape(UnevenRoundedRectangle(topLeadingRadius: DesignSystem.Radius.card, topTrailingRadius: DesignSystem.Radius.card))
-        }
     }
 }
 
