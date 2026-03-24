@@ -2,12 +2,23 @@
   "permissions": {
     "allow": [
       "Bash(xcodebuild:*)",
-      "Bash(swiftc:*)"
+      "Bash(swiftc:*)",
+      "Bash(swift build:*)",
+      "Bash(python3:*)",
+      "Bash(file:*)",
+      "Bash(plutil -lint:*)",
+      "Bash(find:*)",
+      "Bash(cut -d'\\(' -f1)",
+      "Bash(swift test:*)",
+      "Bash(git status:*)"
     ]
   },
   "spinnerVerbs": {
     "mode": "replace",
-    "verbs": ["Hiring new dev", "Burning mac harddisk"]
+    "verbs": [
+      "Hiring new dev",
+      "Burning mac harddisk"
+    ]
   },
   "plansDirectory": "./plans"
 }
