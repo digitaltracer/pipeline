@@ -3212,52 +3212,56 @@ struct JobResumePanel: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Menu {
                     Button {
                         showingAttachmentImporter = true
                     } label: {
-                        Label("Add File", systemImage: "paperclip")
+                        Label("File", systemImage: "paperclip")
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(DesignSystem.Colors.accent)
 
                     Button {
                         editorState = .newLink()
                     } label: {
-                        Label("Add Link", systemImage: "link.badge.plus")
+                        Label("Link", systemImage: "link.badge.plus")
                     }
-                    .buttonStyle(.bordered)
 
                     Button {
                         editorState = .newNote()
                     } label: {
-                        Label("Add Note", systemImage: "square.and.pencil")
+                        Label("Note", systemImage: "square.and.pencil")
                     }
-                    .buttonStyle(.bordered)
+                } label: {
+                    Label("Add", systemImage: "plus")
+                        .font(.subheadline.weight(.medium))
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(DesignSystem.Colors.accent)
 
-                HStack(spacing: 8) {
-                    Button("History") {
+                Spacer()
+
+                Button {
 #if os(macOS)
-                        historySheetWidth = preferredHistorySheetWidth()
+                    historySheetWidth = preferredHistorySheetWidth()
 #endif
-                        showingHistory = true
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button {
-                        #if os(macOS)
-                        presentTailorWindow()
-                        #else
-                        showingTailor = true
-                        #endif
-                    } label: {
-                        Label("Tailor Resume", systemImage: "sparkles")
-                    }
-                    .buttonStyle(.bordered)
+                    showingHistory = true
+                } label: {
+                    Label("History", systemImage: "clock.arrow.circlepath")
+                        .font(.subheadline)
                 }
-                .frame(maxWidth: .infinity, alignment: .center)
+                .buttonStyle(.bordered)
+
+                Button {
+                    #if os(macOS)
+                    presentTailorWindow()
+                    #else
+                    showingTailor = true
+                    #endif
+                } label: {
+                    Label("Tailor Resume", systemImage: "sparkles")
+                        .font(.subheadline)
+                }
+                .buttonStyle(.bordered)
             }
 
             if groupedAttachments.isEmpty, snapshots.isEmpty {
