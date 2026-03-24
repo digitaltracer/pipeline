@@ -69,40 +69,22 @@ Setting up the Chrome extension requires a few extra steps since it's not yet pu
 5. Navigate to the Pipeline project folder and select the **`ChromeExtension`** folder
 6. The Pipeline extension should appear in your extensions list
 
-### Step 2 — Note the Extension ID
+### Step 2 — Run Pipeline on macOS
 
-After loading, Chrome will show the extension with a long ID underneath (it looks like random letters, e.g., `abcdefghijklmnopqrstuvwx`). **Copy this ID** — you'll need it in the next step.
+For local Xcode testing, Pipeline automatically refreshes the Chrome native messaging host manifest during a **Debug** macOS build. For shipped builds, the signed `.pkg` installer registers Chrome during installation.
 
-### Step 3 — Install the native messaging host
+1. Build and run **Pipeline** from Xcode at least once on your Mac
+2. Leave the app running while testing the extension
 
-The Chrome extension needs a small helper program to communicate with the Pipeline app. To set this up:
+> After updating the unpacked extension, click **Reload** on `chrome://extensions` before testing.
 
-1. Open the **Terminal** app (you can find it in Applications > Utilities, or search for "Terminal" in Spotlight)
-
-2. Type or paste the following commands, replacing `YOUR_EXTENSION_ID` with the ID you copied in Step 2:
-
-   ```
-   cd /path/to/pipeline/ChromeExtension
-   ./install_host.sh YOUR_EXTENSION_ID
-   ```
-
-   For example, if your project is on the Desktop:
-   ```
-   cd ~/Desktop/pipeline/ChromeExtension
-   ./install_host.sh abcdefghijklmnopqrstuvwx
-   ```
-
-3. You should see a message saying the host was installed successfully
-
-> **Note:** The Pipeline app must be built from Xcode at least once for the native host to exist.
-
-### Step 4 — Pin the extension (optional but recommended)
+### Step 3 — Pin the extension (optional but recommended)
 
 1. Click the **puzzle piece icon** in Chrome's toolbar (top-right)
 2. Find **"Pipeline — Job Application Tracker"**
 3. Click the **pin icon** next to it so it stays visible in your toolbar
 
-### Step 5 — Save a job posting
+### Step 4 — Save a job posting
 
 1. Go to a job posting on any supported site (same list as Safari above)
 
@@ -147,6 +129,7 @@ Here's a checklist of things to verify when testing:
 - [ ] The saved job appears in the Pipeline app with correct details
 - [ ] Saving the **same job twice** shows a duplicate warning
 - [ ] The extension works on at least 2 different job sites
+- [ ] On LinkedIn `jobs/search` (left list + right details panel), selecting a job extracts the **right panel** job details, not list-card content
 - [ ] Clicking the extension on a non-job page shows "No job posting detected"
 
 ---
@@ -163,10 +146,11 @@ Here's a checklist of things to verify when testing:
 - Restart Safari
 
 ### Chrome extension says "Cannot connect to native host"
-- Make sure you ran the `install_host.sh` script (Step 3 in Chrome setup)
-- Make sure you used the correct Extension ID
-- Make sure the Pipeline app has been built from Xcode (the native host binary needs to exist)
-- Try restarting Chrome
+- Make sure the Pipeline app has been built and launched on the Mac where you're testing
+- Make sure the loaded extension shows ID `onkppiodpcchcgjcfkpdbaiadjdcaejf`
+- Click **Reload** for the extension on `chrome://extensions` after pulling the latest code
+- If you're testing a packaged build, install the signed `.pkg` so Chrome registration is written to `/Library/Google/Chrome/NativeMessagingHosts`
+- Try quitting and reopening both Pipeline and Chrome
 
 ### Job data looks incomplete or wrong
 - Some job sites load content dynamically — try waiting a few seconds for the page to fully load before clicking the extension

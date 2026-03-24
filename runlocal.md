@@ -32,6 +32,8 @@ Or open Xcode and select File > Open, then navigate to `Pipeline/Pipeline.xcodep
 2. Press **Cmd+R** or click the Play button
 3. The app will build and launch
 
+If you are testing the Chrome extension from an Xcode **Debug** build, this macOS build also refreshes the per-user Chrome native messaging manifest automatically. Reload the unpacked extension once in `chrome://extensions` after pulling extension changes.
+
 ### 4. Run on iOS Simulator
 
 1. Select an iOS simulator from the device dropdown (e.g., "iPhone 15 Pro")
