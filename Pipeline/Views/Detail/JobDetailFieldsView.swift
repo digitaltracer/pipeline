@@ -43,7 +43,7 @@ struct JobDetailFieldsView: View {
                             .foregroundColor(.secondary)
                     }
                 }
-                .tint(.primary)
+                .disclosureGroupStyle(FullWidthDisclosureStyle())
                 .padding(.horizontal, 18)
                 .padding(.vertical, 16)
                 .appCard(elevated: true)

@@ -58,6 +58,7 @@ struct JobMatchSection: View {
                     )
                 }
             }
+            .disclosureGroupStyle(FullWidthDisclosureStyle())
         }
         .padding(16)
         .appCard(elevated: true)

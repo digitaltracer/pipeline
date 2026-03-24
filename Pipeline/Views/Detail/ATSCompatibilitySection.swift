@@ -75,6 +75,7 @@ struct ATSCompatibilitySection: View {
                     assessmentBadge
                 }
             }
+            .disclosureGroupStyle(FullWidthDisclosureStyle())
         }
         .padding(16)
         .appCard(elevated: true)

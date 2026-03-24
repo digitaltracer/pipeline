@@ -2820,6 +2820,7 @@ private struct ApplicationChecklistSection: View {
                             .font(.subheadline.weight(.semibold))
                     }
                 )
+                .disclosureGroupStyle(FullWidthDisclosureStyle())
                 .padding(14)
                 .appCard(cornerRadius: 14, elevated: true, shadow: false)
             }
@@ -2934,6 +2935,7 @@ private struct ApplicationTasksSection: View {
                             .font(.subheadline.weight(.semibold))
                     }
                 )
+                .disclosureGroupStyle(FullWidthDisclosureStyle())
                 .padding(14)
                 .appCard(cornerRadius: 14, elevated: true, shadow: false)
             }
@@ -3048,6 +3050,7 @@ private struct SmartFollowUpSection: View {
                             .font(.subheadline.weight(.semibold))
                     }
                 )
+                .disclosureGroupStyle(FullWidthDisclosureStyle())
                 .padding(14)
                 .appCard(cornerRadius: 14, elevated: true, shadow: false)
             }
