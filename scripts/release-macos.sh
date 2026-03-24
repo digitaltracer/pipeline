@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 usage() {
     cat <<'EOF'
 Build, sign, package, notarize, and staple a macOS release for Pipeline.
@@ -25,12 +27,12 @@ Usage:
 
 Examples:
   scripts/release-macos.sh
-  scripts/release-macos.sh --env-file scripts/release-macos.env --format zip
+  scripts/release-macos.sh --env-file scripts/release-macos.env
   scripts/release-macos.sh --env-file scripts/release-macos.env --format all
 
 Notes:
   - If scripts/release-macos.env exists, it is loaded automatically by default.
-  - Default format is dmg if --format is omitted.
+  - Default format is pkg if --format is omitted.
   - A notarization ZIP is always produced (required for app stapling and direct sharing).
   - zip: notarized/stapled app + zip artifact
   - dmg: zip + dmg
@@ -159,6 +161,36 @@ check_hardened_runtime() {
     if ! contains_runtime_flag "${binary_path}"; then
         die "${label} is not signed with Hardened Runtime: ${binary_path}"
     fi
+}
+
+sign_nested_runtime_binary() {
+    local binary_path="$1"
+    local label="$2"
+
+    [[ -f "${binary_path}" ]] || die "Expected executable not found for ${label}: ${binary_path}"
+
+    info "Signing ${label} with Hardened Runtime..."
+    codesign \
+        --force \
+        --timestamp \
+        --options runtime \
+        --sign "${DEVELOPER_ID_APP_CERT}" \
+        "${binary_path}"
+}
+
+reseal_app_bundle() {
+    local app_path="$1"
+
+    [[ -d "${app_path}" ]] || die "Expected app bundle not found: ${app_path}"
+
+    info "Re-signing exported app bundle after nested binary updates..."
+    codesign \
+        --force \
+        --timestamp \
+        --options runtime \
+        --sign "${DEVELOPER_ID_APP_CERT}" \
+        --preserve-metadata=entitlements,requirements,flags \
+        "${app_path}"
 }
 
 submit_for_notarization() {
@@ -354,7 +386,7 @@ done
 PROJECT_PATH="${PROJECT_PATH:-${ROOT_DIR}/Pipeline/Pipeline.xcodeproj}"
 SCHEME="${SCHEME:-Pipeline}"
 CONFIGURATION="${CONFIGURATION:-Release}"
-FORMAT="${FORMAT:-dmg}"
+FORMAT="${FORMAT:-pkg}"
 OUTPUT_DIR="${OUTPUT_DIR:-${ROOT_DIR}/dist}"
 DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-Pipeline}"
 SKIP_NOTARIZATION="${SKIP_NOTARIZATION:-false}"
@@ -405,6 +437,7 @@ if [[ "${INCLUDE_DMG}" == "true" ]]; then
 fi
 
 if [[ "${INCLUDE_PKG}" == "true" ]]; then
+    require_cmd pkgbuild
     require_cmd productbuild
 fi
 
@@ -500,15 +533,27 @@ APP_EXECUTABLE="$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "${APP_
 APP_BINARY_PATH="${APP_PATH}/Contents/MacOS/${APP_EXECUTABLE}"
 NATIVE_HOST_BINARY_PATH="${APP_PATH}/Contents/MacOS/PipelineNativeHost"
 SAFARI_EXTENSION_BINARY_PATH="${APP_PATH}/Contents/PlugIns/PipelineSafariExtension.appex/Contents/MacOS/PipelineSafariExtension"
+TECTONIC_BINARY_PATH="${APP_PATH}/Contents/Resources/tectonic"
+
+if [[ -f "${TECTONIC_BINARY_PATH}" ]]; then
+    sign_nested_runtime_binary "${TECTONIC_BINARY_PATH}" "bundled Tectonic"
+    reseal_app_bundle "${APP_PATH}"
+fi
 
 info "Verifying code signature..."
 codesign --verify --deep --strict --verbose=2 "${APP_PATH}" | tee "${LOGS_DIR}/codesign-verify.log"
 codesign -d --verbose=4 "${APP_BINARY_PATH}" 2>&1 | tee "${LOGS_DIR}/codesign-main-details.log" >/dev/null
 codesign -d --verbose=4 "${NATIVE_HOST_BINARY_PATH}" 2>&1 | tee "${LOGS_DIR}/codesign-nativehost-details.log" >/dev/null
 codesign -d --verbose=4 "${SAFARI_EXTENSION_BINARY_PATH}" 2>&1 | tee "${LOGS_DIR}/codesign-safariext-details.log" >/dev/null
+if [[ -f "${TECTONIC_BINARY_PATH}" ]]; then
+    codesign -d --verbose=4 "${TECTONIC_BINARY_PATH}" 2>&1 | tee "${LOGS_DIR}/codesign-tectonic-details.log" >/dev/null
+fi
 check_hardened_runtime "${APP_BINARY_PATH}" "Main app executable"
 check_hardened_runtime "${NATIVE_HOST_BINARY_PATH}" "PipelineNativeHost"
 check_hardened_runtime "${SAFARI_EXTENSION_BINARY_PATH}" "PipelineSafariExtension"
+if [[ -f "${TECTONIC_BINARY_PATH}" ]]; then
+    check_hardened_runtime "${TECTONIC_BINARY_PATH}" "Bundled Tectonic"
+fi
 nonfatal_spctl_assess "${APP_PATH}" "${LOGS_DIR}/spctl-pre-notary.log"
 
 declare -a ARTIFACT_PATHS=()
@@ -543,10 +588,23 @@ fi
 
 if [[ "${INCLUDE_PKG}" == "true" ]]; then
     PKG_PATH="${ARTIFACTS_DIR}/${ARTIFACT_BASE}.pkg"
+    COMPONENT_PKG_PATH="${WORK_DIR}/${ARTIFACT_BASE}-component.pkg"
+    PKG_SCRIPTS_DIR="${REPO_ROOT}/packaging/macos/pkg-scripts"
+
+    [[ -d "${PKG_SCRIPTS_DIR}" ]] || die "Missing PKG scripts directory at ${PKG_SCRIPTS_DIR}"
+
+    info "Creating component PKG payload..."
+    pkgbuild \
+        --component "${APP_PATH}" \
+        --install-location /Applications \
+        --identifier "io.github.digitaltracer.pipeline.installer" \
+        --version "${APP_BUILD}" \
+        --scripts "${PKG_SCRIPTS_DIR}" \
+        "${COMPONENT_PKG_PATH}" | tee "${LOGS_DIR}/pkgbuild-create.log"
 
     info "Creating signed PKG package..."
     productbuild \
-        --component "${APP_PATH}" /Applications \
+        --package "${COMPONENT_PKG_PATH}" \
         --sign "${DEVELOPER_ID_INSTALLER_CERT}" \
         "${PKG_PATH}" | tee "${LOGS_DIR}/pkg-create.log"
 

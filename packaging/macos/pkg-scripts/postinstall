@@ -1,0 +1,40 @@
+#!/bin/bash
+
+set -euo pipefail
+
+HOST_NAME="io.github.digitaltracer.pipeline"
+EXTENSION_ID="onkppiodpcchcgjcfkpdbaiadjdcaejf"
+APP_PATH="/Applications/Pipeline.app"
+HOST_PATH="${APP_PATH}/Contents/MacOS/PipelineNativeHost"
+SYSTEM_DIR="/Library/Google/Chrome/NativeMessagingHosts"
+SYSTEM_MANIFEST="${SYSTEM_DIR}/${HOST_NAME}.json"
+
+if [ ! -x "${HOST_PATH}" ]; then
+    echo "warning: ${HOST_PATH} is missing or not executable; skipping Chrome native host registration"
+    exit 0
+fi
+
+mkdir -p "${SYSTEM_DIR}"
+
+cat > "${SYSTEM_MANIFEST}" <<MANIFEST
+{
+  "name": "${HOST_NAME}",
+  "description": "Pipeline — Job Application Tracker native messaging host",
+  "path": "${HOST_PATH}",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://${EXTENSION_ID}/"
+  ]
+}
+MANIFEST
+
+CONSOLE_USER="$(stat -f '%Su' /dev/console 2>/dev/null || true)"
+if [ -n "${CONSOLE_USER}" ] && [ "${CONSOLE_USER}" != "root" ]; then
+    USER_HOME="$(dscl . -read "/Users/${CONSOLE_USER}" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
+    if [ -n "${USER_HOME}" ]; then
+        LEGACY_USER_MANIFEST="${USER_HOME}/Library/Application Support/Google/Chrome/NativeMessagingHosts/${HOST_NAME}.json"
+        rm -f "${LEGACY_USER_MANIFEST}"
+    fi
+fi
+
+exit 0
