@@ -56,6 +56,8 @@ struct JobDetailView: View {
     @State private var selectedInterviewActivityForDebrief: ApplicationActivity?
     @State private var rejectionLearningsViewModel: RejectionLearningsViewModel?
     @State private var settingsViewModel = SettingsViewModel()
+    @State private var showingSkillAddition = false
+    @State private var skillAdditionPrefilledSkill = ""
     @State private var showAllSections = false
     @State private var taskSegment: TaskSegment = .smart
     @Environment(\.colorScheme) private var colorScheme
@@ -271,7 +273,11 @@ struct JobDetailView: View {
                     if shouldShow(.jobMatch) {
                         JobMatchSection(
                             application: application,
-                            settingsViewModel: SettingsViewModel()
+                            settingsViewModel: SettingsViewModel(),
+                            onAddMissingSkill: { skill in
+                                skillAdditionPrefilledSkill = skill
+                                showingSkillAddition = true
+                            }
                         )
                     }
 
@@ -555,6 +561,23 @@ struct JobDetailView: View {
                 mode: resumeTailoringMode,
                 seededPatches: resumeSeededPatches
             )
+        }
+        .sheet(isPresented: $showingSkillAddition) {
+            if let masterRevision = try? ResumeStoreService.currentMasterRevision(in: modelContext) {
+                SkillAdditionSheet(
+                    resumeJSON: masterRevision.rawJSON,
+                    application: application,
+                    settingsViewModel: settingsViewModel,
+                    prefilledSkill: skillAdditionPrefilledSkill,
+                    missingSkills: application.matchAssessment?.missingSkills ?? []
+                ) { patches, scope in
+                    if scope == .jobOnly, !patches.isEmpty {
+                        resumeTailoringMode = .skillAddition
+                        resumeSeededPatches = patches
+                        showingTailorResume = true
+                    }
+                }
+            }
         }
         .sheet(isPresented: $showingInterviewPrep) {
             InterviewPrepView(

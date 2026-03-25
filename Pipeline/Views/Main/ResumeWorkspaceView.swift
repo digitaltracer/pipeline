@@ -137,6 +137,8 @@ struct ResumeWorkspaceView: View {
     @State private var exportFormat: ResumeExportFormat = .json
     @State private var jsonDocument = ResumeJSONFileDocument(text: "{}")
     @State private var pdfDocument = ResumePDFFileDocument(data: Data())
+    @State private var showingSkillAddition = false
+    @State private var skillAdditionSettingsVM = SettingsViewModel()
     var onboardingProgress: OnboardingProgress? = nil
     var onOnboardingAction: ((OnboardingAction) -> Void)? = nil
     var onHideOnboardingGuidance: (() -> Void)? = nil
@@ -194,6 +196,15 @@ struct ResumeWorkspaceView: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(currentRevision == nil)
+
+                Button {
+                    showingSkillAddition = true
+                } label: {
+                    Label("Add Skill", systemImage: "plus.circle")
+                }
+                .buttonStyle(.bordered)
+                .disabled(currentRevision == nil)
+                .interactiveHandCursor()
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
@@ -297,6 +308,19 @@ struct ResumeWorkspaceView: View {
                 minHeight: 620
             )
 #endif
+        }
+        .sheet(isPresented: $showingSkillAddition) {
+            if let revision = currentRevision {
+                SkillAdditionSheet(
+                    resumeJSON: revision.rawJSON,
+                    settingsViewModel: skillAdditionSettingsVM
+                ) { _, _ in
+                    loadMasterRevisions()
+                    if let updated = currentRevision {
+                        editorJSON = updated.rawJSON
+                    }
+                }
+            }
         }
         .resumeFileExporter(
             isPresented: $isExportingFile,
@@ -1179,6 +1203,8 @@ struct ResumeTailoringView: View {
     @State private var generationStartedAt: Date?
     @State private var latestGenerationUsage: AIUsageMetrics?
     @State private var simulatedReasoningTask: Task<Void, Never>?
+    @State private var showingSkillAddition = false
+    @State private var skillAdditionPrefilledSkill = ""
 
     init(
         application: JobApplication,
@@ -1257,6 +1283,22 @@ struct ResumeTailoringView: View {
             customInstructionSheet(for: patch)
                 .interactiveDismissDisabled(isSubmittingCustomInstruction)
         }
+        .sheet(isPresented: $showingSkillAddition) {
+            if let masterRevision {
+                SkillAdditionSheet(
+                    resumeJSON: masterRevision.rawJSON,
+                    application: application,
+                    settingsViewModel: settingsViewModel,
+                    prefilledSkill: skillAdditionPrefilledSkill,
+                    missingSkills: application.matchAssessment?.missingSkills ?? []
+                ) { newPatches, scope in
+                    if scope == .jobOnly, !newPatches.isEmpty {
+                        patches.append(contentsOf: newPatches)
+                        refreshEditedJSON()
+                    }
+                }
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             if preflightError == nil, !patches.isEmpty {
                 draftSummaryBar
@@ -1295,7 +1337,7 @@ struct ResumeTailoringView: View {
                     atsFocusCard(context)
                 case .atsQuickFixes(let context):
                     atsQuickFixCard(context)
-                case .standard:
+                case .standard, .skillAddition:
                     EmptyView()
                 }
 
@@ -1308,8 +1350,21 @@ struct ResumeTailoringView: View {
                         Text("Coverage Gaps")
                             .font(.headline)
                         ForEach(sectionGaps, id: \.self) { gap in
-                            Label(gap, systemImage: "exclamationmark.circle")
-                                .font(.caption)
+                            HStack {
+                                Label(gap, systemImage: "exclamationmark.circle")
+                                    .font(.caption)
+                                Spacer()
+                                Button {
+                                    skillAdditionPrefilledSkill = gap
+                                    showingSkillAddition = true
+                                } label: {
+                                    Label("Fix", systemImage: "plus.circle")
+                                        .font(.caption2.weight(.medium))
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                                .interactiveHandCursor()
+                            }
                         }
                     }
                     .padding(12)
@@ -1321,13 +1376,29 @@ struct ResumeTailoringView: View {
                         Text("Safety Rejections")
                             .font(.headline)
                         ForEach(Array(safetyRejections.enumerated()), id: \.offset) { _, rejection in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(rejection.patch.path)
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                Text(rejection.reason)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                            HStack(alignment: .top) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(rejection.patch.path)
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                    Text(rejection.reason)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                if rejection.reason.contains("evidencePaths") || rejection.reason.contains("evidence") {
+                                    Button {
+                                        let skillName = extractSkillName(from: rejection.patch)
+                                        skillAdditionPrefilledSkill = skillName
+                                        showingSkillAddition = true
+                                    } label: {
+                                        Label("Add Evidence", systemImage: "plus.circle")
+                                            .font(.caption2.weight(.medium))
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.mini)
+                                    .interactiveHandCursor()
+                                }
                             }
                         }
                     }
@@ -2201,6 +2272,19 @@ struct ResumeTailoringView: View {
         customInstructionText = ""
     }
 
+    private func extractSkillName(from patch: ResumePatch) -> String {
+        // Try to extract the skill name from the patch's afterValue
+        if case .string(let value) = patch.afterValue {
+            return value
+        }
+        // Fallback: extract from the patch path (e.g., /skills/Languages/-)
+        let components = patch.path.split(separator: "/").map(String.init)
+        if components.count >= 2, components[0] == "skills" {
+            return components[1]
+        }
+        return ""
+    }
+
     private func submitCustomInstruction(for patch: ResumePatch) {
         let instruction = customInstructionText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !instruction.isEmpty else { return }
@@ -2397,6 +2481,12 @@ struct ResumeTailoringView: View {
             return
         }
 
+        if case .skillAddition = mode {
+            preflightError = nil
+            loadSeededSkillAdditionPatches()
+            return
+        }
+
         guard let jd = application.jobDescription,
               !jd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             preflightError = "This job is missing a job description. Add one in Edit Application before tailoring."
@@ -2427,9 +2517,8 @@ struct ResumeTailoringView: View {
 
     private func triggerInitialGenerationIfNeeded() {
         guard !hasTriggeredInitialGeneration, preflightError == nil else { return }
-        if case .atsQuickFixes = mode {
-            return
-        }
+        if case .atsQuickFixes = mode { return }
+        if case .skillAddition = mode { return }
         hasTriggeredInitialGeneration = true
         Task { await generateSuggestions() }
     }
@@ -2473,6 +2562,15 @@ struct ResumeTailoringView: View {
         } catch {
             preflightError = error.localizedDescription
         }
+    }
+
+    private func loadSeededSkillAdditionPatches() {
+        // Skill addition patches come pre-validated by SkillAdditionPatchBuilder (two-phase validation).
+        // Simply load them as accepted patches for review.
+        patches = seededPatches
+        refreshEditedJSON()
+        lastPersistedJSON = editedJSON
+        publishUnsavedChangesState()
     }
 
     private func closeTailoringView() {
@@ -2859,6 +2957,8 @@ struct ResumeTailoringView: View {
                     )
                 case .atsQuickFixes:
                     throw AIServiceError.parsingError("ATS quick fixes are loaded locally.")
+                case .skillAddition:
+                    throw AIServiceError.parsingError("Skill addition patches are loaded locally.")
                 }
             }
 

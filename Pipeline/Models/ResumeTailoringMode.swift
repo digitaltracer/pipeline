@@ -54,6 +54,7 @@ enum ResumeTailoringMode: Equatable {
     case standard
     case atsFixes(ATSFixContext)
     case atsQuickFixes(ATSQuickFixContext)
+    case skillAddition
 
     var navigationTitle: String {
         switch self {
@@ -63,6 +64,8 @@ enum ResumeTailoringMode: Equatable {
             return "ATS Fixes"
         case .atsQuickFixes:
             return "ATS Quick Fixes"
+        case .skillAddition:
+            return "Add Skill Evidence"
         }
     }
 
@@ -70,10 +73,10 @@ enum ResumeTailoringMode: Equatable {
         switch self {
         case .standard:
             return "Target"
-        case .atsFixes:
+        case .atsFixes, .atsQuickFixes:
             return "ATS Focus"
-        case .atsQuickFixes:
-            return "ATS Focus"
+        case .skillAddition:
+            return "Skill"
         }
     }
 
@@ -85,6 +88,8 @@ enum ResumeTailoringMode: Equatable {
             return "Generating ATS Fixes"
         case .atsQuickFixes:
             return "Preparing ATS Quick Fixes"
+        case .skillAddition:
+            return "Preparing Skill Addition"
         }
     }
 
@@ -96,6 +101,8 @@ enum ResumeTailoringMode: Equatable {
             return "Live timeline of ATS-focused resume patch generation."
         case .atsQuickFixes:
             return "Review deterministic ATS-safe skills patches before saving."
+        case .skillAddition:
+            return "Review skill evidence patches before saving."
         }
     }
 
@@ -105,7 +112,7 @@ enum ResumeTailoringMode: Equatable {
             return .resumeTailoring
         case .atsFixes:
             return .resumeATSFixes
-        case .atsQuickFixes:
+        case .atsQuickFixes, .skillAddition:
             return nil
         }
     }

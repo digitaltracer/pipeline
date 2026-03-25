@@ -218,6 +218,48 @@ public enum ResumeTailoringPrompts {
         """
     }
 
+    // MARK: - Skill Bullet Drafting
+
+    public static let skillBulletDraftSystemPrompt = """
+    You are a resume writing assistant. Write exactly one resume responsibility bullet point.
+    Rules:
+    - Match the length, tone, and style of the existing responsibilities provided. If existing bullets average 20 words, write ~20 words. If they average 30 words, write ~30 words.
+    - Start with a strong action verb (Led, Designed, Built, Implemented, Optimized, Delivered, Scaled, Architected, Developed, Integrated, Deployed, Automated, Migrated, Configured).
+    - Integrate the target skill naturally into an achievement statement.
+    - Include a quantified result if plausible (percentage, count, dollar amount).
+    - Output only the bullet text. No quotes, no markdown, no explanation, no leading dash or bullet marker.
+    """
+
+    public static func skillBulletDraftUserPrompt(
+        skillName: String,
+        jobTitle: String,
+        company: String,
+        existingResponsibilities: [String],
+        jobDescription: String? = nil
+    ) -> String {
+        var prompt = """
+        Skill to evidence: \(skillName)
+        Role: \(jobTitle) at \(company)
+        """
+
+        if !existingResponsibilities.isEmpty {
+            let bullets = existingResponsibilities
+                .prefix(6)
+                .map { "- \($0)" }
+                .joined(separator: "\n")
+            prompt += "\n\nExisting responsibilities for context and tone matching:\n\(bullets)"
+        }
+
+        if let jobDescription,
+           !jobDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let truncated = String(jobDescription.prefix(2000))
+            prompt += "\n\nTarget job description:\n\(truncated)"
+        }
+
+        prompt += "\n\nWrite one responsibility bullet that demonstrates the skill above within this role."
+        return prompt
+    }
+
     private static func encodedPatch(_ patch: ResumePatch) -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]

@@ -16,6 +16,7 @@ public enum AIUsageFeature: String, Codable, CaseIterable, Sendable, Identifiabl
     case resumeATSFixes = "resume_ats_fixes"
     case interviewLearnings = "interview_learnings"
     case rejectionLearnings = "rejection_learnings"
+    case skillBulletDrafting = "skill_bullet_drafting"
 
     public var id: String { rawValue }
 
@@ -49,6 +50,8 @@ public enum AIUsageFeature: String, Codable, CaseIterable, Sendable, Identifiabl
             return "Interview Learnings"
         case .rejectionLearnings:
             return "Rejection Learnings"
+        case .skillBulletDrafting:
+            return "Skill Bullet Drafting"
         }
     }
 }

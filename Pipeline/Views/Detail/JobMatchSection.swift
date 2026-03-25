@@ -8,6 +8,7 @@ struct JobMatchSection: View {
 
     let application: JobApplication
     let settingsViewModel: SettingsViewModel
+    var onAddMissingSkill: ((String) -> Void)?
 
     @State private var isExpanded = true
     @State private var isRefreshing = false
@@ -177,15 +178,36 @@ struct JobMatchSection: View {
                 .foregroundColor(.secondary)
 
             FlowLayout(values: values) { value in
-                Text(value)
-                    .font(.caption.weight(.medium))
-                    .foregroundColor(tint)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(
-                        Capsule()
-                            .fill(tint.opacity(0.12))
-                    )
+                if title == "Gaps", let onAddMissingSkill {
+                    Button {
+                        onAddMissingSkill(value)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(value)
+                            Image(systemName: "plus.circle.fill")
+                                .font(.caption2)
+                        }
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(tint)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule().fill(tint.opacity(0.12))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .interactiveHandCursor()
+                } else {
+                    Text(value)
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(tint)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule()
+                                .fill(tint.opacity(0.12))
+                        )
+                }
             }
         }
     }
@@ -217,13 +239,15 @@ struct JobMatchSection: View {
 
 private struct FlowLayout<Content: View>: View {
     let values: [String]
-    let content: (String) -> Content
+    @ViewBuilder let content: (String) -> Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(values.chunked(into: 3), id: \.self) { row in
                 HStack {
-                    ForEach(row, id: \.self, content: content)
+                    ForEach(row, id: \.self) { value in
+                        content(value)
+                    }
                     Spacer(minLength: 0)
                 }
             }
