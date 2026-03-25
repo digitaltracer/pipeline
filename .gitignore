@@ -98,3 +98,6 @@ xcresult/
 
 # Dist
 dist/*
+
+# JavaScript tooling
+node_modules/
