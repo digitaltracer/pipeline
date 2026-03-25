@@ -131,7 +131,7 @@ struct JobDetailView: View {
         case .atsCompatibility:
             return status == .saved || status == .applied
         case .contacts:
-            return status != .saved && status != .rejected
+            return !application.sortedContactLinks.isEmpty || (status != .saved && status != .rejected)
         case .referralTracker:
             return status == .saved || status == .applied
         case .resumePanel:
@@ -309,7 +309,7 @@ struct JobDetailView: View {
                     }
 
                     // ── People ───────────────────────────────
-                    if shouldShow(.contacts) || shouldShow(.referralTracker) {
+                    if shouldShow(.contacts) || (shouldShow(.referralTracker) && referralSectionShouldShow) {
                         sectionGroupLabel("PEOPLE")
 
                         if shouldShow(.contacts) {

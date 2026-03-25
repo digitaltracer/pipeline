@@ -1,22 +1,25 @@
-// Pipeline — Chrome Background Script
-// Routes messages between content script/popup and the native messaging host.
+// Pipeline — Background Script
+// Routes messages between content script and native layer (Safari native handler
+// or Chrome native messaging host).
 
-const NATIVE_HOST_NAME = "io.github.digitaltracer.pipeline";
+const isSafari = typeof browser !== "undefined" && typeof browser.runtime.sendNativeMessage === "function";
 const NATIVE_MESSAGE_TIMEOUT_MS = 60000;
+const NATIVE_TIMEOUT_ERROR = "Native host timed out. Check Pipeline app permissions and host install.";
 
 // ---------------------------------------------------------------------------
 // Tab extraction cache
 // ---------------------------------------------------------------------------
 
+const runtime = typeof browser !== "undefined" ? browser : chrome;
 const tabCache = new Map();
 
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+runtime.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.url || changeInfo.status === "loading") {
     tabCache.delete(tabId);
   }
 });
 
-chrome.tabs.onRemoved.addListener((tabId) => {
+runtime.tabs.onRemoved.addListener((tabId) => {
   tabCache.delete(tabId);
 });
 
@@ -24,12 +27,37 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 // Message handling
 // ---------------------------------------------------------------------------
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+function withTimeout(promise, timeoutMs, message) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(message));
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      });
+  });
+}
+
+runtime.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "saveJobToPipeline") {
     handleSave(request.data, Boolean(request.saveForLater))
       .then((result) => sendResponse(result))
       .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true;
+    return true; // async
   }
 
   if (request.action === "checkDuplicate") {
@@ -60,27 +88,36 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // Native communication
 // ---------------------------------------------------------------------------
 
-function sendNativeMessage(message) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      reject(new Error("Native host timed out. Check Pipeline app permissions and host install."));
-    }, NATIVE_MESSAGE_TIMEOUT_MS);
+async function sendNativeMessage(command, payload) {
+  const message = { command, ...payload };
 
-    chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, message, (response) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
+  if (isSafari) {
+    // Safari Web Extension — sends to SafariWebExtensionHandler
+    return withTimeout(
+      browser.runtime.sendNativeMessage("application.id", message),
+      NATIVE_MESSAGE_TIMEOUT_MS,
+      NATIVE_TIMEOUT_ERROR
+    );
+  }
 
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-      } else {
-        resolve(response);
-      }
-    });
-  });
+  // Chrome — sends to native messaging host
+  return withTimeout(
+    new Promise((resolve, reject) => {
+      chrome.runtime.sendNativeMessage(
+        "io.github.digitaltracer.pipeline",
+        message,
+        (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve(response);
+          }
+        }
+      );
+    }),
+    NATIVE_MESSAGE_TIMEOUT_MS,
+    NATIVE_TIMEOUT_ERROR
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -89,18 +126,19 @@ function sendNativeMessage(message) {
 
 async function handleSave(jobData, saveForLater = false) {
   try {
-    return await sendNativeMessage({
-      command: "parse",
+    const response = await sendNativeMessage("parse", {
       url: jobData.url,
       title: jobData.title,
       company: jobData.company,
       location: jobData.location,
       description: jobData.description,
+      contact: jobData.contact || null,
       platform: jobData.platform,
       postedAt: jobData.postedAt,
       applicationDeadline: jobData.applicationDeadline,
       saveForLater,
     });
+    return response;
   } catch (err) {
     return { success: false, error: err.message };
   }
@@ -108,12 +146,12 @@ async function handleSave(jobData, saveForLater = false) {
 
 async function handleDuplicateCheck(jobData) {
   try {
-    return await sendNativeMessage({
-      command: "check-duplicate",
+    const response = await sendNativeMessage("check-duplicate", {
       url: jobData.url,
       company: jobData.company,
       role: jobData.title,
     });
+    return response;
   } catch (err) {
     return { success: false, error: err.message };
   }

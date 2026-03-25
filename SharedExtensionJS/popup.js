@@ -14,8 +14,11 @@
   const previewEl = document.getElementById("preview");
   const emptyEl = document.getElementById("empty");
   const saveBtn = document.getElementById("save-btn");
+  const saveForLaterBtn = document.getElementById("save-for-later-btn");
   const copyJsonBtn = document.getElementById("copy-json-btn");
   const debugBtn = document.getElementById("debug-btn");
+  const domDebugBtn = document.getElementById("dom-debug-btn");
+  const reExtractBtn = document.getElementById("re-extract-btn");
 
   const previewTitle = document.getElementById("preview-title");
   const previewCompany = document.getElementById("preview-company");
@@ -24,8 +27,11 @@
   const previewSalary = document.getElementById("preview-salary");
   const previewDescription = document.getElementById("preview-description");
   const emptyReason = document.getElementById("empty-reason");
+  const diagnosticsEl = document.getElementById("diagnostics");
+  const diagnosticsContent = document.getElementById("diagnostics-content");
 
   let extractedData = null;
+  let descriptionPreviewText = ""; // track the formatted preview for edit detection
 
   // ---------------------------------------------------------------------------
   // UI helpers
@@ -57,9 +63,11 @@
     emptyReason.classList.remove("hidden");
   }
 
-  function resetSaveButton() {
+  function resetSaveButtons() {
     saveBtn.disabled = false;
     saveBtn.innerHTML = '<span class="btn-icon">+</span> Save to Pipeline';
+    saveForLaterBtn.disabled = false;
+    saveForLaterBtn.textContent = "Save for Later";
   }
 
   function resetCopyJsonButton() {
@@ -67,16 +75,116 @@
     copyJsonBtn.textContent = "Copy Parsed JSON";
   }
 
-  function formatDescriptionPreview(text, maxLength = 380) {
+  function formatDescriptionPreview(text, maxLength = 2000) {
     const normalized = String(text || "").replace(/\r\n?/g, "\n").trim();
-    if (!normalized) return "\u2014";
+    if (!normalized) return "";
     if (normalized.length <= maxLength) return normalized;
     return `${normalized.substring(0, maxLength).trimEnd()}...`;
   }
 
-  function setSavingState() {
+  function setSavingState(mode) {
     saveBtn.disabled = true;
-    saveBtn.textContent = "Saving...";
+    saveForLaterBtn.disabled = true;
+    saveBtn.textContent = mode === "save" ? "Saving..." : "Save to Pipeline";
+    saveForLaterBtn.textContent = mode === "queue" ? "Queuing..." : "Save for Later";
+  }
+
+  function populatePreview(fromCache) {
+    if (!extractedData) return;
+
+    resetSaveButtons();
+    resetCopyJsonButton();
+
+    previewTitle.value = extractedData.title || "";
+    previewCompany.value = extractedData.company || "";
+    previewLocation.value = extractedData.location || "";
+    if (extractedData.salary) {
+      previewSalary.value = extractedData.salary;
+      salaryField.classList.remove("hidden");
+    } else {
+      salaryField.classList.add("hidden");
+    }
+    descriptionPreviewText = formatDescriptionPreview(extractedData.description);
+    previewDescription.value = descriptionPreviewText;
+
+    if (fromCache) {
+      reExtractBtn.classList.remove("hidden");
+    } else {
+      reExtractBtn.classList.add("hidden");
+    }
+
+    showOnly(previewEl);
+  }
+
+  function renderDiagnostics(diag) {
+    if (!diag || !diagnosticsEl || !diagnosticsContent) return;
+
+    let html = `<div class="field-status"><span>Platform</span><span>${diag.platform || "Unknown"}</span></div>`;
+    if (diag.siteKey) {
+      html += `<div class="field-status"><span>Site</span><span>${diag.siteKey}</span></div>`;
+    }
+    if (diag.resultState) {
+      html += `<div class="field-status"><span>State</span><span>${diag.resultState}</span></div>`;
+    }
+    html += `<div class="field-status"><span>Confidence</span><span>${(diag.confidence * 100).toFixed(0)}%</span></div>`;
+
+    if (diag.staleAdapter) {
+      html += `<div class="field-status"><span>Adapter</span><span class="missing">Site changed</span></div>`;
+    }
+
+    if (diag.fieldsFound) {
+      for (const [field, found] of Object.entries(diag.fieldsFound)) {
+        const cls = found ? "found" : "missing";
+        const icon = found ? "\u2713" : "\u2717";
+        html += `<div class="field-status"><span>${field}</span><span class="${cls}">${icon}</span></div>`;
+      }
+    }
+
+    if (typeof diag.descriptionLength === "number") {
+      html += `<div class="field-status"><span>Desc. length</span><span>${diag.descriptionLength} chars</span></div>`;
+    }
+
+    if (Array.isArray(diag.validationErrors) && diag.validationErrors.length) {
+      html += `<div class="field-status"><span>Validation</span><span>${diag.validationErrors.join(", ")}</span></div>`;
+    }
+
+    if (Array.isArray(diag.missingRequiredSelectors) && diag.missingRequiredSelectors.length) {
+      html += `<div class="field-status"><span>Missing selectors</span><span>${diag.missingRequiredSelectors.join(", ")}</span></div>`;
+    }
+
+    if (diag.domFingerprint) {
+      html += `<div class="field-status"><span>DOM fingerprint</span><span>${diag.domFingerprint}</span></div>`;
+    }
+
+    diagnosticsContent.innerHTML = html;
+    diagnosticsEl.classList.remove("hidden");
+  }
+
+  function hideDiagnostics() {
+    if (diagnosticsEl) diagnosticsEl.classList.add("hidden");
+  }
+
+  function getEditedData() {
+    if (!extractedData) return extractedData;
+
+    const edited = { ...extractedData };
+    const titleVal = previewTitle.value.trim();
+    const companyVal = previewCompany.value.trim();
+    const locationVal = previewLocation.value.trim();
+    const salaryVal = previewSalary.value.trim();
+    const descVal = previewDescription.value.trim();
+
+    if (titleVal) edited.title = titleVal;
+    if (companyVal) edited.company = companyVal;
+    edited.location = locationVal;
+    edited.salary = salaryVal;
+
+    // Only override description if user actually edited it
+    if (descVal && descVal !== descriptionPreviewText) {
+      edited.description = descVal;
+    }
+
+    return edited;
   }
 
   async function ensureContentScript(tabId) {
@@ -150,8 +258,33 @@
     }
   }
 
+  async function copyDomDebugPacket() {
+    domDebugBtn.disabled = true;
+    const prevLabel = domDebugBtn.textContent;
+    domDebugBtn.textContent = "Collecting...";
+
+    try {
+      const tabId = await getActiveTabId();
+      await ensureContentScript(tabId);
+      const response = await runtime.tabs.sendMessage(tabId, { action: "collectDomDebugPacket" });
+
+      if (!response?.success || !response.data) {
+        throw new Error(response?.error || "Could not collect DOM debug packet.");
+      }
+
+      await copyText(JSON.stringify(response.data, null, 2));
+      showStatus("success", "DOM debug copied. Paste it in chat.");
+    } catch (err) {
+      showStatus("error", `DOM debug copy failed: ${err.message}`);
+    } finally {
+      domDebugBtn.disabled = false;
+      domDebugBtn.textContent = prevLabel;
+    }
+  }
+
   async function copyParsedJson() {
-    if (!extractedData) {
+    const data = getEditedData();
+    if (!data) {
       showStatus("error", "No parsed data available to copy.");
       return;
     }
@@ -160,7 +293,7 @@
     copyJsonBtn.textContent = "Copying...";
 
     try {
-      await copyText(JSON.stringify(extractedData, null, 2));
+      await copyText(JSON.stringify(data, null, 2));
       showStatus("success", "Parsed JSON copied.");
       copyJsonBtn.textContent = "Copied";
       setTimeout(() => {
@@ -180,39 +313,63 @@
   // Extraction
   // ---------------------------------------------------------------------------
 
-  async function extractFromPage() {
+  async function extractFromPage(skipCache) {
     showOnly(loadingEl);
     hideStatus();
     setEmptyReason("");
+    hideDiagnostics();
     salaryField.classList.add("hidden");
 
     try {
       const tabId = await getActiveTabId();
+
+      // Check cache first (unless re-extracting)
+      if (!skipCache) {
+        try {
+          const cached = await runtime.runtime.sendMessage({
+            action: "getCachedExtraction",
+            tabId,
+          });
+          if (cached?.success && cached.data) {
+            extractedData = cached.data;
+            populatePreview(true);
+            return;
+          }
+        } catch {
+          // Cache miss or unsupported — proceed with fresh extraction
+        }
+      }
+
       await ensureContentScript(tabId);
 
       const response = await runtime.tabs.sendMessage(tabId, { action: "extractJobData" });
 
       if (!response?.success || !response.data) {
-        setEmptyReason(response?.error || "This page does not look like a complete job posting.");
+        const message = response?.diagnostics?.staleAdapter
+          ? "This supported site changed. Copy the debug packet and send it back so the adapter can be updated."
+          : response?.error || "This page does not look like a complete job posting.";
+        setEmptyReason(message);
+        if (response?.diagnostics) {
+          renderDiagnostics(response.diagnostics);
+        }
         showOnly(emptyEl);
         return;
       }
 
       extractedData = response.data;
-      resetSaveButton();
-      resetCopyJsonButton();
 
-      // Populate preview
-      previewTitle.textContent = extractedData.title || "\u2014";
-      previewCompany.textContent = extractedData.company || "\u2014";
-      previewLocation.textContent = extractedData.location || "\u2014";
-      if (extractedData.salary) {
-        previewSalary.textContent = extractedData.salary;
-        salaryField.classList.remove("hidden");
+      // Cache the result
+      try {
+        await runtime.runtime.sendMessage({
+          action: "cacheExtraction",
+          tabId,
+          data: response.data,
+        });
+      } catch {
+        // Cache storage failed — not critical
       }
-      previewDescription.textContent = formatDescriptionPreview(extractedData.description);
 
-      showOnly(previewEl);
+      populatePreview(false);
     } catch (err) {
       console.error("Pipeline extraction error:", err);
       setEmptyReason(err.message || "Could not extract job details from this page.");
@@ -224,42 +381,49 @@
   // Save
   // ---------------------------------------------------------------------------
 
-  async function saveJob() {
+  async function saveJob(saveForLater = false) {
     if (!extractedData) return;
 
-    setSavingState();
+    setSavingState(saveForLater ? "queue" : "save");
     hideStatus();
 
     try {
-      await doSave();
+      await doSave(saveForLater);
     } catch (err) {
       showStatus("error", `Error: ${err.message}`);
-      resetSaveButton();
+      resetSaveButtons();
     }
   }
 
-  async function doSave() {
+  async function doSave(saveForLater) {
     try {
+      const dataToSave = getEditedData();
+
       const result = await runtime.runtime.sendMessage({
         action: "saveJobToPipeline",
-        data: extractedData,
+        data: dataToSave,
+        saveForLater,
       });
 
       if (result?.success) {
-        showStatus("success", "Saved to Pipeline!");
+        showStatus("success", saveForLater ? "Saved for later in Pipeline!" : "Saved to Pipeline!");
         saveBtn.textContent = "Saved";
+        saveForLaterBtn.textContent = saveForLater ? "Queued" : "Save for Later";
         saveBtn.disabled = true;
+        saveForLaterBtn.disabled = true;
       } else if (result?.isDuplicate) {
         showStatus("warning", result?.error || "This job is already saved in Pipeline.");
         saveBtn.textContent = "Already Saved";
+        saveForLaterBtn.textContent = "Already Saved";
         saveBtn.disabled = true;
+        saveForLaterBtn.disabled = true;
       } else {
         showStatus("error", result?.error || "Failed to save. Please try again.");
-        resetSaveButton();
+        resetSaveButtons();
       }
     } catch (err) {
       showStatus("error", `Error: ${err.message}`);
-      resetSaveButton();
+      resetSaveButtons();
     }
   }
 
@@ -267,8 +431,14 @@
   // Init
   // ---------------------------------------------------------------------------
 
-  saveBtn.addEventListener("click", saveJob);
+  saveBtn.addEventListener("click", () => saveJob(false));
+  saveForLaterBtn.addEventListener("click", () => saveJob(true));
   copyJsonBtn.addEventListener("click", copyParsedJson);
   debugBtn.addEventListener("click", copyDebugPacket);
-  extractFromPage();
+  domDebugBtn.addEventListener("click", copyDomDebugPacket);
+  reExtractBtn.addEventListener("click", () => {
+    reExtractBtn.classList.add("hidden");
+    extractFromPage(true);
+  });
+  extractFromPage(false);
 })();

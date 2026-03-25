@@ -17,6 +17,7 @@
   const saveForLaterBtn = document.getElementById("save-for-later-btn");
   const copyJsonBtn = document.getElementById("copy-json-btn");
   const debugBtn = document.getElementById("debug-btn");
+  const domDebugBtn = document.getElementById("dom-debug-btn");
   const reExtractBtn = document.getElementById("re-extract-btn");
 
   const previewTitle = document.getElementById("preview-title");
@@ -119,7 +120,17 @@
     if (!diag || !diagnosticsEl || !diagnosticsContent) return;
 
     let html = `<div class="field-status"><span>Platform</span><span>${diag.platform || "Unknown"}</span></div>`;
+    if (diag.siteKey) {
+      html += `<div class="field-status"><span>Site</span><span>${diag.siteKey}</span></div>`;
+    }
+    if (diag.resultState) {
+      html += `<div class="field-status"><span>State</span><span>${diag.resultState}</span></div>`;
+    }
     html += `<div class="field-status"><span>Confidence</span><span>${(diag.confidence * 100).toFixed(0)}%</span></div>`;
+
+    if (diag.staleAdapter) {
+      html += `<div class="field-status"><span>Adapter</span><span class="missing">Site changed</span></div>`;
+    }
 
     if (diag.fieldsFound) {
       for (const [field, found] of Object.entries(diag.fieldsFound)) {
@@ -131,6 +142,18 @@
 
     if (typeof diag.descriptionLength === "number") {
       html += `<div class="field-status"><span>Desc. length</span><span>${diag.descriptionLength} chars</span></div>`;
+    }
+
+    if (Array.isArray(diag.validationErrors) && diag.validationErrors.length) {
+      html += `<div class="field-status"><span>Validation</span><span>${diag.validationErrors.join(", ")}</span></div>`;
+    }
+
+    if (Array.isArray(diag.missingRequiredSelectors) && diag.missingRequiredSelectors.length) {
+      html += `<div class="field-status"><span>Missing selectors</span><span>${diag.missingRequiredSelectors.join(", ")}</span></div>`;
+    }
+
+    if (diag.domFingerprint) {
+      html += `<div class="field-status"><span>DOM fingerprint</span><span>${diag.domFingerprint}</span></div>`;
     }
 
     diagnosticsContent.innerHTML = html;
@@ -235,6 +258,30 @@
     }
   }
 
+  async function copyDomDebugPacket() {
+    domDebugBtn.disabled = true;
+    const prevLabel = domDebugBtn.textContent;
+    domDebugBtn.textContent = "Collecting...";
+
+    try {
+      const tabId = await getActiveTabId();
+      await ensureContentScript(tabId);
+      const response = await runtime.tabs.sendMessage(tabId, { action: "collectDomDebugPacket" });
+
+      if (!response?.success || !response.data) {
+        throw new Error(response?.error || "Could not collect DOM debug packet.");
+      }
+
+      await copyText(JSON.stringify(response.data, null, 2));
+      showStatus("success", "DOM debug copied. Paste it in chat.");
+    } catch (err) {
+      showStatus("error", `DOM debug copy failed: ${err.message}`);
+    } finally {
+      domDebugBtn.disabled = false;
+      domDebugBtn.textContent = prevLabel;
+    }
+  }
+
   async function copyParsedJson() {
     const data = getEditedData();
     if (!data) {
@@ -298,7 +345,10 @@
       const response = await runtime.tabs.sendMessage(tabId, { action: "extractJobData" });
 
       if (!response?.success || !response.data) {
-        setEmptyReason(response?.error || "This page does not look like a complete job posting.");
+        const message = response?.diagnostics?.staleAdapter
+          ? "This supported site changed. Copy the debug packet and send it back so the adapter can be updated."
+          : response?.error || "This page does not look like a complete job posting.";
+        setEmptyReason(message);
         if (response?.diagnostics) {
           renderDiagnostics(response.diagnostics);
         }
@@ -385,6 +435,7 @@
   saveForLaterBtn.addEventListener("click", () => saveJob(true));
   copyJsonBtn.addEventListener("click", copyParsedJson);
   debugBtn.addEventListener("click", copyDebugPacket);
+  domDebugBtn.addEventListener("click", copyDomDebugPacket);
   reExtractBtn.addEventListener("click", () => {
     reExtractBtn.classList.add("hidden");
     extractFromPage(true);

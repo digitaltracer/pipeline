@@ -20,8 +20,29 @@
   const MIN_TITLE_LENGTH = 5;
   const MIN_DESCRIPTION_LENGTH = 120;
   const CONFIDENCE_THRESHOLD = 0.58;
+  const PARTIAL_CONFIDENCE_THRESHOLD = 0.42;
   const MAX_DESCRIPTION_LENGTH = 15000;
   const DEBUG_TEXT_LIMIT = 20000;
+  const ADAPTER_VERSION = "adapter-v1";
+
+  const RESULT_STATE = {
+    SUCCESS: "success",
+    PARTIAL: "partial",
+    UNSUPPORTED: "unsupported",
+    BROKEN_SITE_ADAPTER: "broken_site_adapter",
+  };
+
+  const SITE_KEYS = {
+    LinkedIn: "linkedin",
+    Indeed: "indeed",
+    Glassdoor: "glassdoor",
+    Greenhouse: "greenhouse",
+    Lever: "lever",
+    Workday: "workday",
+    Naukri: "naukri",
+    Instahyre: "instahyre",
+    Other: "other",
+  };
 
   const JOB_KEYWORDS = [
     "responsibilities",
@@ -256,6 +277,107 @@
 
     const base = (filtered.length ? filtered : segments)[0] || "";
     return normalizeText(base);
+  }
+
+  function normalizeAbsoluteUrl(value) {
+    const normalized = normalizeText(value);
+    if (!normalized) return "";
+
+    try {
+      return new URL(normalized, window.location.origin).href;
+    } catch {
+      return normalized;
+    }
+  }
+
+  function looksLikePersonName(text) {
+    const value = normalizeText(text);
+    if (!value || value.length < 5 || value.length > 80) return false;
+    if (/\d/.test(value) || /[|@]/.test(value)) return false;
+    if (/\b(meet the hiring team|people you can reach out to|school alumni|mutual connection|message|connect|follow|show all|about the job)\b/i.test(value)) {
+      return false;
+    }
+
+    const words = value.split(/\s+/).filter(Boolean);
+    if (words.length < 2 || words.length > 5) return false;
+
+    return words.every((word) => /^[A-Z][A-Za-z'’.-]*$/.test(word));
+  }
+
+  function isLinkedInContactNoiseLine(line) {
+    const value = normalizeText(line);
+    if (!value) return true;
+    const lower = value.toLowerCase();
+
+    if (
+      lower === "meet the hiring team" ||
+      lower === "people you can reach out to" ||
+      lower === "show all" ||
+      lower === "message" ||
+      lower === "connect" ||
+      lower === "follow" ||
+      lower === "about the job" ||
+      lower === "apply" ||
+      lower === "save" ||
+      lower === "share" ||
+      lower === "show more options"
+    ) {
+      return true;
+    }
+
+    if (/^\d+(?:st|nd|rd|th)$/.test(lower) || lower === "following") return true;
+    if (/\bmutual connection\b/.test(lower)) return true;
+    if (/\bschool alumni\b/.test(lower)) return true;
+    if (/\blogo\b/.test(lower)) return true;
+
+    return false;
+  }
+
+  function normalizeContactRole(role) {
+    const normalized = normalizeText(role);
+    if (!normalized) return "Other";
+
+    switch (normalized.toLowerCase()) {
+      case "recruiter":
+        return "Recruiter";
+      case "hiring manager":
+      case "hiringmanager":
+        return "Hiring Manager";
+      case "interviewer":
+        return "Interviewer";
+      case "referrer":
+        return "Referrer";
+      default:
+        return "Other";
+    }
+  }
+
+  function inferLinkedInContactRole(title) {
+    const lower = normalizeText(title).toLowerCase();
+    if (!lower) return "Other";
+    if (/\b(recruit|recruiting|talent|sourc|staffing|people partner|human resources|hr)\b/.test(lower)) {
+      return "Recruiter";
+    }
+    if (/\b(hiring manager|manager|director|head|lead|vp|vice president)\b/.test(lower)) {
+      return "Hiring Manager";
+    }
+    return "Other";
+  }
+
+  function normalizeContact(contact, fallbackCompanyName = "") {
+    if (!contact) return null;
+
+    const fullName = normalizeText(contact.fullName || contact.name || "");
+    if (!looksLikePersonName(fullName)) return null;
+
+    return {
+      fullName,
+      companyName: normalizeText(contact.companyName || fallbackCompanyName || ""),
+      title: normalizeText(contact.title || ""),
+      relationship: normalizeText(contact.relationship || ""),
+      linkedInURL: normalizeAbsoluteUrl(contact.linkedInURL || contact.linkedinURL || contact.url || ""),
+      role: normalizeContactRole(contact.role || inferLinkedInContactRole(contact.title || "")),
+    };
   }
 
   function cleanTitle(text) {
@@ -643,6 +765,13 @@
     return `${value.substring(0, limit)}\n\n[truncated ${value.length - limit} chars]`;
   }
 
+  function truncateRawDebugText(text, limit = DEBUG_TEXT_LIMIT) {
+    const value = String(text || "").trim();
+    if (!value) return "";
+    if (value.length <= limit) return value;
+    return `${value.substring(0, limit)}\n\n[truncated ${value.length - limit} chars]`;
+  }
+
   function toDebugRecord(record) {
     if (!record) return null;
     const normalized = normalizeRecord(record);
@@ -653,7 +782,19 @@
     };
   }
 
-  function collectDebugPacket(extractedData, rawCandidates) {
+  function summarizeDebugElement(element, extras = {}) {
+    if (!(element instanceof Element)) return null;
+    return {
+      tagName: element.tagName.toLowerCase(),
+      domFingerprint: buildDomFingerprint(element),
+      textPreview: truncateDebugText(element.innerText || "", 2500),
+      htmlPreview: truncateRawDebugText(element.outerHTML || "", 5000),
+      ...extras,
+    };
+  }
+
+  function collectDebugPacket(outcome) {
+    const { context, adapterRun, rawCandidates, payload, resultState } = outcome || {};
     const metaKeys = ["og:title", "og:description", "description", "twitter:title", "twitter:description"];
     const meta = {};
     for (const key of metaKeys) meta[key] = metaContent(key);
@@ -676,23 +817,86 @@
 
     return {
       timestamp: new Date().toISOString(),
-      extractorVersion: "heuristic-v4-debug",
+      extractorVersion: ADAPTER_VERSION,
       url: window.location.href,
       platform: detectPlatform(),
+      siteKey: context?.siteKey || detectSiteKey(),
+      variantKey: adapterRun?.variantKey || "",
+      adapterVersion: ADAPTER_VERSION,
+      resultState: resultState || RESULT_STATE.UNSUPPORTED,
+      fallbackUsed: Boolean(payload?.extractionQuality?.fallbackUsed),
+      validationErrors: adapterRun?.validation?.errors || [],
+      matchedSelectors: adapterRun?.diagnostics?.matchedSelectors || {},
+      missingRequiredSelectors: adapterRun?.diagnostics?.missingRequiredSelectors || [],
+      domFingerprint: adapterRun?.diagnostics?.domFingerprint || buildDomFingerprint(),
       documentTitle: document.title || "",
-      extraction: extractedData || null,
+      extraction: payload || null,
       candidates: {
-        platformSpecific: toDebugRecord(rawCandidates.platformSpecific),
-        jsonLd: toDebugRecord(rawCandidates.jsonLd),
-        microdata: toDebugRecord(rawCandidates.microdata),
-        semanticDom: toDebugRecord(rawCandidates.semanticDom),
-        meta: toDebugRecord(rawCandidates.meta),
+        siteAdapter: toDebugRecord(rawCandidates?.siteAdapter),
+        jsonLd: toDebugRecord(rawCandidates?.jsonLd),
+        microdata: toDebugRecord(rawCandidates?.microdata),
+        semanticDom: toDebugRecord(rawCandidates?.semanticDom),
+        meta: toDebugRecord(rawCandidates?.meta),
       },
       meta,
       jsonLdCount: document.querySelectorAll('script[type="application/ld+json"]').length,
       jsonLdScripts,
       mainText,
       bodyTextHead,
+    };
+  }
+
+  function collectDomDebugPacket(outcome) {
+    const { context, adapterRun, payload, resultState } = outcome || {};
+    const currentJobId = context?.siteKey === SITE_KEYS.LinkedIn ? getLinkedInCurrentJobId() : "";
+    const linkedInCandidates =
+      context?.siteKey === SITE_KEYS.LinkedIn
+        ? getLinkedInDetailsRegionCandidates()
+            .slice(0, 8)
+            .map(({ element, score }) =>
+              summarizeDebugElement(element, {
+                score,
+                currentJobMatch: hasLinkedInCurrentJobSignal(element, currentJobId),
+                hasListSignals: hasLinkedInListPaneSignals(element),
+                jobLinkCount: countLinkedInJobLinks(element),
+              })
+            )
+            .filter(Boolean)
+        : [];
+    const semanticCandidates = getSemanticDomCandidates()
+      .slice(0, 5)
+      .map(({ element, score }) =>
+        summarizeDebugElement(element, {
+          score,
+          jobLinkCount: countLinkedInJobLinks(element),
+        })
+      )
+      .filter(Boolean);
+
+    return {
+      timestamp: new Date().toISOString(),
+      extractorVersion: ADAPTER_VERSION,
+      url: window.location.href,
+      platform: detectPlatform(),
+      siteKey: context?.siteKey || detectSiteKey(),
+      variantKey: adapterRun?.variantKey || "",
+      resultState: resultState || RESULT_STATE.UNSUPPORTED,
+      documentTitle: document.title || "",
+      currentJobId,
+      extraction: payload || null,
+      adapterDiagnostics: adapterRun
+        ? {
+            validationErrors: adapterRun.validation?.errors || [],
+            matchedSelectors: adapterRun.diagnostics?.matchedSelectors || {},
+            missingRequiredSelectors: adapterRun.diagnostics?.missingRequiredSelectors || [],
+            domFingerprint: adapterRun.diagnostics?.domFingerprint || "",
+          }
+        : null,
+      linkedInCandidates,
+      semanticCandidates,
+      bodyPreview: summarizeDebugElement(document.body, {
+        childElementCount: document.body?.childElementCount || 0,
+      }),
     };
   }
 
@@ -888,6 +1092,14 @@
     return /(^|\.)linkedin\.com$/i.test(location.hostname) && /\/jobs(\/|$)/i.test(location.pathname);
   }
 
+  function getLinkedInCurrentJobId() {
+    try {
+      return normalizeText(new URLSearchParams(location.search).get("currentJobId") || "");
+    } catch {
+      return "";
+    }
+  }
+
   function hasLinkedInListPaneSignals(element) {
     if (!(element instanceof Element)) return false;
     return Boolean(
@@ -895,6 +1107,42 @@
         ".jobs-search-results-list, .jobs-search-results__list-item, ul.scaffold-layout__list-container, .scaffold-layout__list"
       )
     );
+  }
+
+  function countLinkedInJobLinks(element) {
+    if (!(element instanceof Element)) return 0;
+    return element.querySelectorAll('a[href*="/jobs/view/"], a[href*="/jobs/collections/"]').length;
+  }
+
+  function hasLinkedInCurrentJobSignal(element, jobId = getLinkedInCurrentJobId()) {
+    if (!(element instanceof Element) || !jobId) return false;
+    const selectors = [
+      `[data-job-id="${jobId}"]`,
+      `[data-urn*="${jobId}"]`,
+      `a[href*="/jobs/view/${jobId}"]`,
+      `a[href*="currentJobId=${jobId}"]`,
+    ];
+
+    return selectors.some((selector) => {
+      try {
+        return Boolean(element.matches(selector) || element.querySelector(selector));
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  function addLinkedInAncestorCandidates(element, candidates, maxDepth = 6) {
+    let current = element instanceof Element ? element : null;
+    let depth = 0;
+
+    while (current && depth < maxDepth) {
+      if (/^(SECTION|ARTICLE|MAIN|DIV|ASIDE)$/.test(current.tagName)) {
+        candidates.add(current);
+      }
+      current = current.parentElement;
+      depth += 1;
+    }
   }
 
   function scoreLinkedInDetailsRegion(element) {
@@ -906,6 +1154,7 @@
 
     let score = 0;
     if (text.length >= 280 && text.length <= 16000) score += 2;
+    if (hasLinkedInCurrentJobSignal(element)) score += 4;
     if (
       element.querySelector(
         ".job-details-jobs-unified-top-card, .jobs-unified-top-card, .jobs-unified-top-card__job-title, .job-details-jobs-unified-top-card__job-title"
@@ -913,10 +1162,14 @@
     ) {
       score += 3;
     }
+    if (element.querySelector('button[aria-label*="apply" i], .jobs-apply-button, .jobs-apply-button--top-card, [data-live-test-job-apply-button]')) {
+      score += 3;
+    }
     if (element.querySelector(".jobs-apply-button, .jobs-apply-button--top-card, [data-live-test-job-apply-button]")) {
       score += 2;
     }
     if (element.querySelector('a[href*="/company/"]')) score += 2;
+    if (element.querySelector("h1, h2, [role='heading']")) score += 1;
     if (
       element.querySelector(
         ".jobs-description-content__text, .jobs-description__content, .jobs-box__html-content, #job-details"
@@ -925,12 +1178,16 @@
       score += 5;
     }
     if (/\b(about the job|responsibilities|qualifications|job description)\b/i.test(text)) score += 2;
-    if (/\b(top job picks for you|jobs for you)\b/i.test(text)) score -= 4;
-    if (/\b(people also viewed|more jobs|promoted)\b/i.test(text)) score -= 2;
+    if (/\b(posted\s+\d+\s+(hour|day|week|month)s?\s+ago|easy apply|actively reviewing applicants)\b/i.test(text)) score += 1;
+    if (/\b(top job picks for you|jobs for you|jobs where you’re more likely to hear back|jobs where you're more likely to hear back|explore companies that hire for your skills)\b/i.test(text)) score -= 5;
+    if (/\b(people also viewed|more jobs|promoted|feed post|load more|show all)\b/i.test(text)) score -= 3;
+    const jobLinkCount = countLinkedInJobLinks(element);
+    if (jobLinkCount >= 6) score -= 6;
+    else if (jobLinkCount >= 3) score -= 2;
     return score;
   }
 
-  function findLinkedInDetailsRegion() {
+  function getLinkedInDetailsRegionCandidates() {
     const candidates = new Set();
     const selectors = [
       ".jobs-search__job-details--container",
@@ -967,12 +1224,54 @@
         if (container) candidates.add(container);
       });
 
+    const genericSeedSelectors = [
+      'button[aria-label*="apply" i]',
+      ".jobs-apply-button",
+      ".jobs-apply-button--top-card",
+      "[data-live-test-job-apply-button]",
+      'a[href*="/company/"]',
+      'h1, h2, [role="heading"]',
+      ".jobs-description-content__text",
+      ".jobs-description__content",
+      ".jobs-box__html-content",
+      "#job-details",
+      '[aria-label*="job details" i]',
+      '[data-test-id*="job-title" i]',
+      '[data-testid*="job-title" i]',
+    ];
+
+    for (const selector of genericSeedSelectors) {
+      document.querySelectorAll(selector).forEach((element) => addLinkedInAncestorCandidates(element, candidates));
+    }
+
+    const currentJobId = getLinkedInCurrentJobId();
+    if (currentJobId) {
+      const currentJobSelectors = [
+        `[data-job-id="${currentJobId}"]`,
+        `[data-urn*="${currentJobId}"]`,
+        `a[href*="/jobs/view/${currentJobId}"]`,
+        `a[href*="currentJobId=${currentJobId}"]`,
+      ];
+
+      for (const selector of currentJobSelectors) {
+        try {
+          document.querySelectorAll(selector).forEach((element) => addLinkedInAncestorCandidates(element, candidates, 8));
+        } catch {
+          // Invalid selector or no matches; continue scanning the rest.
+        }
+      }
+    }
+
     const scored = Array.from(candidates)
       .map((element) => ({ element, score: scoreLinkedInDetailsRegion(element) }))
       .filter((candidate) => candidate.score >= 4)
       .sort((a, b) => b.score - a.score);
 
-    return scored[0]?.element || null;
+    return scored;
+  }
+
+  function findLinkedInDetailsRegion() {
+    return getLinkedInDetailsRegionCandidates()[0]?.element || null;
   }
 
   function tryExpandLinkedInDescription(root) {
@@ -1032,7 +1331,118 @@
       if (isValidDescription(normalized)) return normalized;
     }
 
+    const fallbackText = normalizeText(root.innerText || "");
+    if (/\b(about the job|job description|responsibilities|qualifications|what you'll do)\b/i.test(fallbackText)) {
+      const normalized = cleanDescriptionText(dedupeWords(clampDescription(fallbackText)) || fallbackText);
+      if (isValidDescription(normalized)) return normalized;
+    }
+
     return "";
+  }
+
+  function findLinkedInHiringTeamHeading(root) {
+    return Array.from(root.querySelectorAll("h1, h2, h3, h4, strong, span, div, p")).find(
+      (element) => normalizeText(element.textContent || "").toLowerCase() === "meet the hiring team"
+    );
+  }
+
+  function selectLinkedInHiringTeamSection(heading, root) {
+    let best = heading.parentElement || null;
+    let bestScore = -1;
+
+    for (let current = heading.parentElement; current && current !== root; current = current.parentElement) {
+      const text = normalizeText(current.innerText || "");
+      if (!text || text.length > 1600) continue;
+
+      let score = 0;
+      if (/meet the hiring team/i.test(text)) score += 2;
+      if (/people you can reach out to/i.test(text)) score += 1;
+      if (/mutual connection/i.test(text)) score += 1;
+      if (/message/i.test(text)) score += 1;
+      if (current.querySelector('a[href*="/in/"], a[href*="linkedin.com/in/"]')) score += 2;
+      if (text.length >= 40 && text.length <= 500) score += 1;
+      if (/about the job/i.test(text)) score -= 3;
+
+      if (score > bestScore) {
+        best = current;
+        bestScore = score;
+      }
+    }
+
+    return best;
+  }
+
+  function extractLinkedInHiringContact(root, companyName) {
+    const heading = findLinkedInHiringTeamHeading(root);
+    if (!heading) return null;
+
+    const section = selectLinkedInHiringTeamSection(heading, root) || root;
+    const candidateCards = new Set();
+
+    section.querySelectorAll('a[href*="/in/"], a[href*="linkedin.com/in/"]').forEach((anchor) => {
+      const card = anchor.closest("li, article, section, div") || anchor;
+      if (card instanceof Element) candidateCards.add(card);
+    });
+
+    if (!candidateCards.size) {
+      candidateCards.add(section);
+    }
+
+    let bestCard = null;
+    let bestScore = -1;
+
+    for (const card of candidateCards) {
+      const text = normalizeText(card.innerText || "");
+      if (!text) continue;
+
+      let score = 0;
+      if (card.querySelector('a[href*="/in/"], a[href*="linkedin.com/in/"]')) score += 2;
+      if (/mutual connection/i.test(text)) score += 1;
+      if (/message/i.test(text)) score += 1;
+      if (text.length >= 20 && text.length <= 400) score += 1;
+      if (/about the job/i.test(text)) score -= 3;
+
+      if (score > bestScore) {
+        bestCard = card;
+        bestScore = score;
+      }
+    }
+
+    const source = bestCard || section;
+    const lines = compactMultiline(source.innerText || section.innerText || "")
+      .split("\n")
+      .map((line) => normalizeText(line))
+      .filter(Boolean)
+      .filter((line) => !isLinkedInContactNoiseLine(line));
+
+    let fullName = "";
+    let title = "";
+
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      if (!looksLikePersonName(line)) continue;
+      fullName = line;
+      title =
+        lines
+          .slice(index + 1)
+          .find((candidate) => !isLinkedInContactNoiseLine(candidate) && !looksLikePersonName(candidate)) || "";
+      break;
+    }
+
+    if (!fullName) return null;
+
+    const profileLink = source.querySelector('a[href*="/in/"], a[href*="linkedin.com/in/"]');
+    return normalizeContact(
+      {
+        fullName,
+        companyName,
+        title,
+        relationship: "LinkedIn hiring team",
+        linkedInURL: profileLink ? profileLink.getAttribute("href") || "" : "",
+        role: inferLinkedInContactRole(title),
+      },
+      companyName
+    );
   }
 
   function extractFromLinkedInPanel() {
@@ -1047,6 +1457,12 @@
     const parsedTitleCompany = parseTitleCompanyFromDocumentTitle();
     const topCard =
       root.querySelector(".job-details-jobs-unified-top-card, .jobs-unified-top-card") || root;
+    const rootText = normalizeText(root.innerText || "");
+    const rootLines = compactMultiline(rootText)
+      .split("\n")
+      .map((line) => normalizeText(line))
+      .filter(Boolean)
+      .slice(0, 40);
 
     const titleCandidate = cleanTitle(
       pickFirstText(
@@ -1060,10 +1476,11 @@
         topCard
       )
     );
+    const fallbackTitle = extractBestTitle(root, rootLines, parsedTitleCompany.title);
     const title = looksLikeTitle(titleCandidate)
       ? titleCandidate
-      : looksLikeTitle(parsedTitleCompany.title)
-      ? parsedTitleCompany.title
+      : looksLikeTitle(fallbackTitle)
+      ? fallbackTitle
       : "";
 
     const companyCandidate =
@@ -1080,7 +1497,17 @@
           'a[href*="/company/"]',
         ],
         topCard
-      ) || parsedTitleCompany.company;
+      ) ||
+      pickFirstText(
+        [
+          '[data-test-id*="company" i]',
+          '[data-testid*="company" i]',
+          'a[href*="/company/"]',
+        ],
+        root
+      ) ||
+      extractCompanyFromLines(rootLines, title) ||
+      parsedTitleCompany.company;
     const company = isValidCompany(companyCandidate) ? companyCandidate : "";
 
     const topCardText = normalizeText(
@@ -1103,11 +1530,12 @@
           '[data-testid*="location" i]',
         ],
         topCard
-      ) || extractLocationFromLines(topLines)
+      ) || extractLocationFromLines(topLines) || extractLocationFromLines(rootLines)
     );
     const location = looksLikeLocation(locationCandidate) ? locationCandidate : "";
 
     const description = extractLinkedInDescriptionText(root);
+    const contact = extractLinkedInHiringContact(root, company);
     const salary =
       pickFirstText(
         [
@@ -1144,6 +1572,7 @@
       company,
       location,
       description,
+      contact,
       salary,
       postedAt,
       applicationDeadline,
@@ -1432,6 +1861,118 @@
   }
 
   // ---------------------------------------------------------------------------
+  // 9. Naukri extraction
+  // ---------------------------------------------------------------------------
+
+  function extractFromNaukri() {
+    if (!location.hostname.includes("naukri.com")) return null;
+
+    const title = cleanTitle(
+      pickFirstText([
+        ".styles_jd-header-title__rZwM1",
+        ".jd-header-title",
+        '[class*="jd-header-title"]',
+        'h1[class*="title"]',
+        "h1",
+      ])
+    );
+
+    const companyCandidate =
+      pickFirstText([
+        ".styles_jd-header-comp-name__MvqAI a",
+        ".styles_jd-header-comp-name__MvqAI",
+        ".jd-header-comp-name a",
+        '[class*="comp-name"] a',
+        '[class*="company"] a',
+      ]) || parseTitleCompanyFromDocumentTitle().company;
+    const company = isValidCompany(companyCandidate) ? companyCandidate : "";
+
+    const locationCandidate = cleanLocation(
+      pickFirstText([
+        ".styles_jhc__location__W_pVs",
+        ".jd-header-location",
+        '[class*="location"]',
+        '[title*="location" i]',
+      ])
+    );
+    const loc = looksLikeLocation(locationCandidate) ? locationCandidate : "";
+
+    const description = clampDescription(
+      pickFirstInnerText([
+        ".styles_job-desc-container__txpYf",
+        ".styles_JDC__dang-inner-html__h0K4t",
+        "#jobDescriptionContainer",
+        '[class*="job-desc"]',
+        '[class*="dang-inner-html"]',
+      ])
+    );
+
+    const salary = extractSalaryFromText(
+      pickFirstText([
+        ".styles_jhc__salary__jdfEC",
+        ".jd-header-salary",
+        '[class*="salary"]',
+      ]) || description
+    );
+    const postedAt = extractPostedDateFromText(description);
+    const applicationDeadline = extractDeadlineDateFromText(description);
+
+    if (!title && !description) return null;
+
+    return { title, company, location: loc, description, salary, postedAt, applicationDeadline, source: "naukri-panel" };
+  }
+
+  // ---------------------------------------------------------------------------
+  // 10. Instahyre extraction
+  // ---------------------------------------------------------------------------
+
+  function extractFromInstahyre() {
+    if (!location.hostname.includes("instahyre.com")) return null;
+
+    const title = cleanTitle(
+      pickFirstText([
+        '[class*="job-title"]',
+        ".profile--heading",
+        "h1",
+      ])
+    );
+
+    const companyCandidate =
+      pickFirstText([
+        '[class*="company-name"]',
+        '[class*="employer-name"]',
+        'a[href*="/company/"]',
+      ]) || parseTitleCompanyFromDocumentTitle().company;
+    const company = isValidCompany(companyCandidate) ? companyCandidate : "";
+
+    const locationCandidate = cleanLocation(
+      pickFirstText([
+        '[class*="location"]',
+        ".job-location",
+        ".location",
+      ])
+    );
+    const loc = looksLikeLocation(locationCandidate) ? locationCandidate : "";
+
+    const description = clampDescription(
+      pickFirstInnerText([
+        '[class*="job-description"]',
+        ".job-description",
+        ".description",
+        "main",
+      ])
+    );
+
+    const salary = extractSalaryFromText(description);
+    const postedAt = extractPostedDateFromText(description);
+    const applicationDeadline = extractDeadlineDateFromText(description);
+
+    if (!title && !description) return null;
+
+    return { title, company, location: loc, description, salary, postedAt, applicationDeadline, source: "instahyre-panel" };
+  }
+
+  // ---------------------------------------------------------------------------
   // Platform-specific extractor dispatcher
   // ---------------------------------------------------------------------------
 
@@ -1443,12 +1984,249 @@
       case "Greenhouse": return extractFromGreenhouse();
       case "Lever":      return extractFromLever();
       case "Workday":    return extractFromWorkday();
+      case "Naukri":     return extractFromNaukri();
+      case "Instahyre":  return extractFromInstahyre();
       default:           return null;
     }
   }
 
+  function createExtractionContext() {
+    const platform = detectPlatform();
+    return {
+      url: window.location.href,
+      platform,
+      siteKey: getSiteKey(platform),
+      adapterVersion: ADAPTER_VERSION,
+      documentTitle: document.title || "",
+    };
+  }
+
+  const ADAPTER_REGISTRY = {
+    [SITE_KEYS.LinkedIn]: {
+      matches: (context) => context.siteKey === SITE_KEYS.LinkedIn,
+      selectVariant() {
+        if (document.querySelector(".jobs-search__job-details--container, .jobs-search-two-pane__job-details, .jobs-search-two-pane__job-details-pane")) {
+          return "two-pane-detail";
+        }
+        if (document.querySelector(".jobs-details, .scaffold-layout__detail")) {
+          return "scaffold-detail";
+        }
+        if (document.querySelector(".jobs-unified-top-card, .job-details-jobs-unified-top-card")) return "unified-top-card";
+        return "generic-linkedin";
+      },
+      prepare() {
+        const root = findLinkedInDetailsRegion();
+        if (root) tryExpandLinkedInDescription(root);
+      },
+      extract: () => extractFromLinkedInPanel(),
+      validate: (record) => validateAdapterRecord(record),
+      buildDiagnostics() {
+        const root = findLinkedInDetailsRegion() || document;
+        const audit = auditSelectorGroups({
+          title: {
+            required: true,
+            selectors: [
+              ".job-details-jobs-unified-top-card__job-title",
+              ".jobs-unified-top-card__job-title",
+              '[class*="jobs-unified-top-card__job-title"]',
+            ],
+          },
+          company: {
+            required: true,
+            selectors: [
+              ".job-details-jobs-unified-top-card__company-name a",
+              ".jobs-unified-top-card__company-name a",
+              '[class*="jobs-unified-top-card__company-name"] a',
+            ],
+          },
+          location: {
+            required: false,
+            selectors: [
+              ".jobs-unified-top-card__bullet",
+              ".job-details-jobs-unified-top-card__tertiary-description-container",
+            ],
+          },
+          description: {
+            required: true,
+            selectors: [
+              ".jobs-description-content__text",
+              ".jobs-description__content",
+              ".jobs-box__html-content",
+              "#job-details",
+            ],
+          },
+        }, root);
+        return { ...audit, domFingerprint: buildDomFingerprint(root) };
+      },
+    },
+    [SITE_KEYS.Indeed]: {
+      matches: (context) => context.siteKey === SITE_KEYS.Indeed,
+      selectVariant() {
+        return document.querySelector('[data-testid="jobsearch-JobInfoHeader-title"]') ? "testid" : "legacy";
+      },
+      prepare() {},
+      extract: () => extractFromIndeed(),
+      validate: (record) => validateAdapterRecord(record),
+      buildDiagnostics() {
+        const root = document.querySelector("#jobDescriptionText, .jobsearch-JobComponent-description")?.closest("main, article, section, div") || document;
+        const audit = auditSelectorGroups({
+          title: { required: true, selectors: ['h1.jobsearch-JobInfoHeader-title', '[data-testid="jobsearch-JobInfoHeader-title"]'] },
+          company: { required: true, selectors: ['[data-testid="inlineHeader-companyName"]', '[data-company-name="true"]'] },
+          location: { required: false, selectors: ['[data-testid="inlineHeader-companyLocation"]', '[data-testid="job-location"]'] },
+          description: { required: true, selectors: ["#jobDescriptionText", '[data-testid="jobDescriptionText"]'] },
+        }, root);
+        return { ...audit, domFingerprint: buildDomFingerprint(root) };
+      },
+    },
+    [SITE_KEYS.Glassdoor]: {
+      matches: (context) => context.siteKey === SITE_KEYS.Glassdoor,
+      selectVariant() {
+        return document.querySelector('[data-test="jobTitle"], [data-testid="jobTitle"]') ? "testid" : "generic";
+      },
+      prepare() {},
+      extract: () => extractFromGlassdoor(),
+      validate: (record) => validateAdapterRecord(record),
+      buildDiagnostics() {
+        const root = document.querySelector('[data-test="jobDescription"], #JobDescriptionContainer')?.closest("main, article, section, div") || document;
+        const audit = auditSelectorGroups({
+          title: { required: true, selectors: ['[data-test="jobTitle"]', '[data-testid="jobTitle"]'] },
+          company: { required: true, selectors: ['[data-test="employer-name"]', '[data-testid="employer-name"]'] },
+          location: { required: false, selectors: ['[data-test="location"]', '[data-testid="location"]'] },
+          description: { required: true, selectors: ['[data-test="jobDescription"]', "#JobDescriptionContainer"] },
+        }, root);
+        return { ...audit, domFingerprint: buildDomFingerprint(root) };
+      },
+    },
+    [SITE_KEYS.Greenhouse]: {
+      matches: (context) => context.siteKey === SITE_KEYS.Greenhouse,
+      selectVariant() {
+        return document.querySelector(".job-post-content, .job-post-title") ? "job-post" : "generic";
+      },
+      prepare() {},
+      extract: () => extractFromGreenhouse(),
+      validate: (record) => validateAdapterRecord(record, { minDescriptionLength: 60 }),
+      buildDiagnostics() {
+        const root = document.querySelector("#content, .job-post-content") || document;
+        const audit = auditSelectorGroups({
+          title: { required: true, selectors: [".app-title", ".job-post-title", "h1.heading"] },
+          company: { required: true, selectors: [".company-name", "#header .company-name"] },
+          location: { required: false, selectors: [".location", ".job-post-location"] },
+          description: { required: true, selectors: ["#content .body", "#content", ".job-post-content"] },
+        }, root);
+        return { ...audit, domFingerprint: buildDomFingerprint(root) };
+      },
+    },
+    [SITE_KEYS.Lever]: {
+      matches: (context) => context.siteKey === SITE_KEYS.Lever,
+      selectVariant() {
+        return document.querySelector(".posting-headline") ? "posting-page" : "generic";
+      },
+      prepare() {},
+      extract: () => extractFromLever(),
+      validate: (record) => validateAdapterRecord(record, { minDescriptionLength: 60 }),
+      buildDiagnostics() {
+        const root = document.querySelector(".posting-page, .section-wrapper") || document;
+        const audit = auditSelectorGroups({
+          title: { required: true, selectors: [".posting-headline h2", ".section-wrapper .posting-headline h2"] },
+          company: { required: true, selectors: [".company-name", ".main-header-content .company-name"] },
+          location: { required: false, selectors: [".posting-categories .location", ".location"] },
+          description: { required: true, selectors: [".section-wrapper .content", ".posting-page .content"] },
+        }, root);
+        return { ...audit, domFingerprint: buildDomFingerprint(root) };
+      },
+    },
+    [SITE_KEYS.Workday]: {
+      matches: (context) => context.siteKey === SITE_KEYS.Workday,
+      selectVariant() {
+        return document.querySelector('[data-automation-id="jobPostingHeader"]') ? "automation-id" : "generic";
+      },
+      prepare() {},
+      extract: () => extractFromWorkday(),
+      validate: (record) => validateAdapterRecord(record),
+      buildDiagnostics() {
+        const root = document.querySelector('[data-automation-id="jobPostingDescription"], .job-description')?.closest("main, article, section, div") || document;
+        const audit = auditSelectorGroups({
+          title: { required: true, selectors: ['[data-automation-id="jobPostingHeader"]', '[data-automation-id="job-title"]'] },
+          company: { required: true, selectors: ['[data-automation-id="jobPostingCompanyName"]', '[data-automation-id="company"]'] },
+          location: { required: false, selectors: ['[data-automation-id="locations"]', '[data-automation-id="jobPostingLocation"]'] },
+          description: { required: true, selectors: ['[data-automation-id="jobPostingDescription"]', '[data-automation-id="job-posting-description"]'] },
+        }, root);
+        return { ...audit, domFingerprint: buildDomFingerprint(root) };
+      },
+    },
+    [SITE_KEYS.Naukri]: {
+      matches: (context) => context.siteKey === SITE_KEYS.Naukri,
+      selectVariant() {
+        return document.querySelector(".styles_jd-header-title__rZwM1") ? "modern" : "legacy";
+      },
+      prepare() {},
+      extract: () => extractFromNaukri(),
+      validate: (record) => validateAdapterRecord(record, { minDescriptionLength: 80 }),
+      buildDiagnostics() {
+        const root = document.querySelector(".styles_job-desc-container__txpYf, #jobDescriptionContainer")?.closest("main, article, section, div") || document;
+        const audit = auditSelectorGroups({
+          title: { required: true, selectors: [".styles_jd-header-title__rZwM1", ".jd-header-title", '[class*="jd-header-title"]'] },
+          company: { required: true, selectors: [".styles_jd-header-comp-name__MvqAI a", ".jd-header-comp-name a"] },
+          location: { required: false, selectors: [".styles_jhc__location__W_pVs", ".jd-header-location"] },
+          description: { required: true, selectors: [".styles_job-desc-container__txpYf", ".styles_JDC__dang-inner-html__h0K4t", "#jobDescriptionContainer"] },
+        }, root);
+        return { ...audit, domFingerprint: buildDomFingerprint(root) };
+      },
+    },
+    [SITE_KEYS.Instahyre]: {
+      matches: (context) => context.siteKey === SITE_KEYS.Instahyre,
+      selectVariant() {
+        return document.querySelector('[class*="job-description"]') ? "job-description" : "generic";
+      },
+      prepare() {},
+      extract: () => extractFromInstahyre(),
+      validate: (record) => validateAdapterRecord(record, { minDescriptionLength: 80 }),
+      buildDiagnostics() {
+        const root = document.querySelector('[class*="job-description"], .job-description, main') || document;
+        const audit = auditSelectorGroups({
+          title: { required: true, selectors: ['[class*="job-title"]', ".profile--heading", "h1"] },
+          company: { required: true, selectors: ['[class*="company-name"]', '[class*="employer-name"]', 'a[href*="/company/"]'] },
+          location: { required: false, selectors: ['[class*="location"]', ".job-location", ".location"] },
+          description: { required: true, selectors: ['[class*="job-description"]', ".job-description", ".description"] },
+        }, root);
+        return { ...audit, domFingerprint: buildDomFingerprint(root) };
+      },
+    },
+  };
+
+  function runSiteAdapter(context) {
+    const adapter = ADAPTER_REGISTRY[context.siteKey];
+    if (!adapter || !adapter.matches(context)) return null;
+
+    const variantKey = typeof adapter.selectVariant === "function" ? adapter.selectVariant(context) || "default" : "default";
+    const adapterContext = { ...context, variantKey };
+
+    if (typeof adapter.prepare === "function") {
+      adapter.prepare(adapterContext);
+    }
+
+    const record = normalizeRecord(typeof adapter.extract === "function" ? adapter.extract(adapterContext) : null);
+    const validation =
+      typeof adapter.validate === "function"
+        ? adapter.validate(record, adapterContext)
+        : validateAdapterRecord(record);
+    const diagnostics =
+      typeof adapter.buildDiagnostics === "function"
+        ? adapter.buildDiagnostics(adapterContext, record, validation)
+        : { matchedSelectors: {}, missingRequiredSelectors: [], domFingerprint: buildDomFingerprint() };
+
+    return {
+      siteKey: context.siteKey,
+      variantKey,
+      adapterVersion: context.adapterVersion,
+      record,
+      validation,
+      diagnostics,
+    };
+  }
+
   // ---------------------------------------------------------------------------
-  // 9. Semantic DOM extraction (class-agnostic heuristics)
+  // 11. Semantic DOM extraction (class-agnostic heuristics)
   // ---------------------------------------------------------------------------
 
   function scoreRegion(element) {
@@ -1601,6 +2379,13 @@
     };
   }
 
+  function getSemanticDomCandidates() {
+    return getCandidateRegions()
+      .map((element) => ({ element, score: scoreRegion(element) }))
+      .filter((candidate) => candidate.score >= 2)
+      .sort((a, b) => b.score - a.score);
+  }
+
   // ---------------------------------------------------------------------------
   // 5. Meta tag extraction (Open Graph, standard meta)
   // ---------------------------------------------------------------------------
@@ -1658,6 +2443,79 @@
     return "Other";
   }
 
+  function getSiteKey(platform = detectPlatform()) {
+    return SITE_KEYS[platform] || SITE_KEYS.Other;
+  }
+
+  function detectSiteKey() {
+    return getSiteKey(detectPlatform());
+  }
+
+  function isSupportedSiteKey(siteKey) {
+    return Boolean(siteKey && siteKey !== SITE_KEYS.Other);
+  }
+
+  function firstMatchingSelector(selectors, root = document) {
+    for (const selector of selectors || []) {
+      try {
+        if (root.querySelector(selector)) return selector;
+      } catch {
+        // Invalid selector for the current browser context — ignore it.
+      }
+    }
+    return "";
+  }
+
+  function auditSelectorGroups(groups, root = document) {
+    const matchedSelectors = {};
+    const missingRequiredSelectors = [];
+
+    for (const [field, config] of Object.entries(groups || {})) {
+      const selectors = Array.isArray(config) ? config : config.selectors || [];
+      const required = !Array.isArray(config) && Boolean(config.required);
+      const matched = firstMatchingSelector(selectors, root);
+
+      if (matched) {
+        matchedSelectors[field] = matched;
+      } else if (required) {
+        missingRequiredSelectors.push(field);
+      }
+    }
+
+    return { matchedSelectors, missingRequiredSelectors };
+  }
+
+  function buildDomFingerprint(root = document.body) {
+    const element = root instanceof Element ? root : document.body;
+    if (!element) return "";
+
+    const tag = element.tagName ? element.tagName.toLowerCase() : "";
+    const id = element.id ? `#${element.id}` : "";
+    const classes = element.classList ? Array.from(element.classList).slice(0, 4).map((name) => `.${name}`).join("") : "";
+    const heading = normalizeText(element.querySelector("h1, h2, h3")?.textContent || "");
+
+    return normalizeText(`${tag}${id}${classes}${heading ? ` :: ${heading}` : ""}`).slice(0, 220);
+  }
+
+  function validateAdapterRecord(record, options = {}) {
+    const {
+      minDescriptionLength = MIN_DESCRIPTION_LENGTH,
+      requireCompanyOrLocation = true,
+    } = options;
+
+    const errors = [];
+    const normalized = normalizeRecord(record);
+
+    if (!normalized) {
+      return { ok: false, errors: ["missing_record"] };
+    }
+    if (!looksLikeTitle(normalized.title)) errors.push("missing_title");
+    if (!isValidDescription(normalized.description, minDescriptionLength)) errors.push("missing_description");
+    if (requireCompanyOrLocation && !normalized.company && !normalized.location) errors.push("missing_company_or_location");
+
+    return { ok: errors.length === 0, errors };
+  }
+
   // ---------------------------------------------------------------------------
   // Confidence and merge
   // ---------------------------------------------------------------------------
@@ -1669,6 +2527,7 @@
       company: normalizeText(record.company || ""),
       location: cleanLocation(record.location || ""),
       description: cleanDescriptionText(record.description || ""),
+      contact: normalizeContact(record.contact, record.company || ""),
       salary: normalizeText(record.salary || ""),
       postedAt: normalizeText(record.postedAt || ""),
       applicationDeadline: normalizeText(record.applicationDeadline || ""),
@@ -1713,6 +2572,8 @@
       case "greenhouse-panel":
       case "lever-panel":
       case "workday-panel":
+      case "naukri-panel":
+      case "instahyre-panel":
         return 0.14;
       case "jsonld":
         return 0.12;
@@ -1769,6 +2630,8 @@
         case "greenhouse-panel":
         case "lever-panel":
         case "workday-panel":
+        case "naukri-panel":
+        case "instahyre-panel":
           score = 0.34;
           break;
         case "semantic-dom":
@@ -1779,6 +2642,35 @@
           break;
       }
 
+      if (score > bestScore) {
+        bestScore = score;
+        bestValue = value;
+        bestSource = record.source;
+      }
+    }
+
+    return { value: bestValue, source: bestSource };
+  }
+
+  function contactScore(contact, source) {
+    if (!contact?.fullName) return 0;
+
+    let score = sourceBonus(source) + 0.12;
+    if (contact.title) score += 0.05;
+    if (contact.linkedInURL) score += 0.04;
+    if (contact.role && contact.role !== "Other") score += 0.03;
+    return score;
+  }
+
+  function bestContact(records) {
+    let bestValue = null;
+    let bestSource = "";
+    let bestScore = -1;
+
+    for (const record of records) {
+      const value = normalizeContact(record.contact, record.company || "");
+      if (!value) continue;
+      const score = contactScore(value, record.source);
       if (score > bestScore) {
         bestScore = score;
         bestValue = value;
@@ -1807,47 +2699,49 @@
     return true;
   }
 
-  function gatherRawCandidates() {
-    return {
-      platformSpecific: extractFromPlatformSpecific(),
-      jsonLd: extractFromJsonLd(),
-      microdata: extractFromMicrodata(),
-      semanticDom: extractFromSemanticDom(),
-      meta: extractFromMeta(),
-    };
+  function isPartialResult(data, confidence) {
+    if (!data) return false;
+    const hasTitle = looksLikeTitle(data.title);
+    const hasDescription = isValidDescription(data.description, 60);
+    const hasCompanyOrLocation = Boolean(data.company || data.location);
+    const signalCount = [hasTitle, hasDescription, hasCompanyOrLocation, Boolean(data.salary)].filter(Boolean).length;
+    return signalCount >= 2 && confidence >= PARTIAL_CONFIDENCE_THRESHOLD;
   }
 
-  function extractJobDataFromCandidates(rawCandidates) {
-    const records = Object.values(rawCandidates).map(normalizeRecord).filter(Boolean);
-    if (!records.length) return null;
+  function buildMergedPayload(records, context) {
+    const normalizedRecords = records.map(normalizeRecord).filter(Boolean);
+    if (!normalizedRecords.length) return null;
 
     const fields = {
-      title: bestField("title", records),
-      company: bestField("company", records),
-      location: bestField("location", records),
-      description: bestField("description", records),
-      salary: bestField("salary", records),
+      title: bestField("title", normalizedRecords),
+      company: bestField("company", normalizedRecords),
+      location: bestField("location", normalizedRecords),
+      description: bestField("description", normalizedRecords),
+      salary: bestField("salary", normalizedRecords),
     };
 
     const title = fields.title.value;
     const company = fields.company.value;
     const jobLocation = fields.location.value;
     const description = fields.description.value;
+    const contact = bestContact(normalizedRecords);
     const salary = fields.salary.value;
-    const postedAt = bestDateField("postedAt", records);
-    const applicationDeadline = bestDateField("applicationDeadline", records);
+    const postedAt = bestDateField("postedAt", normalizedRecords);
+    const applicationDeadline = bestDateField("applicationDeadline", normalizedRecords);
     const confidence = computeConfidence(fields);
 
-    const payload = {
+    return {
+      payload: {
       title,
       company,
       location: jobLocation,
       description,
+      contact: contact.value,
       salary,
       postedAt: postedAt.value,
       applicationDeadline: applicationDeadline.value,
       url: window.location.href,
-      platform: detectPlatform(),
+      platform: context.platform,
       extractionQuality: {
         confidence,
         sources: {
@@ -1855,28 +2749,136 @@
           company: fields.company.source || "",
           location: fields.location.source || "",
           description: fields.description.source || "",
+          contact: contact.source || "",
           salary: fields.salary.source || "",
           postedAt: postedAt.source || "",
           applicationDeadline: applicationDeadline.source || "",
         },
       },
+      },
+      fields,
+      confidence,
+      records: normalizedRecords,
     };
+  }
 
-    if (!isUsableResult(payload, confidence)) return null;
+  function primarySiteSource(siteKey) {
+    switch (siteKey) {
+      case SITE_KEYS.LinkedIn:
+        return "linkedin-panel";
+      case SITE_KEYS.Indeed:
+        return "indeed-panel";
+      case SITE_KEYS.Glassdoor:
+        return "glassdoor-panel";
+      case SITE_KEYS.Greenhouse:
+        return "greenhouse-panel";
+      case SITE_KEYS.Lever:
+        return "lever-panel";
+      case SITE_KEYS.Workday:
+        return "workday-panel";
+      case SITE_KEYS.Naukri:
+        return "naukri-panel";
+      case SITE_KEYS.Instahyre:
+        return "instahyre-panel";
+      default:
+        return "";
+    }
+  }
 
-    return payload;
+  function usesFallbackSources(sources, siteKey) {
+    const primarySource = primarySiteSource(siteKey);
+    return Object.values(sources || {}).some((source) => source && source !== primarySource);
+  }
+
+  function decoratePayload(payload, merged, context, adapterRun, resultState) {
+    if (!payload) return null;
+
+    return {
+      ...payload,
+      extractionQuality: {
+        ...payload.extractionQuality,
+        confidence: merged?.confidence ?? payload.extractionQuality?.confidence ?? 0,
+        resultState,
+        siteKey: context.siteKey,
+        variantKey: adapterRun?.variantKey || "",
+        adapterVersion: ADAPTER_VERSION,
+        fallbackUsed: usesFallbackSources(payload.extractionQuality?.sources, context.siteKey),
+        validationErrors: adapterRun?.validation?.errors || [],
+      },
+    };
+  }
+
+  function gatherExtractionSnapshot() {
+    const context = createExtractionContext();
+    const adapterRun = isSupportedSiteKey(context.siteKey) ? runSiteAdapter(context) : null;
+
+    return {
+      context,
+      adapterRun,
+      rawCandidates: {
+        siteAdapter: adapterRun?.record || null,
+        jsonLd: extractFromJsonLd(),
+        microdata: extractFromMicrodata(),
+        semanticDom: extractFromSemanticDom(),
+        meta: extractFromMeta(),
+      },
+    };
+  }
+
+  function selectExtractionOutcome(snapshot) {
+    const { context, adapterRun, rawCandidates } = snapshot;
+    const supportedSite = isSupportedSiteKey(context.siteKey);
+    const successMerge = buildMergedPayload(
+      [rawCandidates.siteAdapter, rawCandidates.jsonLd, rawCandidates.microdata],
+      context
+    );
+    const partialMerge = buildMergedPayload(
+      [rawCandidates.siteAdapter, rawCandidates.jsonLd, rawCandidates.microdata, rawCandidates.semanticDom, rawCandidates.meta],
+      context
+    );
+
+    if (supportedSite && successMerge && isUsableResult(successMerge.payload, successMerge.confidence)) {
+      return {
+        ...snapshot,
+        payload: decoratePayload(successMerge.payload, successMerge, context, adapterRun, RESULT_STATE.SUCCESS),
+        resultState: RESULT_STATE.SUCCESS,
+      };
+    }
+
+    if (supportedSite && partialMerge && isPartialResult(partialMerge.payload, partialMerge.confidence)) {
+      return {
+        ...snapshot,
+        payload: decoratePayload(partialMerge.payload, partialMerge, context, adapterRun, RESULT_STATE.PARTIAL),
+        resultState: RESULT_STATE.PARTIAL,
+      };
+    }
+
+    if (!supportedSite && partialMerge && isUsableResult(partialMerge.payload, partialMerge.confidence)) {
+      return {
+        ...snapshot,
+        payload: decoratePayload(partialMerge.payload, partialMerge, context, adapterRun, RESULT_STATE.SUCCESS),
+        resultState: RESULT_STATE.SUCCESS,
+      };
+    }
+
+    return {
+      ...snapshot,
+      payload:
+        partialMerge && isPartialResult(partialMerge.payload, partialMerge.confidence)
+          ? decoratePayload(partialMerge.payload, partialMerge, context, adapterRun, supportedSite ? RESULT_STATE.PARTIAL : RESULT_STATE.UNSUPPORTED)
+          : null,
+      resultState: supportedSite ? RESULT_STATE.BROKEN_SITE_ADAPTER : RESULT_STATE.UNSUPPORTED,
+    };
   }
 
   function extractJobData() {
-    const rawCandidates = gatherRawCandidates();
-    return extractJobDataFromCandidates(rawCandidates);
+    return selectExtractionOutcome(gatherExtractionSnapshot());
   }
 
   function extractJobDataAndDebugPacket() {
-    const rawCandidates = gatherRawCandidates();
-    const extractedData = extractJobDataFromCandidates(rawCandidates);
-    const debugPacket = collectDebugPacket(extractedData, rawCandidates);
-    return { extractedData, debugPacket };
+    const outcome = extractJobData();
+    const debugPacket = collectDebugPacket(outcome);
+    return { outcome, debugPacket };
   }
 
   const PLATFORM_DELAYS = {
@@ -1896,10 +2898,10 @@
       if (delayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
-      const result = extractJobData();
-      if (result) return result;
+      const outcome = extractJobData();
+      if (outcome?.resultState === RESULT_STATE.SUCCESS) return outcome;
     }
-    return null;
+    return extractJobData();
   }
 
   async function extractDebugPacketWithRetries() {
@@ -1908,12 +2910,82 @@
       if (delayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
-      const { extractedData, debugPacket } = extractJobDataAndDebugPacket();
-      if (extractedData) return debugPacket;
+      const { outcome, debugPacket } = extractJobDataAndDebugPacket();
+      if (outcome?.resultState === RESULT_STATE.SUCCESS) return debugPacket;
     }
 
     // Return at least one packet even if extraction fails confidence gating.
     return extractJobDataAndDebugPacket().debugPacket;
+  }
+
+  async function extractDomDebugPacketWithRetries() {
+    const delays = getDelaysForPlatform();
+    for (const delayMs of delays) {
+      if (delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+      const outcome = extractJobData();
+      if (outcome?.payload || outcome?.resultState) {
+        return collectDomDebugPacket(outcome);
+      }
+    }
+
+    return collectDomDebugPacket(extractJobData());
+  }
+
+  function buildFailureDiagnostics(outcome) {
+    const records = outcome?.rawCandidates
+      ? Object.values(outcome.rawCandidates).map(normalizeRecord).filter(Boolean)
+      : [];
+    const fallbackMerge = outcome?.payload?.extractionQuality
+      ? { confidence: outcome.payload.extractionQuality.confidence, payload: outcome.payload }
+      : buildMergedPayload(records, outcome?.context || createExtractionContext());
+
+    const fields = records.length
+      ? {
+          title: bestField("title", records),
+          company: bestField("company", records),
+          location: bestField("location", records),
+          description: bestField("description", records),
+          salary: bestField("salary", records),
+        }
+      : null;
+
+    return {
+      platform: outcome?.context?.platform || detectPlatform(),
+      siteKey: outcome?.context?.siteKey || detectSiteKey(),
+      variantKey: outcome?.adapterRun?.variantKey || "",
+      resultState: outcome?.resultState || RESULT_STATE.UNSUPPORTED,
+      staleAdapter: outcome?.resultState === RESULT_STATE.BROKEN_SITE_ADAPTER,
+      fallbackUsed: Boolean(outcome?.payload?.extractionQuality?.fallbackUsed),
+      confidence: fallbackMerge?.confidence || 0,
+      fieldsFound: fields
+        ? {
+            title: !!fields.title.value,
+            company: !!fields.company.value,
+            location: !!fields.location.value,
+            description: !!fields.description.value,
+            salary: !!fields.salary.value,
+          }
+        : {},
+      descriptionLength: normalizeText(fields?.description?.value || "").length,
+      validationErrors: outcome?.adapterRun?.validation?.errors || [],
+      matchedSelectors: outcome?.adapterRun?.diagnostics?.matchedSelectors || {},
+      missingRequiredSelectors: outcome?.adapterRun?.diagnostics?.missingRequiredSelectors || [],
+      domFingerprint: outcome?.adapterRun?.diagnostics?.domFingerprint || buildDomFingerprint(),
+    };
+  }
+
+  function failureMessageForOutcome(outcome) {
+    switch (outcome?.resultState) {
+      case RESULT_STATE.BROKEN_SITE_ADAPTER:
+        return "This supported site appears to have changed. Copy the debug packet so the adapter can be updated.";
+      case RESULT_STATE.PARTIAL:
+        return "Pipeline found part of the job posting, but not enough to save safely.";
+      case RESULT_STATE.UNSUPPORTED:
+      default:
+        return "This page does not look like a complete supported job posting.";
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1931,44 +3003,16 @@
     if (request.action === "extractJobData") {
       (async () => {
         try {
-          const data = await extractJobDataWithRetries();
-          if (!data) {
-            // Build diagnostics from a final snapshot
-            const raw = gatherRawCandidates();
-            const records = Object.values(raw).map(normalizeRecord).filter(Boolean);
-            const diagnostics = {
-              platform: detectPlatform(),
-              fieldsFound: {},
-              confidence: 0,
-            };
-            if (records.length) {
-              const fields = {
-                title: bestField("title", records),
-                company: bestField("company", records),
-                location: bestField("location", records),
-                description: bestField("description", records),
-                salary: bestField("salary", records),
-              };
-              diagnostics.confidence = computeConfidence(fields);
-              diagnostics.fieldsFound = {
-                title: !!fields.title.value,
-                company: !!fields.company.value,
-                location: !!fields.location.value,
-                description: !!fields.description.value,
-                salary: !!fields.salary.value,
-              };
-              // Include description length for debugging
-              const descLen = normalizeText(fields.description.value || "").length;
-              diagnostics.descriptionLength = descLen;
-            }
+          const outcome = await extractJobDataWithRetries();
+          if (!outcome?.payload || outcome.resultState !== RESULT_STATE.SUCCESS) {
             sendResponse({
               success: false,
-              error: "Low-confidence or missing job data",
-              diagnostics,
+              error: failureMessageForOutcome(outcome),
+              diagnostics: buildFailureDiagnostics(outcome),
             });
             return;
           }
-          sendResponse({ success: true, data });
+          sendResponse({ success: true, data: outcome.payload });
         } catch (err) {
           sendResponse({ success: false, error: err.message });
         }
@@ -1979,6 +3023,17 @@
       (async () => {
         try {
           const data = await extractDebugPacketWithRetries();
+          sendResponse({ success: true, data });
+        } catch (err) {
+          sendResponse({ success: false, error: err.message });
+        }
+      })();
+      return true;
+    }
+    if (request.action === "collectDomDebugPacket") {
+      (async () => {
+        try {
+          const data = await extractDomDebugPacketWithRetries();
           sendResponse({ success: true, data });
         } catch (err) {
           sendResponse({ success: false, error: err.message });

@@ -7,10 +7,25 @@ const NATIVE_MESSAGE_TIMEOUT_MS = 60000;
 const NATIVE_TIMEOUT_ERROR = "Native host timed out. Check Pipeline app permissions and host install.";
 
 // ---------------------------------------------------------------------------
-// Message handling
+// Tab extraction cache
 // ---------------------------------------------------------------------------
 
 const runtime = typeof browser !== "undefined" ? browser : chrome;
+const tabCache = new Map();
+
+runtime.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.url || changeInfo.status === "loading") {
+    tabCache.delete(tabId);
+  }
+});
+
+runtime.tabs.onRemoved.addListener((tabId) => {
+  tabCache.delete(tabId);
+});
+
+// ---------------------------------------------------------------------------
+// Message handling
+// ---------------------------------------------------------------------------
 
 function withTimeout(promise, timeoutMs, message) {
   return new Promise((resolve, reject) => {
@@ -39,7 +54,7 @@ function withTimeout(promise, timeoutMs, message) {
 
 runtime.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "saveJobToPipeline") {
-    handleSave(request.data)
+    handleSave(request.data, Boolean(request.saveForLater))
       .then((result) => sendResponse(result))
       .catch((err) => sendResponse({ success: false, error: err.message }));
     return true; // async
@@ -50,6 +65,22 @@ runtime.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .then((result) => sendResponse(result))
       .catch((err) => sendResponse({ success: false, error: err.message }));
     return true;
+  }
+
+  if (request.action === "getCachedExtraction") {
+    const tabId = sender.tab?.id || request.tabId;
+    const cached = tabId ? tabCache.get(tabId) : null;
+    sendResponse(cached || { success: false });
+    return;
+  }
+
+  if (request.action === "cacheExtraction") {
+    const tabId = sender.tab?.id || request.tabId;
+    if (tabId && request.data) {
+      tabCache.set(tabId, { success: true, data: request.data, cachedAt: Date.now() });
+    }
+    sendResponse({ success: true });
+    return;
   }
 });
 
@@ -67,33 +98,33 @@ async function sendNativeMessage(command, payload) {
       NATIVE_MESSAGE_TIMEOUT_MS,
       NATIVE_TIMEOUT_ERROR
     );
-  } else {
-    // Chrome — sends to native messaging host
-    return withTimeout(
-      new Promise((resolve, reject) => {
-        chrome.runtime.sendNativeMessage(
-          "io.github.digitaltracer.pipeline",
-          message,
-          (response) => {
-            if (chrome.runtime.lastError) {
-              reject(new Error(chrome.runtime.lastError.message));
-            } else {
-              resolve(response);
-            }
-          }
-        );
-      }),
-      NATIVE_MESSAGE_TIMEOUT_MS,
-      NATIVE_TIMEOUT_ERROR
-    );
   }
+
+  // Chrome — sends to native messaging host
+  return withTimeout(
+    new Promise((resolve, reject) => {
+      chrome.runtime.sendNativeMessage(
+        "io.github.digitaltracer.pipeline",
+        message,
+        (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve(response);
+          }
+        }
+      );
+    }),
+    NATIVE_MESSAGE_TIMEOUT_MS,
+    NATIVE_TIMEOUT_ERROR
+  );
 }
 
 // ---------------------------------------------------------------------------
 // Command handlers
 // ---------------------------------------------------------------------------
 
-async function handleSave(jobData) {
+async function handleSave(jobData, saveForLater = false) {
   try {
     const response = await sendNativeMessage("parse", {
       url: jobData.url,
@@ -101,7 +132,11 @@ async function handleSave(jobData) {
       company: jobData.company,
       location: jobData.location,
       description: jobData.description,
+      contact: jobData.contact || null,
       platform: jobData.platform,
+      postedAt: jobData.postedAt,
+      applicationDeadline: jobData.applicationDeadline,
+      saveForLater,
     });
     return response;
   } catch (err) {

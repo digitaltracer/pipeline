@@ -631,6 +631,7 @@
 				400000000000000000000002 /* Sources */,
 				200000000000000000000001 /* Frameworks */,
 				400000000000000000000003 /* Resources */,
+				C00000000000000000000003 /* Sync Extension Assets */,
 				C00000000000000000000001 /* Codesign Tectonic */,
 				A04000000000000000000100 /* Embed App Extensions */,
 				B04000000000000000000100 /* Embed Executables */,
@@ -804,6 +805,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "if [ \"$PLATFORM_NAME\" != \"macosx\" ] || [ \"$CONFIGURATION\" != \"Debug\" ]; then\n  exit 0\nfi\n\nINSTALL_HOST_SCRIPT=\"$SRCROOT/../ChromeExtension/install_host.sh\"\nif [ -x \"$INSTALL_HOST_SCRIPT\" ]; then\n  \"$INSTALL_HOST_SCRIPT\" --dev\nfi\n";
+		};
+		C00000000000000000000003 /* Sync Extension Assets */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Sync Extension Assets";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"$SRCROOT/../scripts/sync_extension_assets.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

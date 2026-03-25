@@ -251,6 +251,9 @@ header {
 
 .debug-tools {
   margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 /* Empty state */

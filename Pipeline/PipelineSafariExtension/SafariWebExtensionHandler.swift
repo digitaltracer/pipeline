@@ -46,6 +46,10 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         let company = message["company"] as? String ?? ""
         let location = message["location"] as? String ?? ""
         let description = message["description"] as? String ?? ""
+        let contact = BrowserCapturedContact(
+            dictionary: message["contact"] as? [String: Any],
+            fallbackCompanyName: company
+        )
         let platform = message["platform"] as? String ?? ""
         let saveForLater = message["saveForLater"] as? Bool ?? false
         let postedAt = JobCaptureDateParser.parse(message["postedAt"] as? String)
@@ -74,6 +78,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                 company: company,
                 location: location,
                 description: description,
+                contact: contact,
                 platform: platform,
                 saveForLater: saveForLater,
                 postedAt: postedAt,
@@ -143,6 +148,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         company: String,
         location: String,
         description: String,
+        contact: BrowserCapturedContact?,
         platform: String,
         saveForLater: Bool,
         postedAt: Date?,
@@ -167,6 +173,11 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
         context.insert(application)
         _ = try? CompanyLinkingService.ensureCompanyLinked(for: application, in: context)
+        do {
+            try BrowserCaptureContactService.attach(contact, to: application, in: context)
+        } catch {
+            Self.logger.error("Failed to attach captured contact: \(error.localizedDescription)")
+        }
         try? ApplicationChecklistService().sync(for: application, trigger: .applicationCreated, in: context)
         ApplicationTimelineRecorderService.seedInitialHistory(for: application, in: context)
 

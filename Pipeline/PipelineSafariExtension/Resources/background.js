@@ -98,26 +98,26 @@ async function sendNativeMessage(command, payload) {
       NATIVE_MESSAGE_TIMEOUT_MS,
       NATIVE_TIMEOUT_ERROR
     );
-  } else {
-    // Chrome — sends to native messaging host
-    return withTimeout(
-      new Promise((resolve, reject) => {
-        chrome.runtime.sendNativeMessage(
-          "io.github.digitaltracer.pipeline",
-          message,
-          (response) => {
-            if (chrome.runtime.lastError) {
-              reject(new Error(chrome.runtime.lastError.message));
-            } else {
-              resolve(response);
-            }
-          }
-        );
-      }),
-      NATIVE_MESSAGE_TIMEOUT_MS,
-      NATIVE_TIMEOUT_ERROR
-    );
   }
+
+  // Chrome — sends to native messaging host
+  return withTimeout(
+    new Promise((resolve, reject) => {
+      chrome.runtime.sendNativeMessage(
+        "io.github.digitaltracer.pipeline",
+        message,
+        (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve(response);
+          }
+        }
+      );
+    }),
+    NATIVE_MESSAGE_TIMEOUT_MS,
+    NATIVE_TIMEOUT_ERROR
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -132,6 +132,7 @@ async function handleSave(jobData, saveForLater = false) {
       company: jobData.company,
       location: jobData.location,
       description: jobData.description,
+      contact: jobData.contact || null,
       platform: jobData.platform,
       postedAt: jobData.postedAt,
       applicationDeadline: jobData.applicationDeadline,

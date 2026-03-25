@@ -34,6 +34,10 @@ enum NativeMessageHandler {
         let company = message["company"] as? String ?? ""
         let location = message["location"] as? String ?? ""
         let description = message["description"] as? String ?? ""
+        let contact = BrowserCapturedContact(
+            dictionary: message["contact"] as? [String: Any],
+            fallbackCompanyName: company
+        )
         let platform = message["platform"] as? String ?? "other"
         let saveForLater = message["saveForLater"] as? Bool ?? false
         let postedAt = JobCaptureDateParser.parse(message["postedAt"] as? String)
@@ -68,6 +72,7 @@ enum NativeMessageHandler {
                 company: company,
                 location: location,
                 description: description,
+                contact: contact,
                 platform: platform,
                 saveForLater: saveForLater,
                 postedAt: postedAt,
@@ -134,6 +139,7 @@ enum NativeMessageHandler {
         company: String,
         location: String,
         description: String,
+        contact: BrowserCapturedContact?,
         platform: String,
         saveForLater: Bool,
         postedAt: Date?,
@@ -158,6 +164,7 @@ enum NativeMessageHandler {
 
         context.insert(application)
         _ = try? CompanyLinkingService.ensureCompanyLinked(for: application, in: context)
+        _ = try? BrowserCaptureContactService.attach(contact, to: application, in: context)
         try? ApplicationChecklistService().sync(for: application, trigger: .applicationCreated, in: context)
         ApplicationTimelineRecorderService.seedInitialHistory(for: application, in: context)
 
