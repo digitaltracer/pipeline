@@ -105,6 +105,8 @@
 		000000000000000000000104 /* OnboardingDemoData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000104 /* OnboardingDemoData.swift */; };
 		000000000000000000000105 /* OnboardingGuidanceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000105 /* OnboardingGuidanceViews.swift */; };
 		000000000000000000000106 /* OnboardingFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000106 /* OnboardingFlowView.swift */; };
+		000000000000000000000107 /* SkillAdditionViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000107 /* SkillAdditionViewModel.swift */; };
+		000000000000000000000108 /* SkillAdditionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000108 /* SkillAdditionSheet.swift */; };
 		800000000000000000000001 /* PipelineKit in Frameworks */ = {isa = PBXBuildFile; productRef = 900000000000000000000001 /* PipelineKit */; };
 		A00000000000000000000010 /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01000000000000000000010 /* SafariWebExtensionHandler.swift */; };
 		A00000000000000000000020 /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = A01000000000000000000020 /* manifest.json */; };
@@ -268,6 +270,8 @@
 		100000000000000000000104 /* OnboardingDemoData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingDemoData.swift; sourceTree = "<group>"; };
 		100000000000000000000105 /* OnboardingGuidanceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingGuidanceViews.swift; sourceTree = "<group>"; };
 		100000000000000000000106 /* OnboardingFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlowView.swift; sourceTree = "<group>"; };
+		100000000000000000000107 /* SkillAdditionViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillAdditionViewModel.swift; sourceTree = "<group>"; };
+		100000000000000000000108 /* SkillAdditionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillAdditionSheet.swift; sourceTree = "<group>"; };
 		A01000000000000000000010 /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
 		A01000000000000000000020 /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = manifest.json; sourceTree = "<group>"; };
 		A01000000000000000000030 /* content.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = content.js; sourceTree = "<group>"; };
@@ -382,6 +386,7 @@
 				100000000000000000000091 /* JobDescriptionDenoiseViewModel.swift */,
 				100000000000000000000093 /* ChecklistSuggestionsViewModel.swift */,
 				100000000000000000000103 /* OnboardingStore.swift */,
+				100000000000000000000107 /* SkillAdditionViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -527,6 +532,7 @@
 				100000000000000000000070 /* ChainedVerticalScrollContainer.swift */,
 				100000000000000000000088 /* AppLockRootView.swift */,
 				100000000000000000000095 /* JobMatchBadge.swift */,
+				100000000000000000000108 /* SkillAdditionSheet.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -897,6 +903,8 @@
 				000000000000000000000087 /* AppLockCoordinator.swift in Sources */,
 				000000000000000000000093 /* ChecklistSuggestionsViewModel.swift in Sources */,
 				000000000000000000000099 /* ResumeTailoringMode.swift in Sources */,
+				000000000000000000000107 /* SkillAdditionViewModel.swift in Sources */,
+				000000000000000000000108 /* SkillAdditionSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1066,7 +1074,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Pipeline.CloudKit.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1503;
+				CURRENT_PROJECT_VERSION = 2503;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = N3B962X7RX;
@@ -1083,7 +1091,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.5;
+				MARKETING_VERSION = 0.6;
 				PRODUCT_BUNDLE_IDENTIFIER = io.github.digitaltracer.pipeline;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1106,7 +1114,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Pipeline.CloudKit.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1503;
+				CURRENT_PROJECT_VERSION = 2503;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = N3B962X7RX;
@@ -1123,7 +1131,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.5;
+				MARKETING_VERSION = 0.6;
 				PRODUCT_BUNDLE_IDENTIFIER = io.github.digitaltracer.pipeline;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1140,7 +1148,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = PipelineSafariExtension/PipelineSafariExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1503;
+				CURRENT_PROJECT_VERSION = 2503;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = N3B962X7RX;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1153,7 +1161,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.5;
+				MARKETING_VERSION = 0.6;
 				PRODUCT_BUNDLE_IDENTIFIER = "io.github.digitaltracer.pipeline.safari-extension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -1168,7 +1176,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = PipelineSafariExtension/PipelineSafariExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1503;
+				CURRENT_PROJECT_VERSION = 2503;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = N3B962X7RX;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1181,7 +1189,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.5;
+				MARKETING_VERSION = 0.6;
 				PRODUCT_BUNDLE_IDENTIFIER = "io.github.digitaltracer.pipeline.safari-extension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -1198,12 +1206,12 @@
 				CODE_SIGN_ENTITLEMENTS = PipelineNativeHost/PipelineNativeHost.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
-				CURRENT_PROJECT_VERSION = 1503;
+				CURRENT_PROJECT_VERSION = 2503;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = N3B962X7RX;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.5;
+				MARKETING_VERSION = 0.6;
 				PRODUCT_BUNDLE_IDENTIFIER = "io.github.digitaltracer.pipeline.native-host";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -1220,12 +1228,12 @@
 				CODE_SIGN_ENTITLEMENTS = PipelineNativeHost/PipelineNativeHost.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
-				CURRENT_PROJECT_VERSION = 1503;
+				CURRENT_PROJECT_VERSION = 2503;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = N3B962X7RX;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.5;
+				MARKETING_VERSION = 0.6;
 				PRODUCT_BUNDLE_IDENTIFIER = "io.github.digitaltracer.pipeline.native-host";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
