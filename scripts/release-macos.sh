@@ -635,29 +635,21 @@ else
     info "Skipping notarization as requested."
 fi
 
-if [[ "${FORMAT}" == "dmg" ]]; then
-    FINAL_DMG_PATH="${OUTPUT_DIR}/${ARTIFACT_BASE}.dmg"
-    [[ -n "${DMG_PATH}" && -f "${DMG_PATH}" ]] || die "Expected DMG not found: ${DMG_PATH}"
+FINAL_ARTIFACT_PATHS=()
+for artifact in "${ARTIFACT_PATHS[@]}"; do
+    artifact_name="$(basename "${artifact}")"
+    final_artifact_path="${OUTPUT_DIR}/${artifact_name}"
 
     info "Saving final artifact..."
-    rm -f "${FINAL_DMG_PATH}"
-    cp "${DMG_PATH}" "${FINAL_DMG_PATH}"
-
-    info "Cleaning up intermediate release files..."
-    rm -rf "${WORK_DIR}"
-
-    info "Done."
-    echo ""
-    echo "Artifact:"
-    echo "  - ${FINAL_DMG_PATH}"
-    echo ""
-    exit 0
-fi
+    rm -f "${final_artifact_path}"
+    cp "${artifact}" "${final_artifact_path}"
+    FINAL_ARTIFACT_PATHS+=("${final_artifact_path}")
+done
 
 info "Done."
 echo ""
 echo "Artifacts:"
-for artifact in "${ARTIFACT_PATHS[@]}"; do
+for artifact in "${FINAL_ARTIFACT_PATHS[@]}"; do
     echo "  - ${artifact}"
 done
 echo ""
