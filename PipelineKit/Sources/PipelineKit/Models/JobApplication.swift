@@ -87,6 +87,8 @@ public final class JobApplication {
     @Relationship(deleteRule: .cascade, inverse: \ReferralAttempt.application)
     public var referralAttempts: [ReferralAttempt]?
 
+    public var calendarImports: [GoogleCalendarImportRecord]?
+
     public var createdAt: Date = Date()
     public var updatedAt: Date = Date()
 

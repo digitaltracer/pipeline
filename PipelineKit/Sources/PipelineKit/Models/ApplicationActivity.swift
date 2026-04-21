@@ -23,8 +23,13 @@ public final class ApplicationActivity {
 
     public var application: JobApplication?
     public var contact: Contact?
+
+    @Relationship(deleteRule: .cascade, inverse: \InterviewDebrief.activity)
     public var debrief: InterviewDebrief?
+
     public var rejectionLog: RejectionLog?
+    public var importRecord: GoogleCalendarImportRecord?
+    public var referralAttempt: ReferralAttempt?
 
     public var kind: ApplicationActivityKind {
         get { ApplicationActivityKind(rawValue: kindRawValue) }

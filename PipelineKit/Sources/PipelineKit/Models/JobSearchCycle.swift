@@ -11,7 +11,11 @@ public final class JobSearchCycle {
     public var createdAt: Date = Date()
     public var updatedAt: Date = Date()
 
+    @Relationship(deleteRule: .nullify, inverse: \JobApplication.cycle)
     public var applications: [JobApplication]?
+
+    @Relationship(deleteRule: .nullify, inverse: \JobApplication.originCycle)
+    public var originatedApplications: [JobApplication]?
 
     public var goals: [SearchGoal]?
 

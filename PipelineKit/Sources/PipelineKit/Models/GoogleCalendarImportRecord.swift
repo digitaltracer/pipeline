@@ -22,7 +22,10 @@ public final class GoogleCalendarImportRecord {
     public var createdAt: Date = Date()
     public var updatedAt: Date = Date()
 
+    @Relationship(deleteRule: .nullify, inverse: \JobApplication.calendarImports)
     public var suggestedApplication: JobApplication?
+
+    @Relationship(deleteRule: .nullify, inverse: \ApplicationActivity.importRecord)
     public var importedActivity: ApplicationActivity?
 
     public var state: GoogleCalendarImportState {

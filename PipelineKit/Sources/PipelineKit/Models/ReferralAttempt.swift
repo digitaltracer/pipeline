@@ -18,7 +18,7 @@ public final class ReferralAttempt {
     public var importedConnection: ImportedNetworkConnection?
     public var contact: Contact?
 
-    @Relationship(deleteRule: .nullify)
+    @Relationship(deleteRule: .nullify, inverse: \ApplicationActivity.referralAttempt)
     public var sentEmailActivity: ApplicationActivity?
 
     public var status: ReferralAttemptStatus {
