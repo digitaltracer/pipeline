@@ -41,11 +41,12 @@ struct PipelineApp: App {
                         cloudKitDatabase: .none
                     )
                     syncEnabledAtLaunch = false
+                    let detailedMessage = Self.cloudSyncStartupErrorMessage(for: error)
                     UserDefaults.standard.set(
-                        Self.cloudSyncStartupErrorMessage(for: error),
+                        detailedMessage,
                         forKey: Constants.UserDefaultsKeys.cloudSyncStartupError
                     )
-                    print("CloudKit initialization failed; using local storage only: \(error)")
+                    print("CloudKit initialization failed; using local storage only.\n\(detailedMessage)")
                 }
             } else {
                 container = try SharedContainer.makeModelContainer(
@@ -123,20 +124,46 @@ struct PipelineApp: App {
     }
 
     private static func cloudSyncStartupErrorMessage(for error: Error) -> String {
-        let nsError = error as NSError
-        let recoverySuggestion = nsError.localizedRecoverySuggestion?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let failureReason = nsError.localizedFailureReason?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let description = nsError.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lines = collectErrorLines(from: error as NSError, depth: 0)
+        let deduped = Array(NSOrderedSet(array: lines)) as? [String] ?? lines
+        let joined = deduped.joined(separator: "\n")
+        return joined.isEmpty ? "CloudKit could not start for this launch." : joined
+    }
 
-        let details: [String] = [failureReason, description, recoverySuggestion].compactMap { value in
-            guard let value, !value.isEmpty else { return nil }
-            return value
+    private static func collectErrorLines(from nsError: NSError, depth: Int) -> [String] {
+        let indent = String(repeating: "  ", count: depth)
+        var lines: [String] = []
+
+        lines.append("\(indent)[\(nsError.domain) \(nsError.code)] \(nsError.localizedDescription)")
+        if let reason = nsError.localizedFailureReason?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !reason.isEmpty {
+            lines.append("\(indent)Reason: \(reason)")
+        }
+        if let suggestion = nsError.localizedRecoverySuggestion?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !suggestion.isEmpty {
+            lines.append("\(indent)Suggestion: \(suggestion)")
         }
 
-        guard !details.isEmpty else {
-            return "CloudKit could not start for this launch."
+        let skippedUserInfoKeys: Set<String> = [
+            NSLocalizedDescriptionKey,
+            NSLocalizedFailureReasonErrorKey,
+            NSLocalizedRecoverySuggestionErrorKey,
+            NSUnderlyingErrorKey,
+            "NSMultipleUnderlyingErrorsKey"
+        ]
+        for (key, value) in nsError.userInfo where !skippedUserInfoKeys.contains(key) {
+            lines.append("\(indent)\(key): \(value)")
         }
 
-        return details.joined(separator: "\n")
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+            lines.append(contentsOf: collectErrorLines(from: underlying, depth: depth + 1))
+        }
+        if let siblings = nsError.userInfo["NSMultipleUnderlyingErrorsKey"] as? [NSError] {
+            for sibling in siblings {
+                lines.append(contentsOf: collectErrorLines(from: sibling, depth: depth + 1))
+            }
+        }
+
+        return lines
     }
 }
