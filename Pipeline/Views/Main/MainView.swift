@@ -112,7 +112,7 @@ struct MainView: View {
         return "\(currentResumeRevision?.id.uuidString ?? "none")|\(settingsViewModel.jobMatchPreferences.fingerprint)|\(applicationToken)"
     }
 
-    private var filteredContacts: [Contact] {
+    private var filteredContactRows: [ContactRow] {
         contactsViewModel.filterContacts(contacts)
     }
 
@@ -290,7 +290,7 @@ struct MainView: View {
                     .font(.title2)
                     .fontWeight(.semibold)
 
-                Text("\(filteredContacts.count) contact\(filteredContacts.count == 1 ? "" : "s")")
+                Text("\(filteredContactRows.count) contact\(filteredContactRows.count == 1 ? "" : "s")")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
 
@@ -308,13 +308,19 @@ struct MainView: View {
                 .overlay(DesignSystem.Colors.divider(colorScheme))
 
             ContactsListView(
-                contacts: filteredContacts,
+                rows: filteredContactRows,
                 selectedContact: $selectedContact,
                 searchText: $searchText,
                 onAddContact: {
                     showingAddContact = true
                 }
             )
+            .task(id: contactsViewModel.searchText) {
+                try? await Task.sleep(for: .milliseconds(150))
+                if !Task.isCancelled {
+                    contactsViewModel.debouncedSearchText = contactsViewModel.searchText
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(DesignSystem.Colors.contentBackground(colorScheme))

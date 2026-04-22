@@ -26,6 +26,21 @@ public struct LinkedInCSVImportResult: Sendable {
     }
 }
 
+public struct LinkedInCSVImportProgress: Sendable, Hashable {
+    public let processed: Int
+    public let total: Int
+
+    public init(processed: Int, total: Int) {
+        self.processed = processed
+        self.total = total
+    }
+
+    public var fraction: Double {
+        guard total > 0 else { return 0 }
+        return min(1.0, Double(processed) / Double(total))
+    }
+}
+
 public enum LinkedInCSVImportError: LocalizedError {
     case unreadableFile
     case invalidFormat(String)
@@ -40,9 +55,10 @@ public enum LinkedInCSVImportError: LocalizedError {
     }
 }
 
-@MainActor
-public final class LinkedInCSVImportService {
+public final class LinkedInCSVImportService: @unchecked Sendable {
     public static let shared = LinkedInCSVImportService()
+
+    private static let persistBatchSize = 200
 
     private let requiredHeaderGroups: [LinkedInHeaderKey: [String]] = [
         .firstName: ["First Name", "First name"],
@@ -57,7 +73,7 @@ public final class LinkedInCSVImportService {
         .connectedOn: ["Connected On", "Connected Date", "Connected On Date"]
     ]
 
-    private lazy var dateFormatters: [DateFormatter] = {
+    private static let dateFormatters: [DateFormatter] = {
         ["MM/dd/yyyy", "yyyy-MM-dd", "dd MMM yyyy", "MMM d, yyyy"].map { format in
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -67,6 +83,70 @@ public final class LinkedInCSVImportService {
     }()
 
     private init() {}
+
+    // MARK: - Async API (preferred)
+
+    public func importFile(
+        at url: URL,
+        container: ModelContainer,
+        progress: (@Sendable (LinkedInCSVImportProgress) -> Void)? = nil
+    ) async throws -> LinkedInCSVImportResult {
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        guard let data = try? Data(contentsOf: url),
+              let csv = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .unicode) else {
+            throw LinkedInCSVImportError.unreadableFile
+        }
+
+        return try await importCSVString(
+            csv,
+            sourceFileName: url.lastPathComponent,
+            container: container,
+            progress: progress
+        )
+    }
+
+    public func importCSVString(
+        _ csv: String,
+        sourceFileName: String,
+        container: ModelContainer,
+        progress: (@Sendable (LinkedInCSVImportProgress) -> Void)? = nil
+    ) async throws -> LinkedInCSVImportResult {
+        let prepared = try preparePersistenceInput(csv: csv)
+        try Task.checkCancellation()
+        progress?(LinkedInCSVImportProgress(processed: 0, total: prepared.candidates.count))
+
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+
+        return try await persist(
+            candidates: prepared.candidates,
+            skippedCount: prepared.skippedCount,
+            sourceFileName: sourceFileName,
+            context: context,
+            progress: progress,
+            yieldBetweenBatches: true
+        )
+    }
+
+    public func clearImportedConnections(in context: ModelContext) throws {
+        for connection in try context.fetch(FetchDescriptor<ImportedNetworkConnection>()) {
+            context.delete(connection)
+        }
+
+        for batch in try context.fetch(FetchDescriptor<NetworkImportBatch>()) {
+            context.delete(batch)
+        }
+
+        try context.save()
+    }
+
+    // MARK: - Sync API (preserved for tests and legacy callers)
 
     public func importFile(at url: URL, into context: ModelContext) throws -> LinkedInCSVImportResult {
         let didAccess = url.startAccessingSecurityScopedResource()
@@ -93,12 +173,60 @@ public final class LinkedInCSVImportService {
         sourceFileName: String,
         into context: ModelContext
     ) throws -> LinkedInCSVImportResult {
+        let prepared = try preparePersistenceInput(csv: csv)
+        return try persistSynchronously(
+            candidates: prepared.candidates,
+            skippedCount: prepared.skippedCount,
+            sourceFileName: sourceFileName,
+            context: context
+        )
+    }
+
+    // MARK: - Parse + candidate construction (pure)
+
+    private struct PreparedInput {
+        let candidates: [ImportedConnectionCandidate]
+        let skippedCount: Int
+    }
+
+    private func preparePersistenceInput(csv: String) throws -> PreparedInput {
         let rows = CSVParser.parse(csv)
         guard let headerRow = rows.first, !headerRow.isEmpty else {
             throw LinkedInCSVImportError.invalidFormat("The LinkedIn CSV is empty.")
         }
 
         let headerMap = try resolveHeaders(headerRow)
+
+        var candidates: [ImportedConnectionCandidate] = []
+        candidates.reserveCapacity(rows.count)
+        var skippedCount = 0
+
+        for rawRow in rows.dropFirst() {
+            if rawRow.allSatisfy({ $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                continue
+            }
+            if let candidate = makeCandidate(from: rawRow, headers: headerMap) {
+                candidates.append(candidate)
+            } else {
+                skippedCount += 1
+            }
+        }
+
+        return PreparedInput(candidates: candidates, skippedCount: skippedCount)
+    }
+
+    // MARK: - Persistence (shared logic)
+
+    private func persist(
+        candidates: [ImportedConnectionCandidate],
+        skippedCount: Int,
+        sourceFileName: String,
+        context: ModelContext,
+        progress: (@Sendable (LinkedInCSVImportProgress) -> Void)?,
+        yieldBetweenBatches: Bool
+    ) async throws -> LinkedInCSVImportResult {
+        let total = candidates.count
+
         let batch = NetworkImportBatch(
             provider: .linkedInCSV,
             sourceFileName: sourceFileName,
@@ -118,71 +246,37 @@ public final class LinkedInCSVImportService {
 
         var importedCount = 0
         var updatedCount = 0
-        var skippedCount = 0
-        let errorCount = 0
-        let notes: [String] = []
 
-        for rawRow in rows.dropFirst() {
-            if rawRow.allSatisfy({ $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
-                continue
-            }
+        for (index, candidate) in candidates.enumerated() {
+            try Task.checkCancellation()
 
-            guard let candidate = makeCandidate(from: rawRow, headers: headerMap) else {
-                skippedCount += 1
-                continue
-            }
+            applyCandidate(
+                candidate,
+                batch: batch,
+                context: context,
+                connectionsByURL: &connectionsByURL,
+                connectionsByLookupKey: &connectionsByLookupKey,
+                importedCount: &importedCount,
+                updatedCount: &updatedCount
+            )
 
-            let identityURL = candidate.linkedInURL?.lowercased()
-            let lookupKey = candidate.lookupKey
-            let existing = identityURL.flatMap { connectionsByURL[$0] } ?? connectionsByLookupKey[lookupKey]
-
-            if let existing {
-                existing.fullName = candidate.fullName
-                existing.email = candidate.email
-                existing.companyName = candidate.companyName
-                existing.title = candidate.title
-                existing.linkedInURL = candidate.linkedInURL
-                existing.connectedOn = candidate.connectedOn
-                existing.notes = candidate.notes
-                existing.providerRowID = candidate.providerRowID
-                existing.batch = batch
-                existing.refreshNormalizedFields()
-                if existing.linkedContact != nil {
-                    existing.status = .promoted
+            let processed = index + 1
+            let isFinal = processed == total
+            if processed % Self.persistBatchSize == 0 || isFinal {
+                try context.save()
+                progress?(LinkedInCSVImportProgress(processed: processed, total: total))
+                if yieldBetweenBatches && !isFinal {
+                    await Task.yield()
+                    try Task.checkCancellation()
                 }
-                existing.updateTimestamp()
-                updatedCount += 1
-                if let identityURL {
-                    connectionsByURL[identityURL] = existing
-                }
-                connectionsByLookupKey[existing.lookupKey] = existing
-            } else {
-                let connection = ImportedNetworkConnection(
-                    provider: .linkedInCSV,
-                    providerRowID: candidate.providerRowID,
-                    fullName: candidate.fullName,
-                    email: candidate.email,
-                    companyName: candidate.companyName,
-                    title: candidate.title,
-                    linkedInURL: candidate.linkedInURL,
-                    connectedOn: candidate.connectedOn,
-                    notes: candidate.notes,
-                    batch: batch
-                )
-                context.insert(connection)
-                importedCount += 1
-                if let identityURL {
-                    connectionsByURL[identityURL] = connection
-                }
-                connectionsByLookupKey[connection.lookupKey] = connection
             }
         }
 
         batch.importedCount = importedCount
         batch.updatedCount = updatedCount
         batch.skippedCount = skippedCount
-        batch.errorCount = errorCount
-        batch.notes = notes.isEmpty ? nil : notes.uniquedPreservingOrder().joined(separator: "\n")
+        batch.errorCount = 0
+        batch.notes = nil
         batch.updateTimestamp()
 
         try context.save()
@@ -192,22 +286,124 @@ public final class LinkedInCSVImportService {
             importedCount: importedCount,
             updatedCount: updatedCount,
             skippedCount: skippedCount,
-            errorCount: errorCount,
-            notes: batch.notes
+            errorCount: 0,
+            notes: nil
         )
     }
 
-    public func clearImportedConnections(in context: ModelContext) throws {
-        for connection in try context.fetch(FetchDescriptor<ImportedNetworkConnection>()) {
-            context.delete(connection)
+    private func persistSynchronously(
+        candidates: [ImportedConnectionCandidate],
+        skippedCount: Int,
+        sourceFileName: String,
+        context: ModelContext
+    ) throws -> LinkedInCSVImportResult {
+        let batch = NetworkImportBatch(
+            provider: .linkedInCSV,
+            sourceFileName: sourceFileName,
+            importedAt: Date()
+        )
+        context.insert(batch)
+
+        let existingConnections = try context.fetch(FetchDescriptor<ImportedNetworkConnection>())
+        var connectionsByURL = Dictionary(
+            uniqueKeysWithValues: existingConnections.compactMap { connection in
+                connection.linkedInURL.map { ($0.lowercased(), connection) }
+            }
+        )
+        var connectionsByLookupKey = Dictionary(
+            uniqueKeysWithValues: existingConnections.map { ($0.lookupKey, $0) }
+        )
+
+        var importedCount = 0
+        var updatedCount = 0
+
+        for candidate in candidates {
+            applyCandidate(
+                candidate,
+                batch: batch,
+                context: context,
+                connectionsByURL: &connectionsByURL,
+                connectionsByLookupKey: &connectionsByLookupKey,
+                importedCount: &importedCount,
+                updatedCount: &updatedCount
+            )
         }
 
-        for batch in try context.fetch(FetchDescriptor<NetworkImportBatch>()) {
-            context.delete(batch)
-        }
+        batch.importedCount = importedCount
+        batch.updatedCount = updatedCount
+        batch.skippedCount = skippedCount
+        batch.errorCount = 0
+        batch.notes = nil
+        batch.updateTimestamp()
 
         try context.save()
+
+        return LinkedInCSVImportResult(
+            batchID: batch.id,
+            importedCount: importedCount,
+            updatedCount: updatedCount,
+            skippedCount: skippedCount,
+            errorCount: 0,
+            notes: nil
+        )
     }
+
+    private func applyCandidate(
+        _ candidate: ImportedConnectionCandidate,
+        batch: NetworkImportBatch,
+        context: ModelContext,
+        connectionsByURL: inout [String: ImportedNetworkConnection],
+        connectionsByLookupKey: inout [String: ImportedNetworkConnection],
+        importedCount: inout Int,
+        updatedCount: inout Int
+    ) {
+        let identityURL = candidate.linkedInURL?.lowercased()
+        let lookupKey = candidate.lookupKey
+        let existing = identityURL.flatMap { connectionsByURL[$0] } ?? connectionsByLookupKey[lookupKey]
+
+        if let existing {
+            existing.fullName = candidate.fullName
+            existing.email = candidate.email
+            existing.companyName = candidate.companyName
+            existing.title = candidate.title
+            existing.linkedInURL = candidate.linkedInURL
+            existing.connectedOn = candidate.connectedOn
+            existing.notes = candidate.notes
+            existing.providerRowID = candidate.providerRowID
+            existing.batch = batch
+            existing.refreshNormalizedFields()
+            if existing.linkedContact != nil {
+                existing.status = .promoted
+            }
+            existing.updateTimestamp()
+            updatedCount += 1
+            if let identityURL {
+                connectionsByURL[identityURL] = existing
+            }
+            connectionsByLookupKey[existing.lookupKey] = existing
+        } else {
+            let connection = ImportedNetworkConnection(
+                provider: .linkedInCSV,
+                providerRowID: candidate.providerRowID,
+                fullName: candidate.fullName,
+                email: candidate.email,
+                companyName: candidate.companyName,
+                title: candidate.title,
+                linkedInURL: candidate.linkedInURL,
+                connectedOn: candidate.connectedOn,
+                notes: candidate.notes,
+                batch: batch
+            )
+            context.insert(connection)
+            importedCount += 1
+            if let identityURL {
+                connectionsByURL[identityURL] = connection
+            }
+            connectionsByLookupKey[connection.lookupKey] = connection
+        }
+    }
+
+    // MARK: - Helpers
 
     private func resolveHeaders(_ headers: [String]) throws -> [LinkedInHeaderKey: Int] {
         let normalizedHeaders = headers.enumerated().reduce(into: [String: Int]()) { result, entry in
@@ -286,7 +482,7 @@ public final class LinkedInCSVImportService {
 
     private func parsedDate(_ value: String?) -> Date? {
         guard let value = CompanyProfile.normalizedText(value) else { return nil }
-        for formatter in dateFormatters {
+        for formatter in Self.dateFormatters {
             if let date = formatter.date(from: value) {
                 return date
             }

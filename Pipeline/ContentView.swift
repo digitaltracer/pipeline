@@ -40,13 +40,18 @@ struct ContentView: View {
         }
     }
 
-    private var filteredContacts: [Contact] {
-        guard !searchText.isEmpty else { return contacts }
-        return contacts.filter { contact in
-            contact.fullName.localizedCaseInsensitiveContains(searchText) ||
-            (contact.companyName?.localizedCaseInsensitiveContains(searchText) ?? false) ||
-            (contact.email?.localizedCaseInsensitiveContains(searchText) ?? false)
+    private var filteredContactRows: [ContactRow] {
+        let source: [Contact]
+        if searchText.isEmpty {
+            source = contacts
+        } else {
+            source = contacts.filter { contact in
+                contact.fullName.localizedCaseInsensitiveContains(searchText) ||
+                (contact.companyName?.localizedCaseInsensitiveContains(searchText) ?? false) ||
+                (contact.email?.localizedCaseInsensitiveContains(searchText) ?? false)
+            }
         }
+        return source.map(ContactsListViewModel.buildRow(from:))
     }
 
     private var currentResumeRevision: ResumeMasterRevision? {
@@ -126,6 +131,7 @@ struct ContentView: View {
         )
         .preferredColorScheme(settingsViewModel.getColorScheme())
         .appWindowBackground()
+        .id(settingsViewModel.darkThemeStyle)
         .task {
             prewarmJSONEditorIfNeeded()
             await configureNotificationRouting()
@@ -181,7 +187,7 @@ struct ContentView: View {
                     OfferComparisonWorkspaceView(settingsViewModel: settingsViewModel)
                 case .contacts:
                     ContactsListView(
-                        contacts: filteredContacts,
+                        rows: filteredContactRows,
                         selectedContact: $selectedContact,
                         searchText: $searchText,
                         onAddContact: {
@@ -303,6 +309,7 @@ struct ContentView: View {
         .sheet(isPresented: $showingSettings) {
             settingsSheet
         }
+        .id(settingsViewModel.darkThemeStyle)
         .task {
             prewarmJSONEditorIfNeeded()
             await configureNotificationRouting()

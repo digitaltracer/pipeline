@@ -23,6 +23,7 @@ final class SettingsViewModel {
 
     private enum StorageKeys {
         static let appearanceMode = "appearanceMode"
+        static let darkThemeStyle = DarkThemeStyle.userDefaultsKey
         static let selectedAIProvider = "selectedAIProvider"
         static let selectedAIModel = "selectedAIModel"
         static let cloudSyncEnabled = Constants.UserDefaultsKeys.cloudSyncEnabled
@@ -63,6 +64,12 @@ final class SettingsViewModel {
     var appearanceMode: AppearanceMode {
         didSet {
             UserDefaults.standard.set(appearanceMode.rawValue, forKey: StorageKeys.appearanceMode)
+        }
+    }
+
+    var darkThemeStyle: DarkThemeStyle {
+        didSet {
+            DarkThemeStyle.setCurrent(darkThemeStyle)
         }
     }
 
@@ -260,6 +267,13 @@ final class SettingsViewModel {
             self.appearanceMode = mode
         } else {
             self.appearanceMode = .system
+        }
+
+        if let rawValue = UserDefaults.standard.string(forKey: StorageKeys.darkThemeStyle),
+           let style = DarkThemeStyle(rawValue: rawValue) {
+            self.darkThemeStyle = style
+        } else {
+            self.darkThemeStyle = .coolBlue
         }
 
         if let rawValue = UserDefaults.standard.string(forKey: StorageKeys.selectedAIProvider),

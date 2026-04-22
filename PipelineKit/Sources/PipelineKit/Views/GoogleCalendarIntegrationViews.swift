@@ -55,6 +55,8 @@ private struct IntegrationsHubView: View {
     @State private var linkedInSearchText = ""
     @State private var aliasCanonicalName = ""
     @State private var aliasName = ""
+    @State private var linkedInImportProgress: LinkedInCSVImportProgress?
+    @State private var linkedInImportTask: Task<Void, Never>?
 
     private var account: GoogleCalendarAccount? {
         accounts.first
@@ -311,13 +313,49 @@ private struct IntegrationsHubView: View {
             switch result {
             case .success(let urls):
                 guard let url = urls.first else { return }
-                runTask("Importing LinkedIn connections…") {
-                    _ = try LinkedInCSVImportService.shared.importFile(at: url, into: modelContext)
-                }
+                startLinkedInImport(url: url)
             case .failure(let error):
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    private func startLinkedInImport(url: URL) {
+        guard !isBusy else { return }
+        let container = modelContext.container
+
+        isBusy = true
+        busyMessage = "Importing LinkedIn connections…"
+        linkedInImportProgress = LinkedInCSVImportProgress(processed: 0, total: 0)
+
+        linkedInImportTask = Task { @MainActor in
+            defer {
+                isBusy = false
+                busyMessage = nil
+                linkedInImportProgress = nil
+                linkedInImportTask = nil
+            }
+
+            do {
+                _ = try await LinkedInCSVImportService.shared.importFile(
+                    at: url,
+                    container: container,
+                    progress: { progress in
+                        Task { @MainActor in
+                            linkedInImportProgress = progress
+                        }
+                    }
+                )
+            } catch is CancellationError {
+                // Silent cancel
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func cancelLinkedInImport() {
+        linkedInImportTask?.cancel()
     }
 
     private var header: some View {
@@ -374,19 +412,54 @@ private struct IntegrationsHubView: View {
                     }
 
                     if let busyMessage {
-                        HStack(spacing: 10) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text(busyMessage)
-                                .font(.subheadline.weight(.medium))
+                        if let progress = linkedInImportProgress, linkedInImportTask != nil {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 10) {
+                                    Text(busyMessage)
+                                        .font(.subheadline.weight(.medium))
+                                    Spacer()
+                                    Button("Cancel") {
+                                        cancelLinkedInImport()
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .controlSize(.small)
+                                }
+
+                                if progress.total > 0 {
+                                    ProgressView(value: progress.fraction)
+                                    Text("Imported \(progress.processed) of \(progress.total)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    ProgressView()
+                                        .progressViewStyle(.linear)
+                                    Text("Preparing rows…")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color.primary.opacity(0.05))
+                            )
+                        } else {
+                            HStack(spacing: 10) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text(busyMessage)
+                                    .font(.subheadline.weight(.medium))
+                            }
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color.primary.opacity(0.05))
+                            )
                         }
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(Color.primary.opacity(0.05))
-                        )
                     }
                 }
             }

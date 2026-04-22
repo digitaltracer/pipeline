@@ -5,7 +5,7 @@ import AppKit
 #endif
 
 struct ContactsListView: View {
-    let contacts: [Contact]
+    let rows: [ContactRow]
     @Binding var selectedContact: Contact?
     @Binding var searchText: String
     var onAddContact: () -> Void
@@ -16,16 +16,16 @@ struct ContactsListView: View {
 
     var body: some View {
         Group {
-            if contacts.isEmpty {
+            if rows.isEmpty {
                 emptyState
             } else {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(contacts) { contact in
-                            ContactCardView(contact: contact, isSelected: selectedContact?.id == contact.id)
+                        ForEach(rows) { row in
+                            ContactCardView(row: row, isSelected: selectedContact?.id == row.contact.id)
                                 .applicationCardHandCursor()
                                 .onTapGesture {
-                                    selectedContact = contact
+                                    selectedContact = row.contact
                                 }
                         }
                     }
@@ -74,7 +74,7 @@ private extension View {
 }
 
 private struct ContactCardView: View {
-    let contact: Contact
+    let row: ContactRow
     let isSelected: Bool
     @Environment(\.colorScheme) private var colorScheme
 
@@ -85,23 +85,23 @@ private struct ContactCardView: View {
                     .fill(DesignSystem.Colors.accent.opacity(0.14))
                     .frame(width: 46, height: 46)
                     .overlay {
-                        Text(contact.initials)
+                        Text(row.initials)
                             .font(.system(size: 16, weight: .semibold, design: .rounded))
                             .foregroundColor(DesignSystem.Colors.accent)
                     }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(contact.fullName)
+                    Text(row.fullName)
                         .font(.headline)
                         .foregroundColor(.primary)
 
-                    if let title = contact.title, !title.isEmpty {
+                    if let title = row.title, !title.isEmpty {
                         Text(title)
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
 
-                    if let relationship = contact.relationship, !relationship.isEmpty {
+                    if let relationship = row.relationship, !relationship.isEmpty {
                         Text(relationship)
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -110,11 +110,11 @@ private struct ContactCardView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Label(contact.displayCompanyName, systemImage: "building.2")
-                if let email = contact.email, !email.isEmpty {
+                Label(row.displayCompanyName, systemImage: "building.2")
+                if let email = row.email, !email.isEmpty {
                     Label(email, systemImage: "envelope")
                 }
-                Text("\(contact.linkedApplications.count) linked application\(contact.linkedApplications.count == 1 ? "" : "s")")
+                Text("\(row.linkedCount) linked application\(row.linkedCount == 1 ? "" : "s")")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

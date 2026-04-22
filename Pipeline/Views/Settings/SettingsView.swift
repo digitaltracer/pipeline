@@ -284,7 +284,10 @@ struct SettingsView: View {
     private var selectedCategoryContent: some View {
         switch selectedCategory {
         case .appearance:
-            AppearanceSettingsContent(viewModel: viewModel)
+            VStack(spacing: 24) {
+                AppearanceSettingsContent(viewModel: viewModel)
+                DarkThemeStyleSection(viewModel: viewModel)
+            }
         case .aiProvider:
             AIProviderSettingsContent(viewModel: viewModel)
         case .allApplications:
