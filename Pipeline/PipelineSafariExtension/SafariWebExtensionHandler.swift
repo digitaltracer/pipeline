@@ -4,6 +4,7 @@ import SwiftData
 import PipelineKit
 import os.log
 
+@MainActor
 final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
     private static let logger = Logger(
@@ -11,7 +12,13 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         category: "ExtensionHandler"
     )
 
-    func beginRequest(with context: NSExtensionContext) {
+    nonisolated func beginRequest(with context: NSExtensionContext) {
+        MainActor.assumeIsolated {
+            self.handleRequest(context: context)
+        }
+    }
+
+    private func handleRequest(context: NSExtensionContext) {
         let request = context.inputItems.first as? NSExtensionItem
 
         guard let message = request?.userInfo?[SFExtensionMessageKey] as? [String: Any],
@@ -20,7 +27,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             return
         }
 
-        Task {
+        Task { @MainActor in
             let response: [String: Any]
 
             switch command {
@@ -32,9 +39,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                 response = ["error": "Unknown command: \(command)"]
             }
 
-            await MainActor.run {
-                self.respond(with: response, context: context)
-            }
+            self.respond(with: response, context: context)
         }
     }
 
@@ -57,7 +62,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
         // Check for duplicates first
         do {
-            let dupResult = try await duplicateCheck(
+            let dupResult = try duplicateCheck(
                 url: url,
                 company: company,
                 role: title
@@ -102,7 +107,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         let role = message["role"] as? String
 
         do {
-            let result = try await duplicateCheck(
+            let result = try duplicateCheck(
                 url: url,
                 company: company,
                 role: role
