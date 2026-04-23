@@ -50,6 +50,7 @@ public enum SharedContainer {
             NetworkImportBatch.self,
             ImportedNetworkConnection.self,
             CompanyAlias.self,
+            DismissedAliasSuggestion.self,
             ReferralAttempt.self,
             WeeklyDigestSnapshot.self,
             WeeklyDigestInsight.self,

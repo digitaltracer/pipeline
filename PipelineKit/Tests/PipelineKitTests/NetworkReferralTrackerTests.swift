@@ -122,6 +122,53 @@ import Testing
     #expect(aliasSuggestions.first?.matchedViaAlias == true)
 }
 
+@Test @MainActor func dismissedAliasSuggestionsAreFilteredOut() throws {
+    let container = try makeNetworkReferralContainer()
+    let context = ModelContext(container)
+
+    let application = JobApplication(
+        companyName: "Moloco",
+        role: "iOS Engineer",
+        location: "Remote"
+    )
+    let connection = ImportedNetworkConnection(
+        providerRowID: "loco-avi",
+        fullName: "Avinash B",
+        email: nil,
+        companyName: "Loco",
+        title: "Engineer"
+    )
+    context.insert(application)
+    context.insert(connection)
+    try context.save()
+
+    let applications = try context.fetch(FetchDescriptor<JobApplication>())
+    let connections = try context.fetch(FetchDescriptor<ImportedNetworkConnection>())
+
+    let initial = NetworkReferralMatchingService.potentialAliasSuggestions(
+        applications: applications,
+        connections: connections,
+        aliases: [],
+        dismissed: []
+    )
+    #expect(initial.count == 1)
+
+    _ = try NetworkReferralMatchingService.dismissAliasSuggestion(
+        canonicalName: "Moloco",
+        aliasName: "Loco",
+        in: context
+    )
+
+    let dismissed = try context.fetch(FetchDescriptor<DismissedAliasSuggestion>())
+    let afterDismiss = NetworkReferralMatchingService.potentialAliasSuggestions(
+        applications: applications,
+        connections: connections,
+        aliases: [],
+        dismissed: dismissed
+    )
+    #expect(afterDismiss.isEmpty)
+}
+
 @Test func dashboardAnalyticsCountsReceivedReferralAttribution() async throws {
     let application = JobApplication(
         companyName: "OpenAI",
@@ -168,6 +215,7 @@ private func makeNetworkReferralContainer() throws -> ModelContainer {
         NetworkImportBatch.self,
         ImportedNetworkConnection.self,
         CompanyAlias.self,
+        DismissedAliasSuggestion.self,
         ReferralAttempt.self
     ])
 

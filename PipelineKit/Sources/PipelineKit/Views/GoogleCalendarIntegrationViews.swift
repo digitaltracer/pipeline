@@ -43,6 +43,7 @@ private struct IntegrationsHubView: View {
     @Query(sort: \NetworkImportBatch.importedAt, order: .reverse) private var networkImportBatches: [NetworkImportBatch]
     @Query(sort: \ImportedNetworkConnection.updatedAt, order: .reverse) private var importedConnections: [ImportedNetworkConnection]
     @Query(sort: \CompanyAlias.updatedAt, order: .reverse) private var companyAliases: [CompanyAlias]
+    @Query(sort: \DismissedAliasSuggestion.dismissedAt, order: .reverse) private var dismissedAliasSuggestions: [DismissedAliasSuggestion]
     @Query(sort: \JobApplication.updatedAt, order: .reverse) private var applications: [JobApplication]
 
     let showHeader: Bool
@@ -147,7 +148,7 @@ private struct IntegrationsHubView: View {
     }
 
     private var aliasSuggestionsInputKey: [Int] {
-        [applications.count, importedConnections.count, companyAliases.count]
+        [applications.count, importedConnections.count, companyAliases.count, dismissedAliasSuggestions.count]
     }
 
     private var connectionStateText: String {
@@ -329,7 +330,8 @@ private struct IntegrationsHubView: View {
             cachedAliasSuggestions = NetworkReferralMatchingService.potentialAliasSuggestions(
                 applications: applications,
                 connections: importedConnections,
-                aliases: companyAliases
+                aliases: companyAliases,
+                dismissed: dismissedAliasSuggestions
             )
         }
         .alert("Integrations", isPresented: Binding(
@@ -1016,16 +1018,30 @@ private struct IntegrationsHubView: View {
 
                                 Spacer()
 
-                                Button("Confirm") {
-                                    runTask("Saving company alias…") {
-                                        try NetworkReferralMatchingService.addAlias(
-                                            canonicalName: suggestion.canonicalName,
-                                            aliasName: suggestion.aliasName,
-                                            in: modelContext
-                                        )
+                                HStack(spacing: 8) {
+                                    Button("Dismiss") {
+                                        runTask("Dismissing suggestion…") {
+                                            try NetworkReferralMatchingService.dismissAliasSuggestion(
+                                                canonicalName: suggestion.canonicalName,
+                                                aliasName: suggestion.aliasName,
+                                                in: modelContext
+                                            )
+                                        }
                                     }
+                                    .buttonStyle(.bordered)
+                                    .help("Hide this suggestion. These names will not be suggested again.")
+
+                                    Button("Confirm") {
+                                        runTask("Saving company alias…") {
+                                            try NetworkReferralMatchingService.addAlias(
+                                                canonicalName: suggestion.canonicalName,
+                                                aliasName: suggestion.aliasName,
+                                                in: modelContext
+                                            )
+                                        }
+                                    }
+                                    .buttonStyle(.borderedProminent)
                                 }
-                                .buttonStyle(.bordered)
                             }
                             .padding(12)
                             .background(

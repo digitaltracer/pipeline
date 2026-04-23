@@ -108,9 +108,11 @@ public enum NetworkReferralMatchingService {
     public static func potentialAliasSuggestions(
         applications: [JobApplication],
         connections: [ImportedNetworkConnection],
-        aliases: [CompanyAlias]
+        aliases: [CompanyAlias],
+        dismissed: [DismissedAliasSuggestion] = []
     ) -> [PotentialCompanyAliasSuggestion] {
         let knownPairs = Set(aliases.map { "\($0.normalizedCanonicalName)|\($0.normalizedAliasName)" })
+        let dismissedPairs = Set(dismissed.map { "\($0.normalizedCanonicalName)|\($0.normalizedAliasName)" })
         var suggestions: [PotentialCompanyAliasSuggestion] = []
 
         for application in applications {
@@ -121,6 +123,7 @@ public enum NetworkReferralMatchingService {
                 let companyKey = connection.normalizedCompanyName
                 guard !companyKey.isEmpty, companyKey != appKey else { continue }
                 guard !knownPairs.contains("\(appKey)|\(companyKey)") else { continue }
+                guard !dismissedPairs.contains("\(appKey)|\(companyKey)") else { continue }
 
                 if looksLikeAlias(lhs: appKey, rhs: companyKey) {
                     suggestions.append(
@@ -135,6 +138,27 @@ public enum NetworkReferralMatchingService {
         }
 
         return suggestions.uniquedPreservingOrder()
+    }
+
+    @discardableResult
+    public static func dismissAliasSuggestion(
+        canonicalName: String,
+        aliasName: String,
+        in context: ModelContext
+    ) throws -> DismissedAliasSuggestion {
+        let normalizedCanonicalName = CompanyProfile.normalizedName(from: canonicalName)
+        let normalizedAliasName = CompanyProfile.normalizedName(from: aliasName)
+
+        if let existing = try context.fetch(FetchDescriptor<DismissedAliasSuggestion>()).first(where: {
+            $0.normalizedCanonicalName == normalizedCanonicalName && $0.normalizedAliasName == normalizedAliasName
+        }) {
+            return existing
+        }
+
+        let dismissal = DismissedAliasSuggestion(canonicalName: canonicalName, aliasName: aliasName)
+        context.insert(dismissal)
+        try context.save()
+        return dismissal
     }
 
     @discardableResult
