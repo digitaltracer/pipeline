@@ -3,14 +3,38 @@ import PipelineKit
 
 struct AppearanceSettingsView: View {
     @Bindable var viewModel: SettingsViewModel
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var showsDarkThemeStyle: Bool {
+        switch viewModel.appearanceMode {
+        case .dark: return true
+        case .light: return false
+        case .system: return colorScheme == .dark
+        }
+    }
+
+    private var showsLightThemeStyle: Bool {
+        switch viewModel.appearanceMode {
+        case .light: return true
+        case .dark: return false
+        case .system: return colorScheme == .light
+        }
+    }
 
     var body: some View {
         Form {
             Section("Theme") {
                 AppearanceSettingsContent(viewModel: viewModel)
             }
-            Section("Dark Theme Style") {
-                DarkThemeStyleSection(viewModel: viewModel)
+            if showsDarkThemeStyle {
+                Section("Dark Theme Style") {
+                    DarkThemeStyleSection(viewModel: viewModel)
+                }
+            }
+            if showsLightThemeStyle {
+                Section("Light Theme Style") {
+                    LightThemeStyleSection(viewModel: viewModel)
+                }
             }
         }
         .formStyle(.grouped)
@@ -93,6 +117,119 @@ struct DarkThemeStyleCard: View {
                 .overlay {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                }
+
+            VStack(spacing: 2) {
+                Text(style.displayName)
+                    .font(.subheadline)
+                    .fontWeight(isSelected ? .semibold : .regular)
+                    .foregroundColor(isSelected ? DesignSystem.Colors.accent : .primary)
+
+                Text(style.description)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity)
+        .appCard(cornerRadius: 14, elevated: true, shadow: false)
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(isSelected ? DesignSystem.Colors.accent : Color.clear, lineWidth: 2)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var preview: some View {
+        HStack(spacing: 0) {
+            Rectangle()
+                .fill(palette.sidebarBackground.color)
+                .frame(width: 22)
+                .overlay(alignment: .leading) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        ForEach(0..<3, id: \.self) { _ in
+                            RoundedRectangle(cornerRadius: 1.5)
+                                .fill(palette.surfaceElevated.color)
+                                .frame(width: 12, height: 3)
+                        }
+                    }
+                    .padding(.leading, 5)
+                }
+
+            ZStack {
+                palette.contentBackground.color
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 4) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(palette.surface.color)
+                            .frame(height: 6)
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(palette.surface.color)
+                            .frame(height: 6)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(palette.primary.color)
+                        .frame(width: 36, height: 4)
+                }
+                .padding(8)
+            }
+        }
+    }
+}
+
+struct LightThemeStyleSection: View {
+    @Bindable var viewModel: SettingsViewModel
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 16),
+        GridItem(.flexible(), spacing: 16)
+    ]
+
+    var body: some View {
+        SettingsFormSectionCard(
+            title: "Light Theme Style",
+            subtitle: "Choose the color palette used in light mode.",
+            icon: "sun.max.fill"
+        ) {
+            LazyVGrid(columns: columns, spacing: 16) {
+                ForEach(LightThemeStyle.allCases) { style in
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            viewModel.lightThemeStyle = style
+                        }
+                    } label: {
+                        LightThemeStyleCard(
+                            style: style,
+                            isSelected: viewModel.lightThemeStyle == style
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}
+
+struct LightThemeStyleCard: View {
+    let style: LightThemeStyle
+    let isSelected: Bool
+
+    private var palette: LightThemePalette { style.palette }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            preview
+                .frame(height: 84)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
                 }
 
             VStack(spacing: 2) {

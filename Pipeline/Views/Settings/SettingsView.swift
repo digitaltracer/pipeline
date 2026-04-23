@@ -280,13 +280,34 @@ struct SettingsView: View {
         .background(DesignSystem.Colors.contentBackground(colorScheme))
     }
 
+    private var showsDarkThemeStyle: Bool {
+        switch viewModel.appearanceMode {
+        case .dark: return true
+        case .light: return false
+        case .system: return colorScheme == .dark
+        }
+    }
+
+    private var showsLightThemeStyle: Bool {
+        switch viewModel.appearanceMode {
+        case .light: return true
+        case .dark: return false
+        case .system: return colorScheme == .light
+        }
+    }
+
     @ViewBuilder
     private var selectedCategoryContent: some View {
         switch selectedCategory {
         case .appearance:
             VStack(spacing: 24) {
                 AppearanceSettingsContent(viewModel: viewModel)
-                DarkThemeStyleSection(viewModel: viewModel)
+                if showsDarkThemeStyle {
+                    DarkThemeStyleSection(viewModel: viewModel)
+                }
+                if showsLightThemeStyle {
+                    LightThemeStyleSection(viewModel: viewModel)
+                }
             }
         case .aiProvider:
             AIProviderSettingsContent(viewModel: viewModel)

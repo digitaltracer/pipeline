@@ -24,6 +24,7 @@ final class SettingsViewModel {
     private enum StorageKeys {
         static let appearanceMode = "appearanceMode"
         static let darkThemeStyle = DarkThemeStyle.userDefaultsKey
+        static let lightThemeStyle = LightThemeStyle.userDefaultsKey
         static let selectedAIProvider = "selectedAIProvider"
         static let selectedAIModel = "selectedAIModel"
         static let cloudSyncEnabled = Constants.UserDefaultsKeys.cloudSyncEnabled
@@ -70,6 +71,12 @@ final class SettingsViewModel {
     var darkThemeStyle: DarkThemeStyle {
         didSet {
             DarkThemeStyle.setCurrent(darkThemeStyle)
+        }
+    }
+
+    var lightThemeStyle: LightThemeStyle {
+        didSet {
+            LightThemeStyle.setCurrent(lightThemeStyle)
         }
     }
 
@@ -274,6 +281,13 @@ final class SettingsViewModel {
             self.darkThemeStyle = style
         } else {
             self.darkThemeStyle = .coolBlue
+        }
+
+        if let rawValue = UserDefaults.standard.string(forKey: StorageKeys.lightThemeStyle),
+           let style = LightThemeStyle(rawValue: rawValue) {
+            self.lightThemeStyle = style
+        } else {
+            self.lightThemeStyle = .classic
         }
 
         if let rawValue = UserDefaults.standard.string(forKey: StorageKeys.selectedAIProvider),

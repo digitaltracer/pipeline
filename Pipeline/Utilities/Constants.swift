@@ -38,116 +38,91 @@ enum DesignSystem {
         static let accent = Color.pipelineBlue
 
         private static var darkPalette: DarkThemePalette { DarkThemeStyle.current.palette }
+        private static var lightPalette: LightThemePalette { LightThemeStyle.current.palette }
 
         static func primary(_ scheme: ColorScheme) -> Color {
-            scheme == .dark
-                ? darkPalette.primary.color
-                : Color(red: 0.15, green: 0.383, blue: 0.85)     // HSL(220, 70%, 50%)
+            scheme == .dark ? darkPalette.primary.color : lightPalette.primary.color
         }
 
         // MARK: Surfaces
         static func windowGradient(_ scheme: ColorScheme) -> LinearGradient {
+            let top: Color
+            let bottom: Color
             if scheme == .dark {
-                let palette = darkPalette
-                return LinearGradient(
-                    colors: [
-                        palette.windowGradientTop.color,
-                        palette.windowGradientBottom.color
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                top = darkPalette.windowGradientTop.color
+                bottom = darkPalette.windowGradientBottom.color
+            } else {
+                top = lightPalette.windowGradientTop.color
+                bottom = lightPalette.windowGradientBottom.color
             }
-
             return LinearGradient(
-                colors: [
-                    Color(red: 0.954, green: 0.958, blue: 0.966),  // --background light
-                    Color(red: 0.932, green: 0.937, blue: 0.948)   // --accent light
-                ],
+                colors: [top, bottom],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
         }
 
         static func sidebarBackground(_ scheme: ColorScheme) -> Color {
-            scheme == .dark
-                ? darkPalette.sidebarBackground.color
-                : Color(red: 0.98, green: 0.98, blue: 0.98)     // HSL(0, 0%, 98%)
+            scheme == .dark ? darkPalette.sidebarBackground.color : lightPalette.sidebarBackground.color
         }
 
         static func contentBackground(_ scheme: ColorScheme) -> Color {
-            scheme == .dark
-                ? darkPalette.contentBackground.color
-                : Color(red: 0.954, green: 0.958, blue: 0.966)  // HSL(220, 14%, 96%)
+            scheme == .dark ? darkPalette.contentBackground.color : lightPalette.contentBackground.color
         }
 
         static func surface(_ scheme: ColorScheme) -> Color {
-            scheme == .dark
-                ? darkPalette.surface.color
-                : .white
+            scheme == .dark ? darkPalette.surface.color : lightPalette.surface.color
         }
 
         static func surfaceElevated(_ scheme: ColorScheme) -> Color {
-            scheme == .dark
-                ? darkPalette.surfaceElevated.color
-                : Color(red: 0.909, green: 0.916, blue: 0.931)  // HSL(220, 14%, 92%)
+            scheme == .dark ? darkPalette.surfaceElevated.color : lightPalette.surfaceElevated.color
         }
 
         static func inputBackground(_ scheme: ColorScheme) -> Color {
-            scheme == .dark
-                ? darkPalette.inputBackground.color
-                : Color(red: 0.886, green: 0.895, blue: 0.914)  // HSL(220, 14%, 90%)
+            scheme == .dark ? darkPalette.inputBackground.color : lightPalette.inputBackground.color
         }
 
         // MARK: Utility
         static func stroke(_ scheme: ColorScheme) -> Color {
-            scheme == .dark
-                ? darkPalette.stroke.color
-                : Color(red: 0.863, green: 0.874, blue: 0.897)  // HSL(220, 14%, 88%)
+            scheme == .dark ? darkPalette.stroke.color : lightPalette.stroke.color
         }
 
         static func divider(_ scheme: ColorScheme) -> Color {
-            scheme == .dark
-                ? darkPalette.divider.color
-                : Color(red: 0.863, green: 0.874, blue: 0.897)  // HSL(220, 14%, 88%)
+            scheme == .dark ? darkPalette.divider.color : lightPalette.divider.color
         }
 
         static func shadow(_ scheme: ColorScheme) -> Color {
             scheme == .dark
                 ? Color.black.opacity(darkPalette.shadowOpacity)
-                : Color(red: 0.08, green: 0.093, blue: 0.12).opacity(0.08)
+                : Color(red: 0.08, green: 0.093, blue: 0.12).opacity(lightPalette.shadowOpacity)
         }
 
         static func placeholder(_ scheme: ColorScheme) -> Color {
-            scheme == .dark
-                ? darkPalette.placeholder.color
-                : Color(red: 0.405, green: 0.435, blue: 0.495)  // HSL(220, 10%, 45%)
+            scheme == .dark ? darkPalette.placeholder.color : lightPalette.placeholder.color
         }
 
         // MARK: Destructive
         static func destructive(_ scheme: ColorScheme) -> Color {
-            scheme == .dark
-                ? darkPalette.destructive.color
-                : Color(red: 0.863, green: 0.157, blue: 0.157)  // HSL(0, 72%, 51%)
+            scheme == .dark ? darkPalette.destructive.color : lightPalette.destructive.color
         }
 
         // MARK: Glass Effect
         static func glassBackground(_ scheme: ColorScheme) -> Color {
             scheme == .dark
                 ? darkPalette.surface.color.opacity(darkPalette.glassBackgroundOpacity)
-                : Color.white.opacity(0.7)
+                : lightPalette.surface.color.opacity(lightPalette.glassBackgroundOpacity)
         }
 
         static func glassBorder(_ scheme: ColorScheme) -> Color {
             scheme == .dark
                 ? Color.white.opacity(darkPalette.glassBorderOpacity)
-                : Color.white.opacity(0.3)
+                : Color.white.opacity(lightPalette.glassBorderOpacity)
         }
 
         static func glassShadow(_ scheme: ColorScheme) -> Color {
             scheme == .dark
                 ? Color.black.opacity(darkPalette.shadowOpacity)
-                : Color(red: 0.08, green: 0.093, blue: 0.12).opacity(0.08)
+                : Color(red: 0.08, green: 0.093, blue: 0.12).opacity(lightPalette.shadowOpacity)
         }
     }
 }
