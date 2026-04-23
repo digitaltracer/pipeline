@@ -114,12 +114,40 @@ private struct IntegrationsHubView: View {
         }
     }
 
+    /// Snapshot everything `LinkedInImportedConnectionRow` needs into plain value types, so the
+    /// LazyVStack can diff and render rows without touching SwiftData. All fields are scalars
+    /// already hydrated by the `@Query` fetch — we deliberately avoid `connection.linkedContact`
+    /// here because that relationship is lazy-faulted and accessing it 911 times on main-thread
+    /// view open is what we're trying to eliminate. `status == .promoted` is the invariant mirror
+    /// for the "has a linked contact" UI concern.
+    private var filteredLinkedInRowData: [LinkedInConnectionRowViewData] {
+        filteredImportedConnections.map { connection in
+            LinkedInConnectionRowViewData(
+                id: connection.id,
+                fullName: connection.fullName,
+                displayCompanyName: connection.displayCompanyName,
+                title: connection.title,
+                email: connection.email,
+                status: connection.status,
+                hasLinkedContact: connection.status == .promoted,
+                connection: connection
+            )
+        }
+    }
+
+    /// Memoized output of `NetworkReferralMatchingService.potentialAliasSuggestions`. The
+    /// underlying computation is O(applications × connections) and the computed property it
+    /// replaced was being read 6+ times per body eval (provider summary × 3, queue count,
+    /// overview summary, section badge). With 911 connections that cost dominated tab-open
+    /// and provider-switch latency. Now populated once per input-count change via `.task(id:)`.
+    @State private var cachedAliasSuggestions: [PotentialCompanyAliasSuggestion] = []
+
     private var potentialAliasSuggestions: [PotentialCompanyAliasSuggestion] {
-        NetworkReferralMatchingService.potentialAliasSuggestions(
-            applications: applications,
-            connections: importedConnections,
-            aliases: companyAliases
-        )
+        cachedAliasSuggestions
+    }
+
+    private var aliasSuggestionsInputKey: [Int] {
+        [applications.count, importedConnections.count, companyAliases.count]
     }
 
     private var connectionStateText: String {
@@ -296,6 +324,13 @@ private struct IntegrationsHubView: View {
         }
         .task {
             await GoogleCalendarImportCoordinator.shared.restoreSessionIfPossible(in: modelContext)
+        }
+        .task(id: aliasSuggestionsInputKey) {
+            cachedAliasSuggestions = NetworkReferralMatchingService.potentialAliasSuggestions(
+                applications: applications,
+                connections: importedConnections,
+                aliases: companyAliases
+            )
         }
         .alert("Integrations", isPresented: Binding(
             get: { errorMessage != nil },
@@ -1052,27 +1087,32 @@ private struct IntegrationsHubView: View {
                     TextField("Search by name, company, or email", text: $linkedInSearchText)
                         .textFieldStyle(.roundedBorder)
 
-                    ForEach(filteredImportedConnections) { connection in
-                        LinkedInImportedConnectionRow(
-                            connection: connection,
-                            onPromote: {
-                                runTask("Promoting contact…") {
-                                    _ = try NetworkReferralMatchingService.promote(
-                                        connection: connection,
-                                        in: modelContext
-                                    )
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        ForEach(filteredLinkedInRowData) { rowData in
+                            LinkedInImportedConnectionRow(
+                                data: rowData,
+                                onPromote: {
+                                    let connection = rowData.connection
+                                    runTask("Promoting contact…") {
+                                        _ = try NetworkReferralMatchingService.promote(
+                                            connection: connection,
+                                            in: modelContext
+                                        )
+                                    }
+                                },
+                                onToggleIgnored: {
+                                    let connection = rowData.connection
+                                    let isIgnored = rowData.status == .ignored
+                                    runTask(isIgnored ? "Restoring network row…" : "Ignoring network row…") {
+                                        try NetworkReferralMatchingService.setIgnored(
+                                            !isIgnored,
+                                            for: connection,
+                                            in: modelContext
+                                        )
+                                    }
                                 }
-                            },
-                            onToggleIgnored: {
-                                runTask(connection.status == .ignored ? "Restoring network row…" : "Ignoring network row…") {
-                                    try NetworkReferralMatchingService.setIgnored(
-                                        connection.status != .ignored,
-                                        for: connection,
-                                        in: modelContext
-                                    )
-                                }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
@@ -1527,8 +1567,19 @@ private struct GoogleCalendarSubscriptionRow: View {
     }
 }
 
-private struct LinkedInImportedConnectionRow: View {
+private struct LinkedInConnectionRowViewData: Identifiable {
+    let id: UUID
+    let fullName: String
+    let displayCompanyName: String
+    let title: String?
+    let email: String?
+    let status: ImportedNetworkConnectionStatus
+    let hasLinkedContact: Bool
     let connection: ImportedNetworkConnection
+}
+
+private struct LinkedInImportedConnectionRow: View {
+    let data: LinkedInConnectionRowViewData
     let onPromote: () -> Void
     let onToggleIgnored: () -> Void
 
@@ -1536,31 +1587,31 @@ private struct LinkedInImportedConnectionRow: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
                 Circle()
-                    .fill((connection.status == .ignored ? Color.secondary : Color.blue).opacity(0.14))
+                    .fill((data.status == .ignored ? Color.secondary : Color.blue).opacity(0.14))
                     .frame(width: 40, height: 40)
                     .overlay {
                         Text(initials)
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(connection.status == .ignored ? Color.secondary : Color.blue)
+                            .foregroundStyle(data.status == .ignored ? Color.secondary : Color.blue)
                     }
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
-                        Text(connection.fullName)
+                        Text(data.fullName)
                             .font(.subheadline.weight(.semibold))
 
                         IntegrationPill(
-                            text: connection.status.displayName,
-                            systemImage: connection.status.icon,
-                            tint: connection.status.color
+                            text: data.status.displayName,
+                            systemImage: data.status.icon,
+                            tint: data.status.color
                         )
                     }
 
-                    Text(connection.displayCompanyName)
+                    Text(data.displayCompanyName)
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    if let title = connection.title, !title.isEmpty {
+                    if let title = data.title, !title.isEmpty {
                         Text(title)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -1570,19 +1621,19 @@ private struct LinkedInImportedConnectionRow: View {
                 Spacer()
             }
 
-            if let email = connection.email, !email.isEmpty {
+            if let email = data.email, !email.isEmpty {
                 Label(email, systemImage: "envelope")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             HStack(spacing: 10) {
-                Button(connection.linkedContact == nil ? "Promote to Contact" : "Refresh Contact") {
+                Button(data.hasLinkedContact ? "Refresh Contact" : "Promote to Contact") {
                     onPromote()
                 }
                 .buttonStyle(.bordered)
 
-                Button(connection.status == .ignored ? "Restore" : "Ignore") {
+                Button(data.status == .ignored ? "Restore" : "Ignore") {
                     onToggleIgnored()
                 }
                 .buttonStyle(.bordered)
@@ -1595,13 +1646,13 @@ private struct LinkedInImportedConnectionRow: View {
                 .fill(Color.secondary.opacity(0.07))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(connection.status.color.opacity(0.25))
+                        .strokeBorder(data.status.color.opacity(0.25))
                 )
         )
     }
 
     private var initials: String {
-        let words = connection.fullName.split(whereSeparator: \.isWhitespace)
+        let words = data.fullName.split(whereSeparator: \.isWhitespace)
         let letters = words.prefix(2).compactMap { $0.first.map(String.init) }.joined()
         return letters.isEmpty ? "?" : letters.uppercased()
     }
