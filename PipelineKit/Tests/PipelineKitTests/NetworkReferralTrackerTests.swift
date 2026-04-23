@@ -41,6 +41,34 @@ import Testing
     #expect(connections.first?.companyName == "Google LLC")
 }
 
+@Test @MainActor func linkedInCSVImportSkipsOfficialExportPreamble() throws {
+    let container = try makeNetworkReferralContainer()
+    let context = ModelContext(container)
+
+    let csv = """
+    Notes:
+    "When exporting your connection data, you may notice that some of the email addresses are missing. You will only see email addresses for connections who have allowed their connections to see or download their email address using this setting https://www.linkedin.com/psettings/privacy/email. You can learn more here https://www.linkedin.com/help/linkedin/answer/261"
+
+    First Name,Last Name,URL,Email Address,Company,Position,Connected On
+    Tony,Tom,https://www.linkedin.com/in/tonytom,,Orca AI,Co-founder & CEO,02 Apr 2026
+    Siddhartha,Gupta,https://www.linkedin.com/in/guptasidd,,Docket,Growth and Product,02 Apr 2026
+    """
+
+    let result = try LinkedInCSVImportService.shared.importCSVString(
+        csv,
+        sourceFileName: "Connections.csv",
+        into: context
+    )
+
+    #expect(result.importedCount == 2)
+    #expect(result.skippedCount == 0)
+
+    let connections = try context.fetch(FetchDescriptor<ImportedNetworkConnection>())
+    #expect(connections.count == 2)
+    #expect(connections.contains { $0.fullName == "Tony Tom" && $0.companyName == "Orca AI" })
+    #expect(connections.contains { $0.fullName == "Siddhartha Gupta" && $0.companyName == "Docket" })
+}
+
 @Test @MainActor func linkedInCSVImportRejectsMissingLinkedInHeaders() throws {
     let container = try makeNetworkReferralContainer()
     let context = ModelContext(container)

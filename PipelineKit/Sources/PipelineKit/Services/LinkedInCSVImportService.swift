@@ -190,7 +190,8 @@ public final class LinkedInCSVImportService: @unchecked Sendable {
     }
 
     private func preparePersistenceInput(csv: String) throws -> PreparedInput {
-        let rows = CSVParser.parse(csv)
+        let sanitized = strippingLinkedInPreamble(from: csv)
+        let rows = CSVParser.parse(sanitized)
         guard let headerRow = rows.first, !headerRow.isEmpty else {
             throw LinkedInCSVImportError.invalidFormat("The LinkedIn CSV is empty.")
         }
@@ -213,6 +214,30 @@ public final class LinkedInCSVImportService: @unchecked Sendable {
         }
 
         return PreparedInput(candidates: candidates, skippedCount: skippedCount)
+    }
+
+    /// LinkedIn's official `Connections.csv` export begins with a "Notes:" block and a
+    /// multi-line quoted disclaimer paragraph before the real header row. Strip anything
+    /// before the first line that looks like the LinkedIn header so the parser sees a
+    /// well-formed CSV.
+    private func strippingLinkedInPreamble(from csv: String) -> String {
+        let lines = csv.components(separatedBy: "\n")
+        guard let headerLineIndex = lines.firstIndex(where: isLinkedInHeaderLine),
+              headerLineIndex > 0 else {
+            return csv
+        }
+        return lines[headerLineIndex...].joined(separator: "\n")
+    }
+
+    private func isLinkedInHeaderLine(_ line: String) -> Bool {
+        let cells = line
+            .split(separator: ",", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        let firstNameAliases = (requiredHeaderGroups[.firstName] ?? []).map { $0.lowercased() }
+        let lastNameAliases = (requiredHeaderGroups[.lastName] ?? []).map { $0.lowercased() }
+        let hasFirstName = firstNameAliases.contains { cells.contains($0) }
+        let hasLastName = lastNameAliases.contains { cells.contains($0) }
+        return hasFirstName && hasLastName
     }
 
     // MARK: - Persistence (shared logic)
