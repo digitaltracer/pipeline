@@ -196,29 +196,69 @@ final class OnboardingStore {
     var isPresentingIntro = false
     var guidanceMuted: Bool {
         didSet {
-            defaults.set(guidanceMuted, forKey: Constants.UserDefaultsKeys.onboardingGuidanceMuted)
+            SettingsSyncCoordinator.shared.setSyncable(
+                guidanceMuted,
+                forKey: Constants.UserDefaultsKeys.onboardingGuidanceMuted
+            )
         }
     }
 
     var hasCompletedIntro: Bool {
         didSet {
-            defaults.set(hasCompletedIntro, forKey: Constants.UserDefaultsKeys.hasCompletedOnboarding)
+            SettingsSyncCoordinator.shared.setSyncable(
+                hasCompletedIntro,
+                forKey: Constants.UserDefaultsKeys.hasCompletedOnboarding
+            )
         }
     }
 
     var lastSeenVersion: String {
         didSet {
-            defaults.set(lastSeenVersion, forKey: Constants.UserDefaultsKeys.onboardingLastSeenVersion)
+            SettingsSyncCoordinator.shared.setSyncable(
+                lastSeenVersion,
+                forKey: Constants.UserDefaultsKeys.onboardingLastSeenVersion
+            )
         }
     }
 
     private let defaults: UserDefaults
+    private var remoteChangeObserver: NSObjectProtocol?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         self.guidanceMuted = defaults.bool(forKey: Constants.UserDefaultsKeys.onboardingGuidanceMuted)
         self.hasCompletedIntro = defaults.bool(forKey: Constants.UserDefaultsKeys.hasCompletedOnboarding)
         self.lastSeenVersion = defaults.string(forKey: Constants.UserDefaultsKeys.onboardingLastSeenVersion) ?? ""
+
+        self.remoteChangeObserver = NotificationCenter.default.addObserver(
+            forName: .settingsDidChangeRemotely,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let changedKeys = Set((notification.userInfo?["changedKeys"] as? [String]) ?? [])
+            self?.rehydrate(changedKeys: changedKeys)
+        }
+    }
+
+    deinit {
+        if let observer = remoteChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    private func rehydrate(changedKeys: Set<String>) {
+        if changedKeys.contains(Constants.UserDefaultsKeys.onboardingGuidanceMuted) {
+            let remote = defaults.bool(forKey: Constants.UserDefaultsKeys.onboardingGuidanceMuted)
+            if guidanceMuted != remote { guidanceMuted = remote }
+        }
+        if changedKeys.contains(Constants.UserDefaultsKeys.hasCompletedOnboarding) {
+            let remote = defaults.bool(forKey: Constants.UserDefaultsKeys.hasCompletedOnboarding)
+            if hasCompletedIntro != remote { hasCompletedIntro = remote }
+        }
+        if changedKeys.contains(Constants.UserDefaultsKeys.onboardingLastSeenVersion) {
+            let remote = defaults.string(forKey: Constants.UserDefaultsKeys.onboardingLastSeenVersion) ?? ""
+            if lastSeenVersion != remote { lastSeenVersion = remote }
+        }
     }
 
     func presentIntroIfNeeded() {

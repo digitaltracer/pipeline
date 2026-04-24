@@ -18,6 +18,11 @@ struct PipelineApp: App {
         // Migrate legacy store to App Group container before opening
         SharedContainer.migrateStoreIfNeeded()
 
+        // Pull any iCloud-synced preferences into UserDefaults BEFORE any
+        // view model reads them, and seed the cloud store with already-set
+        // local values on first launch after upgrade.
+        SettingsSyncCoordinator.shared.start()
+
         do {
             let storedSyncPreference = UserDefaults.standard.object(
                 forKey: Constants.UserDefaultsKeys.cloudSyncEnabled

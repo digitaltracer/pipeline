@@ -59,12 +59,13 @@ final class SettingsViewModel {
 
     private static let modelCatalogRefreshInterval: TimeInterval = 60 * 60 * 24
     private let sharedDefaults = UserDefaults(suiteName: SharedContainer.appGroupID)
+    private var remoteChangeObserver: NSObjectProtocol?
 
     // MARK: - Appearance
 
     var appearanceMode: AppearanceMode {
         didSet {
-            UserDefaults.standard.set(appearanceMode.rawValue, forKey: StorageKeys.appearanceMode)
+            SettingsSyncCoordinator.shared.setSyncable(appearanceMode.rawValue, forKey: StorageKeys.appearanceMode)
         }
     }
 
@@ -84,26 +85,32 @@ final class SettingsViewModel {
 
     var selectedAIProvider: AIProvider {
         didSet {
-            UserDefaults.standard.set(selectedAIProvider.rawValue, forKey: StorageKeys.selectedAIProvider)
+            SettingsSyncCoordinator.shared.setSyncable(selectedAIProvider.rawValue, forKey: StorageKeys.selectedAIProvider)
             ensureSelectedAIModelIsValid()
         }
     }
 
     var selectedAIModel: String {
         didSet {
-            UserDefaults.standard.set(selectedAIModel, forKey: StorageKeys.selectedAIModel)
+            SettingsSyncCoordinator.shared.setSyncable(selectedAIModel, forKey: StorageKeys.selectedAIModel)
         }
     }
 
     private var hiddenStatusesInAllApplications: [String] {
         didSet {
-            UserDefaults.standard.set(hiddenStatusesInAllApplications, forKey: StorageKeys.hiddenStatusesInAllApplications)
+            SettingsSyncCoordinator.shared.setSyncable(
+                hiddenStatusesInAllApplications,
+                forKey: StorageKeys.hiddenStatusesInAllApplications
+            )
         }
     }
 
     private var customModelsByProviderID: [String: [String]] {
         didSet {
-            UserDefaults.standard.set(customModelsByProviderID, forKey: StorageKeys.customModelsByProviderID)
+            SettingsSyncCoordinator.shared.setSyncable(
+                customModelsByProviderID,
+                forKey: StorageKeys.customModelsByProviderID
+            )
         }
     }
 
@@ -126,20 +133,20 @@ final class SettingsViewModel {
 
     var notificationsEnabled: Bool {
         didSet {
-            UserDefaults.standard.set(notificationsEnabled, forKey: StorageKeys.notificationsEnabled)
+            SettingsSyncCoordinator.shared.setSyncable(notificationsEnabled, forKey: StorageKeys.notificationsEnabled)
             sharedDefaults?.set(notificationsEnabled, forKey: StorageKeys.notificationsEnabled)
         }
     }
 
     var reminderTiming: ReminderTiming {
         didSet {
-            UserDefaults.standard.set(reminderTiming.rawValue, forKey: StorageKeys.reminderTiming)
+            SettingsSyncCoordinator.shared.setSyncable(reminderTiming.rawValue, forKey: StorageKeys.reminderTiming)
         }
     }
 
     var weeklyDigestNotificationsEnabled: Bool {
         didSet {
-            UserDefaults.standard.set(
+            SettingsSyncCoordinator.shared.setSyncable(
                 weeklyDigestNotificationsEnabled,
                 forKey: StorageKeys.weeklyDigestNotificationsEnabled
             )
@@ -148,76 +155,100 @@ final class SettingsViewModel {
 
     var weeklyDigestWeekday: Int {
         didSet {
-            UserDefaults.standard.set(weeklyDigestWeekday, forKey: StorageKeys.weeklyDigestWeekday)
+            SettingsSyncCoordinator.shared.setSyncable(weeklyDigestWeekday, forKey: StorageKeys.weeklyDigestWeekday)
         }
     }
 
     var weeklyDigestHour: Int {
         didSet {
-            UserDefaults.standard.set(weeklyDigestHour, forKey: StorageKeys.weeklyDigestHour)
+            SettingsSyncCoordinator.shared.setSyncable(weeklyDigestHour, forKey: StorageKeys.weeklyDigestHour)
         }
     }
 
     var weeklyDigestMinute: Int {
         didSet {
-            UserDefaults.standard.set(weeklyDigestMinute, forKey: StorageKeys.weeklyDigestMinute)
+            SettingsSyncCoordinator.shared.setSyncable(weeklyDigestMinute, forKey: StorageKeys.weeklyDigestMinute)
         }
     }
 
     var applyQueueDailyTarget: Int {
         didSet {
-            UserDefaults.standard.set(applyQueueDailyTarget, forKey: StorageKeys.applyQueueDailyTarget)
+            SettingsSyncCoordinator.shared.setSyncable(applyQueueDailyTarget, forKey: StorageKeys.applyQueueDailyTarget)
             sharedDefaults?.set(applyQueueDailyTarget, forKey: StorageKeys.applyQueueDailyTarget)
         }
     }
 
     var applyQueueNotificationHour: Int {
         didSet {
-            UserDefaults.standard.set(applyQueueNotificationHour, forKey: StorageKeys.applyQueueNotificationHour)
+            SettingsSyncCoordinator.shared.setSyncable(
+                applyQueueNotificationHour,
+                forKey: StorageKeys.applyQueueNotificationHour
+            )
             sharedDefaults?.set(applyQueueNotificationHour, forKey: StorageKeys.applyQueueNotificationHour)
         }
     }
 
     var applyQueueNotificationMinute: Int {
         didSet {
-            UserDefaults.standard.set(applyQueueNotificationMinute, forKey: StorageKeys.applyQueueNotificationMinute)
+            SettingsSyncCoordinator.shared.setSyncable(
+                applyQueueNotificationMinute,
+                forKey: StorageKeys.applyQueueNotificationMinute
+            )
             sharedDefaults?.set(applyQueueNotificationMinute, forKey: StorageKeys.applyQueueNotificationMinute)
         }
     }
 
     var analyticsBaseCurrency: Currency {
         didSet {
-            UserDefaults.standard.set(analyticsBaseCurrency.rawValue, forKey: StorageKeys.analyticsBaseCurrency)
+            SettingsSyncCoordinator.shared.setSyncable(
+                analyticsBaseCurrency.rawValue,
+                forKey: StorageKeys.analyticsBaseCurrency
+            )
         }
     }
 
     var jobMatchPreferredCurrency: Currency {
         didSet {
-            UserDefaults.standard.set(jobMatchPreferredCurrency.rawValue, forKey: StorageKeys.jobMatchPreferredCurrency)
+            SettingsSyncCoordinator.shared.setSyncable(
+                jobMatchPreferredCurrency.rawValue,
+                forKey: StorageKeys.jobMatchPreferredCurrency
+            )
         }
     }
 
     var jobMatchPreferredSalaryMinText: String {
         didSet {
-            UserDefaults.standard.set(jobMatchPreferredSalaryMinText, forKey: StorageKeys.jobMatchPreferredSalaryMinText)
+            SettingsSyncCoordinator.shared.setSyncable(
+                jobMatchPreferredSalaryMinText,
+                forKey: StorageKeys.jobMatchPreferredSalaryMinText
+            )
         }
     }
 
     var jobMatchPreferredSalaryMaxText: String {
         didSet {
-            UserDefaults.standard.set(jobMatchPreferredSalaryMaxText, forKey: StorageKeys.jobMatchPreferredSalaryMaxText)
+            SettingsSyncCoordinator.shared.setSyncable(
+                jobMatchPreferredSalaryMaxText,
+                forKey: StorageKeys.jobMatchPreferredSalaryMaxText
+            )
         }
     }
 
     private var jobMatchAllowedWorkModesRawValues: [String] {
         didSet {
-            UserDefaults.standard.set(jobMatchAllowedWorkModesRawValues, forKey: StorageKeys.jobMatchAllowedWorkModes)
+            SettingsSyncCoordinator.shared.setSyncable(
+                jobMatchAllowedWorkModesRawValues,
+                forKey: StorageKeys.jobMatchAllowedWorkModes
+            )
         }
     }
 
     private var jobMatchPreferredLocations: [String] {
         didSet {
-            UserDefaults.standard.set(jobMatchPreferredLocations, forKey: StorageKeys.jobMatchPreferredLocations)
+            SettingsSyncCoordinator.shared.setSyncable(
+                jobMatchPreferredLocations,
+                forKey: StorageKeys.jobMatchPreferredLocations
+            )
         }
     }
 
@@ -371,6 +402,21 @@ final class SettingsViewModel {
         migrateSelectedAIModelIfNeeded()
         ensureSelectedAIModelIsValid()
         syncSharedNotificationSettings()
+
+        self.remoteChangeObserver = NotificationCenter.default.addObserver(
+            forName: .settingsDidChangeRemotely,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let changedKeys = (notification.userInfo?["changedKeys"] as? [String]) ?? []
+            self?.rehydrate(changedKeys: Set(changedKeys))
+        }
+    }
+
+    deinit {
+        if let observer = remoteChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     // MARK: - Methods
@@ -380,6 +426,120 @@ final class SettingsViewModel {
         case .light: return .light
         case .dark: return .dark
         case .system: return nil
+        }
+    }
+
+    private func rehydrate(changedKeys: Set<String>) {
+        if changedKeys.contains(StorageKeys.appearanceMode) {
+            if let rawValue = UserDefaults.standard.string(forKey: StorageKeys.appearanceMode),
+               let mode = AppearanceMode(rawValue: rawValue) {
+                if appearanceMode != mode { appearanceMode = mode }
+            }
+        }
+        if changedKeys.contains(StorageKeys.darkThemeStyle) {
+            DarkThemeStyle.reloadCurrentFromDefaults()
+            if let rawValue = UserDefaults.standard.string(forKey: StorageKeys.darkThemeStyle),
+               let style = DarkThemeStyle(rawValue: rawValue) {
+                if darkThemeStyle != style { darkThemeStyle = style }
+            }
+        }
+        if changedKeys.contains(StorageKeys.lightThemeStyle) {
+            LightThemeStyle.reloadCurrentFromDefaults()
+            if let rawValue = UserDefaults.standard.string(forKey: StorageKeys.lightThemeStyle),
+               let style = LightThemeStyle(rawValue: rawValue) {
+                if lightThemeStyle != style { lightThemeStyle = style }
+            }
+        }
+        if changedKeys.contains(StorageKeys.selectedAIProvider) {
+            if let rawValue = UserDefaults.standard.string(forKey: StorageKeys.selectedAIProvider),
+               let provider = AIProvider(rawValue: rawValue) {
+                if selectedAIProvider != provider { selectedAIProvider = provider }
+            }
+        }
+        if changedKeys.contains(StorageKeys.selectedAIModel) {
+            let remote = UserDefaults.standard.string(forKey: StorageKeys.selectedAIModel) ?? ""
+            if selectedAIModel != remote { selectedAIModel = remote }
+        }
+        if changedKeys.contains(StorageKeys.customModelsByProviderID) {
+            let remote = Self.loadStringArrayDictionary(forKey: StorageKeys.customModelsByProviderID)
+            if customModelsByProviderID != remote { customModelsByProviderID = remote }
+        }
+        if changedKeys.contains(StorageKeys.hiddenStatusesInAllApplications) {
+            let remote = UserDefaults.standard.stringArray(forKey: StorageKeys.hiddenStatusesInAllApplications) ?? []
+            if hiddenStatusesInAllApplications != remote { hiddenStatusesInAllApplications = remote }
+        }
+        if changedKeys.contains(StorageKeys.notificationsEnabled) {
+            let remote = UserDefaults.standard.bool(forKey: StorageKeys.notificationsEnabled)
+            if notificationsEnabled != remote { notificationsEnabled = remote }
+        }
+        if changedKeys.contains(StorageKeys.reminderTiming) {
+            if let rawValue = UserDefaults.standard.string(forKey: StorageKeys.reminderTiming),
+               let timing = ReminderTiming(rawValue: rawValue) {
+                if reminderTiming != timing { reminderTiming = timing }
+            }
+        }
+        if changedKeys.contains(StorageKeys.weeklyDigestNotificationsEnabled) {
+            let remote = UserDefaults.standard.bool(forKey: StorageKeys.weeklyDigestNotificationsEnabled)
+            if weeklyDigestNotificationsEnabled != remote { weeklyDigestNotificationsEnabled = remote }
+        }
+        if changedKeys.contains(StorageKeys.weeklyDigestWeekday) {
+            let raw = UserDefaults.standard.integer(forKey: StorageKeys.weeklyDigestWeekday)
+            let remote = (1...7).contains(raw) ? raw : weeklyDigestWeekday
+            if weeklyDigestWeekday != remote { weeklyDigestWeekday = remote }
+        }
+        if changedKeys.contains(StorageKeys.weeklyDigestHour) {
+            let raw = UserDefaults.standard.integer(forKey: StorageKeys.weeklyDigestHour)
+            let remote = (0...23).contains(raw) ? raw : weeklyDigestHour
+            if weeklyDigestHour != remote { weeklyDigestHour = remote }
+        }
+        if changedKeys.contains(StorageKeys.weeklyDigestMinute) {
+            let raw = UserDefaults.standard.integer(forKey: StorageKeys.weeklyDigestMinute)
+            let remote = (0...59).contains(raw) ? raw : weeklyDigestMinute
+            if weeklyDigestMinute != remote { weeklyDigestMinute = remote }
+        }
+        if changedKeys.contains(StorageKeys.applyQueueDailyTarget) {
+            let raw = UserDefaults.standard.integer(forKey: StorageKeys.applyQueueDailyTarget)
+            let remote = (1...12).contains(raw) ? raw : applyQueueDailyTarget
+            if applyQueueDailyTarget != remote { applyQueueDailyTarget = remote }
+        }
+        if changedKeys.contains(StorageKeys.applyQueueNotificationHour) {
+            let raw = UserDefaults.standard.integer(forKey: StorageKeys.applyQueueNotificationHour)
+            let remote = (0...23).contains(raw) ? raw : applyQueueNotificationHour
+            if applyQueueNotificationHour != remote { applyQueueNotificationHour = remote }
+        }
+        if changedKeys.contains(StorageKeys.applyQueueNotificationMinute) {
+            let raw = UserDefaults.standard.integer(forKey: StorageKeys.applyQueueNotificationMinute)
+            let remote = (0...59).contains(raw) ? raw : applyQueueNotificationMinute
+            if applyQueueNotificationMinute != remote { applyQueueNotificationMinute = remote }
+        }
+        if changedKeys.contains(StorageKeys.analyticsBaseCurrency) {
+            if let rawValue = UserDefaults.standard.string(forKey: StorageKeys.analyticsBaseCurrency),
+               let currency = Currency(rawValue: rawValue) {
+                if analyticsBaseCurrency != currency { analyticsBaseCurrency = currency }
+            }
+        }
+        if changedKeys.contains(StorageKeys.jobMatchPreferredCurrency) {
+            if let rawValue = UserDefaults.standard.string(forKey: StorageKeys.jobMatchPreferredCurrency),
+               let currency = Currency(rawValue: rawValue) {
+                if jobMatchPreferredCurrency != currency { jobMatchPreferredCurrency = currency }
+            }
+        }
+        if changedKeys.contains(StorageKeys.jobMatchPreferredSalaryMinText) {
+            let remote = UserDefaults.standard.string(forKey: StorageKeys.jobMatchPreferredSalaryMinText) ?? ""
+            if jobMatchPreferredSalaryMinText != remote { jobMatchPreferredSalaryMinText = remote }
+        }
+        if changedKeys.contains(StorageKeys.jobMatchPreferredSalaryMaxText) {
+            let remote = UserDefaults.standard.string(forKey: StorageKeys.jobMatchPreferredSalaryMaxText) ?? ""
+            if jobMatchPreferredSalaryMaxText != remote { jobMatchPreferredSalaryMaxText = remote }
+        }
+        if changedKeys.contains(StorageKeys.jobMatchAllowedWorkModes) {
+            let remote = UserDefaults.standard.stringArray(forKey: StorageKeys.jobMatchAllowedWorkModes)
+                ?? JobMatchWorkMode.allCases.map(\.rawValue)
+            if jobMatchAllowedWorkModesRawValues != remote { jobMatchAllowedWorkModesRawValues = remote }
+        }
+        if changedKeys.contains(StorageKeys.jobMatchPreferredLocations) {
+            let remote = UserDefaults.standard.stringArray(forKey: StorageKeys.jobMatchPreferredLocations) ?? []
+            if jobMatchPreferredLocations != remote { jobMatchPreferredLocations = remote }
         }
     }
 

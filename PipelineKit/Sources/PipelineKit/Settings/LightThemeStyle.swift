@@ -37,7 +37,7 @@ public enum LightThemeStyle: String, CaseIterable, Identifiable, Sendable {
 }
 
 public extension LightThemeStyle {
-    static let userDefaultsKey = "lightThemeStyle"
+    static let userDefaultsKey = Constants.UserDefaultsKeys.lightThemeStyle
 
     private static let lock = NSLock()
     nonisolated(unsafe) private static var _current: LightThemeStyle = {
@@ -55,6 +55,16 @@ public extension LightThemeStyle {
         lock.lock()
         _current = style
         lock.unlock()
-        UserDefaults.standard.set(style.rawValue, forKey: userDefaultsKey)
+        SettingsSyncCoordinator.shared.setSyncable(style.rawValue, forKey: userDefaultsKey)
+    }
+
+    /// Reloads `_current` from `UserDefaults`. Called by the sync coordinator
+    /// after applying a remote change so the cached palette reflects iCloud.
+    static func reloadCurrentFromDefaults() {
+        let stored = UserDefaults.standard.string(forKey: userDefaultsKey)
+        let resolved = stored.flatMap(LightThemeStyle.init(rawValue:)) ?? .classic
+        lock.lock()
+        _current = resolved
+        lock.unlock()
     }
 }

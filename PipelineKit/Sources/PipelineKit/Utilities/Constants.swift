@@ -58,8 +58,11 @@ public enum Constants {
 
     public enum UserDefaultsKeys {
         public static let appearanceMode = "appearanceMode"
+        public static let darkThemeStyle = "darkThemeStyle"
+        public static let lightThemeStyle = "lightThemeStyle"
         public static let selectedAIProvider = "selectedAIProvider"
         public static let selectedAIModel = "selectedAIModel"
+        public static let customModelsByProviderID = "customModelsByProviderID"
         public static let cloudSyncEnabled = "cloudSyncEnabled"
         public static let cloudSyncStartupError = "cloudSyncStartupError"
         public static let appLockEnabled = "appLockEnabled"
@@ -73,10 +76,56 @@ public enum Constants {
         public static let applyQueueNotificationHour = "applyQueueNotificationHour"
         public static let applyQueueNotificationMinute = "applyQueueNotificationMinute"
         public static let analyticsBaseCurrency = "analyticsBaseCurrency"
+        public static let jobMatchPreferredCurrency = "jobMatchPreferredCurrency"
+        public static let jobMatchPreferredSalaryMinText = "jobMatchPreferredSalaryMinText"
+        public static let jobMatchPreferredSalaryMaxText = "jobMatchPreferredSalaryMaxText"
+        public static let jobMatchAllowedWorkModes = "jobMatchAllowedWorkModes"
+        public static let jobMatchPreferredLocations = "jobMatchPreferredLocations"
+        public static let hiddenStatusesInAllApplications = "hiddenStatusesInAllApplications"
+        public static let customApplicationStatuses = "customApplicationStatuses"
+        public static let customSources = "customSources"
+        public static let customInterviewStages = "customInterviewStages"
         public static let lastSyncDate = "lastSyncDate"
         public static let hasCompletedOnboarding = "hasCompletedOnboarding"
         public static let onboardingGuidanceMuted = "onboardingGuidanceMuted"
         public static let onboardingLastSeenVersion = "onboardingLastSeenVersion"
+    }
+
+    // MARK: - Settings Sync
+
+    public enum Sync {
+        /// UserDefaults keys that should sync to iCloud via NSUbiquitousKeyValueStore.
+        /// Anything not in this set stays local (caches, device-specific toggles, sync-control itself).
+        public static let syncableUserDefaultsKeys: Set<String> = [
+            UserDefaultsKeys.appearanceMode,
+            UserDefaultsKeys.darkThemeStyle,
+            UserDefaultsKeys.lightThemeStyle,
+            UserDefaultsKeys.selectedAIProvider,
+            UserDefaultsKeys.selectedAIModel,
+            UserDefaultsKeys.customModelsByProviderID,
+            UserDefaultsKeys.notificationsEnabled,
+            UserDefaultsKeys.reminderTiming,
+            UserDefaultsKeys.weeklyDigestNotificationsEnabled,
+            UserDefaultsKeys.weeklyDigestWeekday,
+            UserDefaultsKeys.weeklyDigestHour,
+            UserDefaultsKeys.weeklyDigestMinute,
+            UserDefaultsKeys.applyQueueDailyTarget,
+            UserDefaultsKeys.applyQueueNotificationHour,
+            UserDefaultsKeys.applyQueueNotificationMinute,
+            UserDefaultsKeys.analyticsBaseCurrency,
+            UserDefaultsKeys.jobMatchPreferredCurrency,
+            UserDefaultsKeys.jobMatchPreferredSalaryMinText,
+            UserDefaultsKeys.jobMatchPreferredSalaryMaxText,
+            UserDefaultsKeys.jobMatchAllowedWorkModes,
+            UserDefaultsKeys.jobMatchPreferredLocations,
+            UserDefaultsKeys.hiddenStatusesInAllApplications,
+            UserDefaultsKeys.hasCompletedOnboarding,
+            UserDefaultsKeys.onboardingGuidanceMuted,
+            UserDefaultsKeys.onboardingLastSeenVersion,
+            UserDefaultsKeys.customApplicationStatuses,
+            UserDefaultsKeys.customSources,
+            UserDefaultsKeys.customInterviewStages
+        ]
     }
 
     // MARK: - Notification Identifiers

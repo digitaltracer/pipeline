@@ -37,7 +37,7 @@ public enum DarkThemeStyle: String, CaseIterable, Identifiable, Sendable {
 }
 
 public extension DarkThemeStyle {
-    static let userDefaultsKey = "darkThemeStyle"
+    static let userDefaultsKey = Constants.UserDefaultsKeys.darkThemeStyle
 
     private static let lock = NSLock()
     nonisolated(unsafe) private static var _current: DarkThemeStyle = {
@@ -55,6 +55,16 @@ public extension DarkThemeStyle {
         lock.lock()
         _current = style
         lock.unlock()
-        UserDefaults.standard.set(style.rawValue, forKey: userDefaultsKey)
+        SettingsSyncCoordinator.shared.setSyncable(style.rawValue, forKey: userDefaultsKey)
+    }
+
+    /// Reloads `_current` from `UserDefaults`. Called by the sync coordinator
+    /// after applying a remote change so the cached palette reflects iCloud.
+    static func reloadCurrentFromDefaults() {
+        let stored = UserDefaults.standard.string(forKey: userDefaultsKey)
+        let resolved = stored.flatMap(DarkThemeStyle.init(rawValue:)) ?? .coolBlue
+        lock.lock()
+        _current = resolved
+        lock.unlock()
     }
 }

@@ -570,9 +570,9 @@ private extension NSView {
 // MARK: - Custom Values
 
 enum CustomValuesStore {
-    private static let customStatusKey = "customApplicationStatuses"
-    private static let customSourceKey = "customSources"
-    private static let customInterviewStageKey = "customInterviewStages"
+    private static let customStatusKey = Constants.UserDefaultsKeys.customApplicationStatuses
+    private static let customSourceKey = Constants.UserDefaultsKeys.customSources
+    private static let customInterviewStageKey = Constants.UserDefaultsKeys.customInterviewStages
 
     static func customStatuses() -> [String] {
         UserDefaults.standard.stringArray(forKey: customStatusKey) ?? []
@@ -610,7 +610,7 @@ enum CustomValuesStore {
         guard !existingSet.contains(normalized.lowercased()) else { return }
 
         existing.insert(normalized, at: 0)
-        UserDefaults.standard.set(existing, forKey: key)
+        SettingsSyncCoordinator.shared.setSyncable(existing, forKey: key)
     }
 
     private static func normalize(_ value: String) -> String {
