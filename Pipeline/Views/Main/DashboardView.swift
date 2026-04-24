@@ -366,24 +366,7 @@ struct DashboardView: View {
         let saved = apps.filter { $0.status == .saved }.count
 
         return HStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(DesignSystem.Colors.accent)
-
-                Text(cycle.name)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-
-                Text("ACTIVE")
-                    .font(.system(size: 9, weight: .bold))
-                    .kerning(0.6)
-                    .foregroundColor(.green)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Capsule(style: .continuous).fill(Color.green.opacity(colorScheme == .dark ? 0.16 : 0.10)))
-            }
-            .frame(minWidth: 140, alignment: .leading)
+            cycleHeaderSection(cycle: cycle)
 
             StatDivider()
 
@@ -397,28 +380,63 @@ struct DashboardView: View {
             StatDivider()
             cycleStatPill(value: "\(offered)", label: "Offered", icon: "gift", color: ApplicationStatus.offered.color)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
         .appCard(cornerRadius: 14, elevated: true, shadow: false)
     }
 
-    private func cycleStatPill(value: String, label: String, icon: String, color: Color) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(color)
-                .frame(width: 16)
+    private func cycleHeaderSection(cycle: JobSearchCycle) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.18 : 0.12))
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(DesignSystem.Colors.accent)
+            }
+            .frame(width: 34, height: 34)
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 5, height: 5)
+                    Text("ACTIVE CYCLE")
+                        .font(.system(size: 9, weight: .bold))
+                        .kerning(0.8)
+                        .foregroundColor(.green)
+                }
+
+                Text(cycle.name)
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
+            }
+        }
+        .frame(minWidth: 170, alignment: .leading)
+        .padding(.trailing, 8)
+    }
+
+    private func cycleStatPill(value: String, label: String, icon: String, color: Color) -> some View {
+        HStack(spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(color.opacity(colorScheme == .dark ? 0.18 : 0.12))
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(color)
+            }
+            .frame(width: 34, height: 34)
+
+            VStack(alignment: .leading, spacing: 2) {
                 Text(value)
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
                 Text(label)
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .lineLimit(1)
             }
         }
-        .frame(minWidth: 90, maxWidth: .infinity, alignment: .leading)
+        .frame(minWidth: 100, maxWidth: .infinity, alignment: .leading)
     }
 
     private func overviewSection(analytics: DashboardAnalyticsResult) -> some View {
