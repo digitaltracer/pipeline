@@ -60,6 +60,13 @@ runtime.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // async
   }
 
+  if (request.action === "reviewJobWithAI") {
+    handleReview(request.data)
+      .then((result) => sendResponse(result))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
   if (request.action === "checkDuplicate") {
     handleDuplicateCheck(request.data)
       .then((result) => sendResponse(result))
@@ -137,6 +144,23 @@ async function handleSave(jobData, saveForLater = false) {
       postedAt: jobData.postedAt,
       applicationDeadline: jobData.applicationDeadline,
       saveForLater,
+    });
+    return response;
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function handleReview(jobData) {
+  try {
+    const response = await sendNativeMessage("review", {
+      url: jobData.url,
+      title: jobData.title,
+      company: jobData.company,
+      location: jobData.location,
+      description: jobData.description,
+      rawText: jobData.rawText || jobData.description,
+      platform: jobData.platform,
     });
     return response;
   } catch (err) {

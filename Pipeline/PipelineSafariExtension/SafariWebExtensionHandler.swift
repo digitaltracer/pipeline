@@ -33,6 +33,8 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             switch command {
             case "parse":
                 response = await handleParse(message: message)
+            case "review":
+                response = handleReview(message: message)
             case "check-duplicate":
                 response = await handleDuplicateCheck(message: message)
             default:
@@ -44,6 +46,31 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     }
 
     // MARK: - Parse Command
+
+    private func handleReview(message: [String: Any]) -> [String: Any] {
+        let description = message["description"] as? String ?? ""
+        let page = JobCapturedPage(
+            url: message["url"] as? String ?? "",
+            title: message["title"] as? String ?? "",
+            company: message["company"] as? String ?? "",
+            location: message["location"] as? String ?? "",
+            description: description,
+            rawText: message["rawText"] as? String ?? description,
+            platform: message["platform"] as? String ?? ""
+        )
+
+        do {
+            let importItem = try PendingJobImportService.enqueue(page)
+            return [
+                "success": true,
+                "id": importItem.id.uuidString,
+                "openURL": PendingJobImportService.reviewURLString
+            ]
+        } catch {
+            Self.logger.error("Failed to queue browser capture: \(error.localizedDescription)")
+            return ["success": false, "error": error.localizedDescription]
+        }
+    }
 
     private func handleParse(message: [String: Any]) async -> [String: Any] {
         let url = message["url"] as? String ?? ""

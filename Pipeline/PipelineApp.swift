@@ -96,6 +96,9 @@ struct PipelineApp: App {
             .onOpenURL { url in
                 if !GoogleCalendarConfiguration.handleSignInURL(url) {
                     Task { @MainActor in
+                        if url.scheme == "pipeline", url.host == "job-imports" {
+                            NotificationCenter.default.post(name: .pipelinePendingJobImportDidChange, object: nil)
+                        }
                         NotificationService.shared.handleDeepLinkURL(url)
                     }
                 }

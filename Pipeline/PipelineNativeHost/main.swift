@@ -76,6 +76,8 @@ Task {
     switch command {
     case "parse":
         response = await NativeMessageHandler.handleParse(message: message)
+    case "review":
+        response = NativeMessageHandler.handleReview(message: message)
     case "check-duplicate":
         response = await NativeMessageHandler.handleDuplicateCheck(message: message)
     default:

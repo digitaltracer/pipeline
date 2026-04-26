@@ -5,6 +5,61 @@ import OSLog
 
 public protocol AIServiceProtocol {
     func parseJobPosting(from url: String, model: String) async throws -> ParsedJobData
+    func parseJobPosting(input: JobParseInput, model: String) async throws -> ParsedJobData
+}
+
+public enum JobParseInput: Sendable, Equatable {
+    case url(String)
+    case capturedPage(JobCapturedPage)
+
+    public var displayURL: String {
+        switch self {
+        case .url(let url):
+            return url
+        case .capturedPage(let page):
+            return page.url
+        }
+    }
+}
+
+public struct JobCapturedPage: Sendable, Equatable, Codable {
+    public var url: String
+    public var title: String
+    public var company: String
+    public var location: String
+    public var description: String
+    public var rawText: String
+    public var platform: String
+
+    public init(
+        url: String,
+        title: String = "",
+        company: String = "",
+        location: String = "",
+        description: String = "",
+        rawText: String = "",
+        platform: String = ""
+    ) {
+        self.url = url
+        self.title = title
+        self.company = company
+        self.location = location
+        self.description = description
+        self.rawText = rawText
+        self.platform = platform
+    }
+
+    public var parseText: String {
+        [
+            title.isEmpty ? nil : "Title: \(title)",
+            company.isEmpty ? nil : "Company: \(company)",
+            location.isEmpty ? nil : "Location: \(location)",
+            description.isEmpty ? nil : "Description:\n\(description)",
+            rawText.isEmpty || rawText == description ? nil : "Page text:\n\(rawText)"
+        ]
+            .compactMap { $0 }
+            .joined(separator: "\n\n")
+    }
 }
 
 // MARK: - Errors

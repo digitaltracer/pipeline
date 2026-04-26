@@ -12,12 +12,16 @@ public final class AnthropicService: AIServiceProtocol {
     }
 
     public func parseJobPosting(from url: String, model: String) async throws -> ParsedJobData {
+        try await parseJobPosting(input: .url(url), model: model)
+    }
+
+    public func parseJobPosting(input: JobParseInput, model: String) async throws -> ParsedJobData {
         AIParseDebugLogger.info(
-            "AnthropicService: parse start url=\(AIParseDebugLogger.summarizedURL(url)) model=\(model)."
+            "AnthropicService: parse start url=\(AIParseDebugLogger.summarizedURL(input.displayURL)) model=\(model)."
         )
 
-        let webContent = try await contentProvider.fetchText(from: url)
-        AIParseDebugLogger.info("AnthropicService: fetched webpage text (\(webContent.count) chars).")
+        let webContent = try await webContent(for: input)
+        AIParseDebugLogger.info("AnthropicService: prepared webpage text (\(webContent.count) chars).")
 
         guard !webContent.isEmpty else {
             AIParseDebugLogger.warning("AnthropicService: webpage content is empty after HTML stripping.")
@@ -84,6 +88,19 @@ public final class AnthropicService: AIServiceProtocol {
         var parsed = try AIResponseParser.parseJobData(from: text)
         parsed.usage = usageMetrics
         return parsed
+    }
+
+    private func webContent(for input: JobParseInput) async throws -> String {
+        switch input {
+        case .url(let url):
+            return try await contentProvider.fetchText(from: url)
+        case .capturedPage(let page):
+            let text = page.parseText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else {
+                throw AIServiceError.parsingError("Captured browser content was empty.")
+            }
+            return String(text.prefix(Constants.Limits.webContentMaxLength))
+        }
     }
 
     private func intValue(_ value: Any?) -> Int? {

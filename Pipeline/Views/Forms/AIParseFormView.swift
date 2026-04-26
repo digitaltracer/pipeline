@@ -6,6 +6,7 @@ struct AIParseFormView: View {
     let onOpenSettings: (() -> Void)?
     var onReplayOnboarding: (() -> Void)? = nil
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         Group {
@@ -15,7 +16,13 @@ struct AIParseFormView: View {
                 configuredState
             }
         }
-        .onAppear { aiViewModel.refreshConfiguration() }
+        .onAppear {
+            aiViewModel.refreshConfiguration()
+            aiViewModel.refreshPendingBrowserImport()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .pipelinePendingJobImportDidChange)) { _ in
+            aiViewModel.refreshPendingBrowserImport()
+        }
         .animation(.easeInOut(duration: 0.18), value: aiViewModel.isLoading)
         .animation(.easeInOut(duration: 0.18), value: aiViewModel.parsedData != nil)
     }
@@ -46,7 +53,7 @@ struct AIParseFormView: View {
                     Text("Smart Parse")
                         .font(.headline)
 
-                    Text("Paste a job URL and let AI extract the details")
+                    Text("Paste one or more job URLs and let AI extract the details")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -63,17 +70,38 @@ struct AIParseFormView: View {
                     .foregroundColor(.secondary)
             }
 
-            HStack(spacing: 10) {
-                Image(systemName: "link")
-                    .foregroundColor(.secondary)
-
-                TextField("https://linkedin.com/jobs/view/123456...", text: $aiViewModel.jobURL)
-                    .textFieldStyle(.plain)
-                    .onSubmit {
-                        triggerParse()
-                    }
+            if let pending = aiViewModel.pendingBrowserImport {
+                pendingBrowserImportBanner(pending)
             }
-            .appInput()
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "link")
+                        .foregroundColor(.secondary)
+
+                    Text("Job URL input")
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(.secondary)
+
+                    Spacer()
+
+                    Text("One URL per line")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+
+                TextEditor(text: $aiViewModel.jobURL)
+                    .font(.body)
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 76, maxHeight: 118)
+                    .padding(8)
+                    .background(DesignSystem.Colors.surface(colorScheme))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+                    )
+            }
 
             Button(action: triggerParse) {
                 HStack(spacing: 8) {
@@ -84,7 +112,7 @@ struct AIParseFormView: View {
                         Image(systemName: "sparkles")
                     }
 
-                    Text(aiViewModel.isLoading ? "Parsing Job URL" : "Parse Job URL")
+                    Text(parseButtonTitle)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -97,10 +125,18 @@ struct AIParseFormView: View {
                 errorBanner(error)
             }
 
+            if aiViewModel.browserHandoffURL != nil || aiViewModel.waitingForBrowserCapture {
+                browserHandoffBanner
+            }
+
             if aiViewModel.isLoading {
                 loadingRow
             } else if let data = aiViewModel.parsedData {
                 parsedPreview(data)
+            }
+
+            if !aiViewModel.batchResults.isEmpty {
+                batchResultsView
             }
 
             Spacer(minLength: 0)
@@ -186,6 +222,59 @@ struct AIParseFormView: View {
         .padding(.horizontal, 2)
     }
 
+    private func pendingBrowserImportBanner(_ pending: PendingJobImport) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Browser capture ready", systemImage: "puzzlepiece.extension.fill")
+                .font(.subheadline.weight(.semibold))
+
+            Text(browserImportSummary(pending))
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                Task { await aiViewModel.parsePendingBrowserImport() }
+            } label: {
+                Label("Review with AI in Pipeline", systemImage: "sparkles")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(DesignSystem.Colors.accent)
+            .disabled(aiViewModel.isLoading)
+        }
+        .padding(12)
+        .background(DesignSystem.Colors.accent.opacity(colorScheme == .dark ? 0.16 : 0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var browserHandoffBanner: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(
+                aiViewModel.waitingForBrowserCapture ? "Waiting for browser capture" : "Open this page in your browser",
+                systemImage: "safari"
+            )
+            .font(.subheadline.weight(.semibold))
+
+            Text("Pipeline could not read enough content directly. Open the page in your browser, sign in if needed, then use the Pipeline extension to capture it.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let urlString = aiViewModel.browserHandoffURL,
+               let url = URL(string: urlString) {
+                Button {
+                    aiViewModel.beginBrowserHandoff()
+                    openURL(url)
+                } label: {
+                    Label("Open in Browser", systemImage: "arrow.up.forward.app")
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(12)
+        .background(Color.orange.opacity(colorScheme == .dark ? 0.16 : 0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
     private func parsedPreview(_ data: ParsedJobData) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -259,12 +348,82 @@ struct AIParseFormView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
+    private var batchResultsView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Batch Results")
+                .font(.subheadline.weight(.semibold))
+
+            ForEach(aiViewModel.batchResults) { result in
+                batchResultRow(result)
+            }
+        }
+        .padding(14)
+        .background(DesignSystem.Colors.surface(colorScheme))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(DesignSystem.Colors.stroke(colorScheme), lineWidth: 1)
+        )
+    }
+
+    private func batchResultRow(_ result: AIParsingViewModel.BatchParseResult) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: batchIcon(for: result))
+                .foregroundColor(batchColor(for: result))
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(result.url)
+                    .font(.caption.weight(.medium))
+                    .lineLimit(1)
+
+                Text(batchSubtitle(for: result))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 0)
+
+            if case .parsed = result.state {
+                Button("Review") {
+                    aiViewModel.selectBatchResult(result)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            } else if case .needsBrowser = result.state,
+                      let url = URL(string: result.url) {
+                Button {
+                    aiViewModel.browserHandoffURL = result.url
+                    aiViewModel.beginBrowserHandoff()
+                    openURL(url)
+                } label: {
+                    Image(systemName: "arrow.up.forward.app")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+    }
+
     private var providerSummary: String {
         if aiViewModel.parseModel.isEmpty {
             return aiViewModel.parseProvider.rawValue
         }
 
         return "\(aiViewModel.parseProvider.rawValue) • \(aiViewModel.parseModel)"
+    }
+
+    private var parseButtonTitle: String {
+        if aiViewModel.isLoading {
+            return "Parsing Job URL"
+        }
+
+        if aiViewModel.pendingBrowserImport != nil {
+            return "Parse Pasted URL Instead"
+        }
+
+        return aiViewModel.jobURL.contains("\n") ? "Parse Job URLs" : "Parse Job URL"
     }
 
     private var cannotParse: Bool {
@@ -276,6 +435,47 @@ struct AIParseFormView: View {
 
         Task {
             await aiViewModel.parseJobURL()
+        }
+    }
+
+    private func browserImportSummary(_ pending: PendingJobImport) -> String {
+        let page = pending.capturedPage
+        let title = page.title.isEmpty ? "Captured job page" : page.title
+        let company = page.company.isEmpty ? page.url : page.company
+        return "\(title) at \(company)"
+    }
+
+    private func batchIcon(for result: AIParsingViewModel.BatchParseResult) -> String {
+        switch result.state {
+        case .pending: return "circle"
+        case .parsing: return "hourglass"
+        case .parsed: return "checkmark.circle.fill"
+        case .needsBrowser: return "safari"
+        case .failed: return "xmark.circle.fill"
+        }
+    }
+
+    private func batchColor(for result: AIParsingViewModel.BatchParseResult) -> Color {
+        switch result.state {
+        case .pending, .parsing: return .secondary
+        case .parsed: return .green
+        case .needsBrowser: return .orange
+        case .failed: return .red
+        }
+    }
+
+    private func batchSubtitle(for result: AIParsingViewModel.BatchParseResult) -> String {
+        switch result.state {
+        case .pending:
+            return "Waiting"
+        case .parsing:
+            return "Parsing"
+        case .parsed(let data):
+            return [data.companyName, data.role].filter { !$0.isEmpty }.joined(separator: " • ")
+        case .needsBrowser(let message):
+            return "Needs browser capture: \(message)"
+        case .failed(let message):
+            return message
         }
     }
 

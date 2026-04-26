@@ -26,6 +26,23 @@ enum NativeMessageHandler {
         return nil
     }
 
+    // MARK: - Review
+
+    static func handleReview(message: [String: Any]) -> [String: Any] {
+        let page = capturedPage(from: message)
+
+        do {
+            let importItem = try PendingJobImportService.enqueue(page)
+            return [
+                "success": true,
+                "id": importItem.id.uuidString,
+                "openURL": PendingJobImportService.reviewURLString
+            ]
+        } catch {
+            return ["success": false, "error": error.localizedDescription]
+        }
+    }
+
     // MARK: - Parse
 
     static func handleParse(message: [String: Any]) async -> [String: Any] {
@@ -84,6 +101,20 @@ enum NativeMessageHandler {
         } catch {
             return ["success": false, "error": error.localizedDescription]
         }
+    }
+
+    private static func capturedPage(from message: [String: Any]) -> JobCapturedPage {
+        let description = message["description"] as? String ?? ""
+        let rawText = message["rawText"] as? String ?? description
+        return JobCapturedPage(
+            url: message["url"] as? String ?? "",
+            title: message["title"] as? String ?? "",
+            company: message["company"] as? String ?? "",
+            location: message["location"] as? String ?? "",
+            description: description,
+            rawText: rawText,
+            platform: message["platform"] as? String ?? "other"
+        )
     }
 
     // MARK: - Duplicate Check

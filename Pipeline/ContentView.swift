@@ -100,11 +100,16 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.22), value: onboardingStore.isPresentingIntro)
         .onAppear {
             onboardingStore.presentIntroIfNeeded()
+            presentPendingJobImportIfNeeded()
         }
         .onChange(of: showingSettings) { _, isShowing in
             if !isShowing {
                 settingsEntryPoint = .root
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .pipelinePendingJobImportDidChange)) { _ in
+            selectedDestination = .applications(.all)
+            showingAddApplication = true
         }
     }
 
@@ -378,6 +383,13 @@ struct ContentView: View {
         case .replayTour:
             onboardingStore.presentIntro(force: true)
         }
+    }
+
+    @MainActor
+    private func presentPendingJobImportIfNeeded() {
+        guard PendingJobImportService.loadLatest() != nil else { return }
+        selectedDestination = .applications(.all)
+        showingAddApplication = true
     }
 
     @MainActor

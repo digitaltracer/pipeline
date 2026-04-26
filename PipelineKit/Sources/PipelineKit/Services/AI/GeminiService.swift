@@ -11,12 +11,16 @@ public final class GeminiService: AIServiceProtocol {
     }
 
     public func parseJobPosting(from url: String, model: String) async throws -> ParsedJobData {
+        try await parseJobPosting(input: .url(url), model: model)
+    }
+
+    public func parseJobPosting(input: JobParseInput, model: String) async throws -> ParsedJobData {
         AIParseDebugLogger.info(
-            "GeminiService: parse start url=\(AIParseDebugLogger.summarizedURL(url)) model=\(model)."
+            "GeminiService: parse start url=\(AIParseDebugLogger.summarizedURL(input.displayURL)) model=\(model)."
         )
 
-        let webContent = try await contentProvider.fetchText(from: url)
-        AIParseDebugLogger.info("GeminiService: fetched webpage text (\(webContent.count) chars).")
+        let webContent = try await webContent(for: input)
+        AIParseDebugLogger.info("GeminiService: prepared webpage text (\(webContent.count) chars).")
 
         guard !webContent.isEmpty else {
             AIParseDebugLogger.warning("GeminiService: webpage content is empty after HTML stripping.")
@@ -111,6 +115,19 @@ public final class GeminiService: AIServiceProtocol {
 
         AIParseDebugLogger.error("GeminiService: no candidate contained parseable text output.")
         throw AIServiceError.invalidResponse
+    }
+
+    private func webContent(for input: JobParseInput) async throws -> String {
+        switch input {
+        case .url(let url):
+            return try await contentProvider.fetchText(from: url)
+        case .capturedPage(let page):
+            let text = page.parseText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else {
+                throw AIServiceError.parsingError("Captured browser content was empty.")
+            }
+            return String(text.prefix(Constants.Limits.webContentMaxLength))
+        }
     }
 
     private func intValue(_ value: Any?) -> Int? {

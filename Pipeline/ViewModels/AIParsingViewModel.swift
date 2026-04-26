@@ -5,6 +5,20 @@ import PipelineKit
 
 @Observable
 final class AIParsingViewModel {
+    struct BatchParseResult: Identifiable {
+        enum State {
+            case pending
+            case parsing
+            case parsed(ParsedJobData)
+            case needsBrowser(String)
+            case failed(String)
+        }
+
+        let id = UUID()
+        let url: String
+        var state: State = .pending
+    }
+
     // Input
     var jobURL: String = ""
 
@@ -19,6 +33,10 @@ final class AIParsingViewModel {
         settingsViewModel.preferredModel(for: parseProvider)
     }
     var modelContext: ModelContext?
+    var batchResults: [BatchParseResult] = []
+    var browserHandoffURL: String?
+    var waitingForBrowserCapture: Bool = false
+    var pendingBrowserImport: PendingJobImport?
 
     // Services
     private let settingsViewModel: SettingsViewModel
@@ -59,6 +77,12 @@ final class AIParsingViewModel {
 
     @MainActor
     func parseJobURL() async {
+        let urls = normalizedInputURLs()
+        if urls.count > 1 {
+            await parseBatch(urls)
+            return
+        }
+
         refreshConfiguration()
         let trimmed = jobURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let model = parseModel
@@ -106,13 +130,7 @@ final class AIParsingViewModel {
                 return
             }
 
-            let parsed = try await settingsViewModel.withAPIKeyWaterfall(for: parseProvider) { apiKey in
-                let service = createAIService(provider: parseProvider, apiKey: apiKey)
-                AIParseDebugLogger.info(
-                    "AIParsingViewModel: invoking \(parseProvider.rawValue) service with model \(model)."
-                )
-                return try await service.parseJobPosting(from: normalizedJobURL, model: model)
-            }
+            let parsed = try await parse(input: .url(normalizedJobURL), model: model)
             guard parsed.hasMeaningfulContent else {
                 AIParseDebugLogger.warning(
                     "AIParsingViewModel: parse finished but extracted fields were empty."
@@ -120,6 +138,8 @@ final class AIParsingViewModel {
                 throw AIServiceError.noDataExtracted
             }
             parsedData = parsed
+            browserHandoffURL = nil
+            waitingForBrowserCapture = false
             AIParseDebugLogger.info("AIParsingViewModel: parse completed successfully.")
             recordUsage(
                 provider: parseProvider,
@@ -145,6 +165,7 @@ final class AIParsingViewModel {
                 "AIParsingViewModel: parse failed with AIServiceError: \(aiError.localizedDescription)."
             )
             error = aiError.localizedDescription
+            markBrowserHandoffAvailable(for: normalizedJobURL, error: aiError)
             recordUsage(
                 provider: parseProvider,
                 model: model,
@@ -158,6 +179,7 @@ final class AIParsingViewModel {
                 "AIParsingViewModel: parse failed with unexpected error: \(error.localizedDescription)."
             )
             self.error = "Failed to parse job posting: \(error.localizedDescription)"
+            browserHandoffURL = normalizedJobURL
             recordUsage(
                 provider: parseProvider,
                 model: model,
@@ -166,6 +188,172 @@ final class AIParsingViewModel {
                 startedAt: requestStartedAt,
                 errorMessage: error.localizedDescription
             )
+        }
+    }
+
+    @MainActor
+    func parsePendingBrowserImport() async {
+        guard let pendingBrowserImport else { return }
+        await parseCapturedPage(pendingBrowserImport.capturedPage, removeWhenDone: pendingBrowserImport.id)
+    }
+
+    @MainActor
+    func refreshPendingBrowserImport() {
+        guard let latest = PendingJobImportService.loadLatest() else { return }
+        pendingBrowserImport = latest
+        waitingForBrowserCapture = false
+        browserHandoffURL = nil
+        jobURL = latest.capturedPage.url
+        error = nil
+    }
+
+    @MainActor
+    func beginBrowserHandoff() {
+        waitingForBrowserCapture = browserHandoffURL != nil
+    }
+
+    @MainActor
+    func selectBatchResult(_ result: BatchParseResult) {
+        guard case .parsed(let parsed) = result.state else { return }
+        jobURL = result.url
+        parsedData = parsed
+        error = nil
+    }
+
+    @MainActor
+    private func parseBatch(_ urls: [String]) async {
+        refreshConfiguration()
+        let model = parseModel
+        batchResults = urls.map { BatchParseResult(url: $0) }
+        parsedData = nil
+        error = nil
+        browserHandoffURL = nil
+
+        guard isConfigured else {
+            error = "API key not configured. Please set up your API key in Settings."
+            return
+        }
+
+        guard !model.isEmpty else {
+            error = "No compatible model available for \(parseProvider.rawValue)."
+            return
+        }
+
+        isLoading = true
+        defer { isLoading = false }
+
+        for index in batchResults.indices {
+            let url = batchResults[index].url
+            batchResults[index].state = .parsing
+            let requestStartedAt = Date()
+
+            do {
+                let parsed = try await parse(input: .url(url), model: model)
+                guard parsed.hasMeaningfulContent else {
+                    throw AIServiceError.noDataExtracted
+                }
+                batchResults[index].state = .parsed(parsed)
+                if parsedData == nil {
+                    parsedData = parsed
+                    jobURL = url
+                }
+                recordUsage(
+                    provider: parseProvider,
+                    model: model,
+                    usage: parsed.usage,
+                    status: .succeeded,
+                    startedAt: requestStartedAt,
+                    errorMessage: nil
+                )
+            } catch let aiError as AIServiceError {
+                if shouldOfferBrowserHandoff(for: aiError) {
+                    batchResults[index].state = .needsBrowser(aiError.localizedDescription)
+                    browserHandoffURL = browserHandoffURL ?? url
+                } else {
+                    batchResults[index].state = .failed(aiError.localizedDescription)
+                }
+                recordUsage(
+                    provider: parseProvider,
+                    model: model,
+                    usage: nil,
+                    status: .failed,
+                    startedAt: requestStartedAt,
+                    errorMessage: aiError.localizedDescription
+                )
+            } catch {
+                batchResults[index].state = .failed(error.localizedDescription)
+                recordUsage(
+                    provider: parseProvider,
+                    model: model,
+                    usage: nil,
+                    status: .failed,
+                    startedAt: requestStartedAt,
+                    errorMessage: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    @MainActor
+    private func parseCapturedPage(_ page: JobCapturedPage, removeWhenDone importID: UUID?) async {
+        refreshConfiguration()
+        let model = parseModel
+        let requestStartedAt = Date()
+
+        guard isConfigured else {
+            error = "API key not configured. Please set up your API key in Settings."
+            return
+        }
+
+        guard !model.isEmpty else {
+            error = "No compatible model available for \(parseProvider.rawValue)."
+            return
+        }
+
+        isLoading = true
+        error = nil
+        parsedData = nil
+        defer { isLoading = false }
+
+        do {
+            let parsed = try await parse(input: .capturedPage(page), model: model)
+            guard parsed.hasMeaningfulContent else {
+                throw AIServiceError.noDataExtracted
+            }
+            parsedData = parsed
+            jobURL = page.url
+            pendingBrowserImport = nil
+            if let importID {
+                PendingJobImportService.remove(id: importID)
+            }
+            recordUsage(
+                provider: parseProvider,
+                model: model,
+                usage: parsed.usage,
+                status: .succeeded,
+                startedAt: requestStartedAt,
+                errorMessage: nil
+            )
+        } catch {
+            self.error = "Failed to parse captured browser content: \(error.localizedDescription)"
+            recordUsage(
+                provider: parseProvider,
+                model: model,
+                usage: nil,
+                status: .failed,
+                startedAt: requestStartedAt,
+                errorMessage: error.localizedDescription
+            )
+        }
+    }
+
+    private func parse(input: JobParseInput, model: String) async throws -> ParsedJobData {
+        try await settingsViewModel.withAPIKeyWaterfall(for: parseProvider) { apiKey in
+            let service = createAIService(provider: parseProvider, apiKey: apiKey)
+            AIParseDebugLogger.info(
+                "AIParsingViewModel: invoking \(parseProvider.rawValue) service with model \(model)."
+            )
+            return try await service.parseJobPosting(input: input, model: model)
         }
     }
 
@@ -210,6 +398,31 @@ final class AIParsingViewModel {
         isLoading = false
         error = nil
         parsedData = nil
+        batchResults = []
+        browserHandoffURL = nil
+        waitingForBrowserCapture = false
+        pendingBrowserImport = nil
+    }
+
+    private func normalizedInputURLs() -> [String] {
+        jobURL
+            .split(whereSeparator: \.isNewline)
+            .map { URLHelpers.normalize(String($0).trimmingCharacters(in: .whitespacesAndNewlines)) }
+            .filter { !$0.isEmpty }
+    }
+
+    private func markBrowserHandoffAvailable(for url: String, error: AIServiceError) {
+        guard shouldOfferBrowserHandoff(for: error) else { return }
+        browserHandoffURL = url
+    }
+
+    private func shouldOfferBrowserHandoff(for error: AIServiceError) -> Bool {
+        switch error {
+        case .apiError, .parsingError, .noDataExtracted, .networkError:
+            return true
+        case .invalidURL, .invalidResponse, .rateLimited, .unauthorized:
+            return false
+        }
     }
 
     private func recordUsage(
